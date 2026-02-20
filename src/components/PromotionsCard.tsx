@@ -170,7 +170,7 @@ export default function PromotionsCard({
                             <select
                                 className="h-10 rounded-xl border bg-white px-3 text-sm"
                                 value={appliesTo}
-                                onChange={(e) => setAppliesTo(e.target.value as any)}
+                                onChange={(e) => setAppliesTo(e.target.value as "BOTH" | "PRODUCT" | "SHIPPING")}
                             >
                                 <option value="BOTH">BOTH</option>
                                 <option value="PRODUCT">PRODUCT</option>
@@ -183,7 +183,7 @@ export default function PromotionsCard({
                             <select
                                 className="h-10 rounded-xl border bg-white px-3 text-sm"
                                 value={type}
-                                onChange={(e) => setType(e.target.value as any)}
+                                onChange={(e) => setType(e.target.value as "PCT" | "FIXED" | "PRICE")}
                             >
                                 <option value="PCT">PCT (%)</option>
                                 <option value="FIXED">FIXED (R$ off)</option>
@@ -271,8 +271,12 @@ function PromoRow({
 }) {
     const [editing, setEditing] = useState(false);
 
-    const [appliesTo, setAppliesTo] = useState(p.appliesTo as any);
-    const [type, setType] = useState(p.type as any);
+    const [appliesTo, setAppliesTo] = useState<"BOTH" | "PRODUCT" | "SHIPPING">(
+        p.appliesTo === "PRODUCT" || p.appliesTo === "SHIPPING" ? p.appliesTo : "BOTH"
+    );
+    const [type, setType] = useState<"PCT" | "FIXED" | "PRICE">(
+        p.type === "FIXED" || p.type === "PRICE" ? p.type : "PCT"
+    );
     const [value, setValue] = useState(String(p.value ?? ""));
     const [active, setActive] = useState(Boolean(p.active));
     const [startsAt, setStartsAt] = useState(toInputDateTimeLocal(p.startsAt));
@@ -383,8 +387,7 @@ function PromoRow({
                             <select
                                 className="h-10 rounded-xl border bg-white px-3 text-sm"
                                 value={appliesTo}
-                                onChange={(e) => setAppliesTo(e.target.value as any)}
-                            >
+                                onChange={(e) => setAppliesTo(e.target.value as "BOTH" | "PRODUCT" | "SHIPPING")}                            >
                                 <option value="BOTH">BOTH</option>
                                 <option value="PRODUCT">PRODUCT</option>
                                 <option value="SHIPPING">SHIPPING</option>
@@ -396,8 +399,7 @@ function PromoRow({
                             <select
                                 className="h-10 rounded-xl border bg-white px-3 text-sm"
                                 value={type}
-                                onChange={(e) => setType(e.target.value as any)}
-                            >
+                                onChange={(e) => setType(e.target.value as "PCT" | "FIXED" | "PRICE")}                            >
                                 <option value="PCT">PCT</option>
                                 <option value="FIXED">FIXED</option>
                                 <option value="PRICE">PRICE</option>

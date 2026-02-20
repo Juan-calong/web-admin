@@ -62,7 +62,7 @@ export default function AdminCategoriesPage() {
   useEffect(() => {
     if (categoriesQ.isError) toast.error(apiErrorMessage(categoriesQ.error, "Erro ao carregar categorias."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoriesQ.isError]);
+ }, [categoriesQ.isError, categoriesQ.error]);
 
   const createM = useMutation({
     mutationFn: async () => {
@@ -121,7 +121,7 @@ export default function AdminCategoriesPage() {
               <select
                 className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
                 value={filter}
-                onChange={(e) => setFilter(e.target.value as any)}
+                onChange={(e) => setFilter(e.target.value as "all" | "true" | "false")}
               >
                 <option value="all">Todos</option>
                 <option value="true">Ativos</option>
@@ -260,10 +260,6 @@ function CategoryRowTable({
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(c.name);
 
-  useEffect(() => {
-    if (!editing) setName(c.name);
-  }, [c.name, editing]);
-
   return (
     <TableRow className="hover:bg-black/[0.02]">
       <TableCell className="align-top">
@@ -312,8 +308,11 @@ function CategoryRowTable({
       <TableCell className="text-right">
         <div className="flex justify-end gap-2">
           {!editing ? (
-            <Button variant="outline" className="rounded-xl whitespace-nowrap" onClick={() => setEditing(true)} disabled={busy}>
-              Renomear
+            <Button variant="outline" className="rounded-xl whitespace-nowrap" onClick={() => {
+                setName(c.name);
+                setEditing(true);
+              }} disabled={busy}>
+                Renomear
             </Button>
           ) : null}
           <Button variant="outline" className="rounded-xl whitespace-nowrap" onClick={onToggle} disabled={busy}>
@@ -338,10 +337,6 @@ function CategoryCard({
 }) {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(c.name);
-
-  useEffect(() => {
-    if (!editing) setName(c.name);
-  }, [c.name, editing]);
 
   return (
     <div className="rounded-2xl border bg-white p-4 space-y-3">
@@ -391,8 +386,11 @@ function CategoryCard({
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" className="rounded-xl" onClick={() => setEditing(true)} disabled={busy}>
-            Renomear
+          <Button variant="outline" className="rounded-xl" onClick={() => {
+                setName(c.name);
+                setEditing(true);
+              }} disabled={busy}>
+                Renomear
           </Button>
           <Button variant="outline" className="rounded-xl" onClick={onToggle} disabled={busy}>
             {c.active ? "Desativar" : "Ativar"}

@@ -256,7 +256,7 @@ export default function AdminProductsPage() {
               <select
                 className="h-10 rounded-xl border bg-white px-3 text-sm"
                 value={activeFilter}
-                onChange={(e) => setActiveFilter(e.target.value as any)}
+                onChange={(e) => setActiveFilter(e.target.value as "all" | "active" | "inactive")}
               >
                 <option value="active">Ativos</option>
                 <option value="inactive">Inativos</option>
@@ -269,7 +269,7 @@ export default function AdminProductsPage() {
               <select
                 className="h-10 rounded-xl border bg-white px-3 text-sm"
                 value={promoFilter}
-                onChange={(e) => setPromoFilter(e.target.value as any)}
+                onChange={(e) => setPromoFilter(e.target.value as "all" | "now" | "scheduled" | "none")}
               >
                 <option value="all">Todas</option>
                 <option value="now">Ativa agora</option>

@@ -63,7 +63,7 @@ export default function NewProductPage() {
 
   useEffect(() => {
     if (categoriesQ.isError) toast.error(apiErrorMessage(categoriesQ.error, "Erro ao carregar categorias."));
-  }, [categoriesQ.isError]);
+  }, [categoriesQ.isError, categoriesQ.error]);
 
   const categories = useMemo(() => {
     const items = categoriesQ.data ?? [];
@@ -77,7 +77,16 @@ export default function NewProductPage() {
 
   const createM = useMutation({
     mutationFn: async () => {
-      const payload: any = {
+      const payload: {
+        sku: string;
+        name: string;
+        price: string;
+        active: boolean;
+        stock: number;
+        categoryId: string | null;
+        description?: string;
+        highlights?: string[];
+      } = {
         sku: sku.trim(),
         name: name.trim(),
         price: price.trim().replace(",", "."),

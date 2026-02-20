@@ -6,7 +6,20 @@ import { authStore } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 
-function extractToken(res: any): string | null {
+type RefreshResponse = {
+    data?: {
+        accessToken?: string;
+        token?: string;
+        user?: unknown;
+        data?: {
+            accessToken?: string;
+            token?: string;
+            user?: unknown;
+        };
+    };
+};
+
+function extractToken(res: RefreshResponse): string | null {
     return (
         res?.data?.accessToken ??
         res?.data?.token ??
@@ -51,7 +64,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
                 authStore.setAccessToken(newToken);
 
                 // opcional: se seu refresh também devolve user, salva:
-                const user = res?.data?.user ?? res?.data?.data?.user ?? null;
+                const user = res.data?.user ?? res.data?.data?.user ?? null;
                 if (user) authStore.setMe(user);
 
                 const me = authStore.getMe();

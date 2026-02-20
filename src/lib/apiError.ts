@@ -1,6 +1,18 @@
 // src/lib/apiError.ts
-export function apiErrorMessage(err: any, fallback = "Ocorreu um erro") {
-    const data = err?.response?.data;
+type ApiErrorShape = {
+    message?: unknown;
+    response?: {
+        data?: {
+            error?: unknown;
+            message?: unknown;
+            issues?: Array<{ message?: unknown; msg?: unknown }>;
+        } | string;
+    };
+};
+
+export function apiErrorMessage(err: unknown, fallback = "Ocorreu um erro") {
+    const parsed = (err ?? {}) as ApiErrorShape;
+    const data = parsed.response?.data;
 
     if (typeof data === "string") return data;
     if (data?.error) return String(data.error);
@@ -12,5 +24,5 @@ export function apiErrorMessage(err: any, fallback = "Ocorreu um erro") {
         if (first?.msg) return String(first.msg);
     }
 
-    return err?.message ? String(err.message) : fallback;
+    return parsed.message ? String(parsed.message) : fallback;
 }
