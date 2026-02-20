@@ -6,16 +6,18 @@ import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { authStore } from "@/lib/auth";
 import { toast } from "sonner";
+import type { AxiosError } from "axios";
 
 function isEmail(v: string) {
   const s = v.trim().toLowerCase();
   return s.includes("@") && s.includes(".");
 }
 
-function humanLoginError(e: any) {
-  const status = e?.response?.status;
+function humanLoginError(e: unknown) {
+  const err = e as AxiosError<{ error?: string; message?: string }>;
+  const status = err.response?.status;
 
-  const code = e?.code;
+  const code = err.code;
   if (code === "ECONNABORTED") return "Tempo esgotado. Tente novamente.";
   if (!status) return "Sem conexão com o servidor. Verifique sua internet.";
 
@@ -25,9 +27,9 @@ function humanLoginError(e: any) {
   if (status >= 500) return "Servidor indisponível no momento. Tente novamente em instantes.";
 
   const backendMsg =
-    e?.response?.data?.error ||
-    e?.response?.data?.message ||
-    e?.message;
+    err.response?.data?.error ||
+    err.response?.data?.message ||
+    err.message;
 
   return backendMsg || "Falha no login.";
 }
@@ -35,7 +37,16 @@ function humanLoginError(e: any) {
 export default function LoginClient() {
   const router = useRouter();
   const sp = useSearchParams();
-  const next = sp.get("next") || "/admin";
+    const nextParam = sp.get("next");
+
+  function safeNext(target: string | null) {
+    if (!target) return "/admin";
+    if (!target.startsWith("/")) return "/admin";
+    if (target.startsWith("//")) return "/admin";
+    return target;
+  }
+
+  const next = safeNext(nextParam);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -93,12 +104,13 @@ export default function LoginClient() {
 
       toast.success("Bem-vindo!");
       router.replace(next);
-    } catch (e2: any) {
+    } catch (e2: unknown) {
       const msg = humanLoginError(e2);
       setErr(msg);
       toast.error(msg);
 
-      if (e2?.response?.status === 401) setPassword("");
+      const err = e2 as AxiosError;
+      if (err.response?.status === 401) setPassword("");
     } finally {
       setLoading(false);
     }

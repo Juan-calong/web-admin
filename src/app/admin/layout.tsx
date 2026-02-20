@@ -65,14 +65,7 @@ async function fetchUnreadCount() {
     return data as { count: number };
 }
 
-function UnreadBell() {
-    const unread = useQuery({
-        queryKey: ["admin-unread-count"],
-        queryFn: fetchUnreadCount,
-        refetchInterval: 10000,
-    });
-
-    const count = unread.data?.count ?? 0;
+    function UnreadBell({ count }: { count: number }) {
 
     return (
         <Link href="/admin/inbox" className="relative inline-flex">
@@ -132,7 +125,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             </div>
 
                             {/* ✅ Sino com badge */}
-                            <UnreadBell />
+                            <UnreadBell count={unreadCount} />
                         </div>
 
                         <Separator className="my-4" />
