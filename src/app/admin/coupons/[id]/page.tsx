@@ -39,7 +39,7 @@ type Coupon = {
   id: string;
   code: string;
   appliesTo: PromoAppliesTo;
-  type: DiscountType | any;
+  type: DiscountType | string;
   value: string | number;
   active: boolean;
 
@@ -58,7 +58,7 @@ type Coupon = {
   createdAt?: string;
   updatedAt?: string;
 
-  [k: string]: any;
+  [k: string]: unknown;
 };
 
 function parseNumberBR(s: string) {
@@ -95,7 +95,7 @@ function datetimeLocalToISO(local: string) {
   return d.toISOString();
 }
 
-function stableIdemForPatch(id: string, payload: any) {
+function stableIdemForPatch(id: string, payload: Record<string, unknown>) {
   const keys = Object.keys(payload).sort();
   const flat = keys.map((k) => `${k}=${String(payload[k])}`).join("&");
   return `admin-coupon-patch:${id}:${flat}`;
@@ -152,27 +152,43 @@ export default function EditCouponPage() {
   useEffect(() => {
     if (!coupon) return;
 
-    setCode(coupon.code ?? "");
-    setAppliesTo((coupon.appliesTo ?? "BOTH") as PromoAppliesTo);
+    const timer = setTimeout(() => {
+      setCode(coupon.code ?? "");
+      setAppliesTo((coupon.appliesTo ?? "BOTH") as PromoAppliesTo);
 
-    const t = String(coupon.type ?? "PCT").toUpperCase();
-    setType((t === "FIXED" ? "FIXED" : "PCT") as DiscountType);
+      const t = String(coupon.type ?? "PCT").toUpperCase();
+      setType((t === "FIXED" ? "FIXED" : "PCT") as DiscountType);
 
-    setValue(coupon.value != null ? String(coupon.value) : "");
-    setActive(Boolean(coupon.active));
+      setValue(coupon.value != null ? String(coupon.value) : "");
+      setActive(Boolean(coupon.active));
 
-    setStartsAt(coupon.startsAt ? toDatetimeLocalValue(coupon.startsAt) : "");
-    setEndsAt(coupon.endsAt ? toDatetimeLocalValue(coupon.endsAt) : "");
+      setStartsAt(coupon.startsAt ? toDatetimeLocalValue(coupon.startsAt) : "");
+      setEndsAt(coupon.endsAt ? toDatetimeLocalValue(coupon.endsAt) : "");
 
-    setMinSubtotal(coupon.minSubtotal != null ? String(coupon.minSubtotal) : "");
-    setMaxDiscount(coupon.maxDiscount != null ? String(coupon.maxDiscount) : "");
-    setMaxRedemptions(coupon.maxRedemptions != null ? String(coupon.maxRedemptions) : "");
-    setMaxPerUser(coupon.maxPerUser != null ? String(coupon.maxPerUser) : "");
-  }, [coupon?.id]);
+      setMinSubtotal(coupon.minSubtotal != null ? String(coupon.minSubtotal) : "");
+      setMaxDiscount(coupon.maxDiscount != null ? String(coupon.maxDiscount) : "");
+      setMaxRedemptions(coupon.maxRedemptions != null ? String(coupon.maxRedemptions) : "");
+      setMaxPerUser(coupon.maxPerUser != null ? String(coupon.maxPerUser) : "");
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [coupon]);
 
   const saveM = useMutation({
     mutationFn: async () => {
-      const payload: any = {};
+      const payload: {
+        code?: string;
+        appliesTo?: PromoAppliesTo;
+        type?: DiscountType;
+        value?: number;
+        active?: boolean;
+        startsAt?: string;
+        endsAt?: string | null;
+        minSubtotal?: number | null;
+        maxDiscount?: number | null;
+        maxRedemptions?: number | null;
+        maxPerUser?: number | null;
+      } = {};
 
       const codeUp = code.trim().toUpperCase();
       if (!codeUp) throw new Error("Informe o código do cupom.");
@@ -239,7 +255,7 @@ export default function EditCouponPage() {
       await qc.invalidateQueries({ queryKey: ["admin-coupon", id] });
       router.replace("/admin/coupons");
     },
-    onError: (e: any) => {
+    onError: (e: unknown) => {
       toast.error(apiErrorMessage(e, "Falha ao salvar."));
     },
   });

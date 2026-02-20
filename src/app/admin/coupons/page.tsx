@@ -49,7 +49,7 @@ type Coupon = {
   code: string;
   active: boolean;
   appliesTo: PromoAppliesTo;
-  type: DiscountType | any;
+  type: DiscountType | string;
   value: string | number;
 
   startsAt: string;
@@ -58,7 +58,7 @@ type Coupon = {
   redemptionsCount?: number;
   isActiveNow?: boolean;
 
-  [k: string]: any;
+  [k: string]: unknown;
 };
 
 function fmtDate(iso?: string | null) {
@@ -330,7 +330,14 @@ export default function AdminCouponsPage() {
         if (e <= s) throw new Error("O fim deve ser maior que o início.");
       }
 
-      const payload: any = {
+      const payload: {
+        code: string;
+        appliesTo: PromoAppliesTo;
+        type: DiscountType;
+        value: number;
+        startsAt: string;
+        endsAt?: string;
+      } = {
         code,
         appliesTo: newAppliesTo,
         type: newType,
@@ -365,8 +372,8 @@ export default function AdminCouponsPage() {
       await qc.invalidateQueries({ queryKey: ["admin-coupons"] });
       await couponsQ.refetch();
     },
-    onError: (e: any) => {
-      const apiErr = e?.response?.data?.error;
+    onError: (e: unknown) => {
+      const apiErr = (e as { response?: { data?: { error?: unknown } } })?.response?.data?.error;
       if (String(apiErr || "").includes("Já existe cupom com esse code")) {
         toast.error("Esse código já existe. Edite o cupom existente ou use outro (ex.: FRIDAY20-2).");
         return;

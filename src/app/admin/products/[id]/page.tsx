@@ -79,7 +79,7 @@ type ProductPromotion = {
   createdAt?: string;
   updatedAt?: string;
   isActiveNow?: boolean;
-  [k: string]: any;
+  [k: string]: unknown;
 };
 
 // ===== helpers =====
@@ -123,7 +123,7 @@ function toDatetimeLocalValue(v?: string | Date | null) {
 }
 
 // Idempotency: depende do payload (evita conflito quando muda alguma coisa)
-function stableIdem(prefix: string, parts: Record<string, any>) {
+function stableIdem(prefix: string, parts: Record<string, unknown>) {
   const keys = Object.keys(parts).sort();
   const flat = keys.map((k) => `${k}=${String(parts[k])}`).join("&");
   return `${prefix}:${flat}`;
@@ -304,7 +304,7 @@ function promoConflictMsg(appliesTo: string) {
       await qc.invalidateQueries({ queryKey: ["product", id] });
       router.replace("/admin/products");
     },
-    onError: (err: any) => toast.error(apiErrorMessage(err, "Falha ao salvar.")),
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Falha ao salvar.")),
   });
 
   // ===== upload (presign -> PUT -> confirm) =====
@@ -360,7 +360,7 @@ function promoConflictMsg(appliesTo: string) {
       await qc.invalidateQueries({ queryKey: ["products"] });
       await productQ.refetch();
     },
-    onError: (err: any) => {
+    onError: (err: unknown) => {
       const msg = apiErrorMessage(err, "Falha no upload.");
       setUploadErr(msg);
       toast.error(msg);
@@ -378,7 +378,7 @@ function promoConflictMsg(appliesTo: string) {
       await qc.invalidateQueries({ queryKey: ["product", id] });
       await productQ.refetch();
     },
-    onError: (err: any) => toast.error(apiErrorMessage(err, "Falha ao remover imagem.")),
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Falha ao remover imagem.")),
   });
 
   const setPrimaryM = useMutation({
@@ -394,7 +394,7 @@ function promoConflictMsg(appliesTo: string) {
       await qc.invalidateQueries({ queryKey: ["product", id] });
       await productQ.refetch();
     },
-    onError: (err: any) => toast.error(apiErrorMessage(err, "Falha ao definir primária.")),
+    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Falha ao definir primária.")),
   });
 
   // ============================================================
@@ -470,7 +470,15 @@ function promoConflictMsg(appliesTo: string) {
       if (!Number.isFinite(priorityNum) || !Number.isInteger(priorityNum) || priorityNum < 0)
         throw new Error("Prioridade inválida (use inteiro >= 0).");
 
-      const payload: any = {
+      const payload: {
+        appliesTo: PromoAppliesTo;
+        type: DiscountType;
+        value: number;
+        active: boolean;
+        startsAt: string;
+        priority: number;
+        endsAt?: string;
+      } = {
         appliesTo: pAppliesTo,
         type: pType,
         value: valueNum,
@@ -499,8 +507,8 @@ function promoConflictMsg(appliesTo: string) {
       await qc.invalidateQueries({ queryKey: ["admin-product-promos", id] });
       await promosQ.refetch();
     },
-    onError: (e: any) => {
-  const status = e?.response?.status;
+    onError: (e: unknown) => {
+  const status = (e as { response?: { status?: number } })?.response?.status;
   if (status === 409) {
     toast.error(promoConflictMsg(pAppliesTo));
     return;
@@ -559,7 +567,15 @@ function promoConflictMsg(appliesTo: string) {
       if (!Number.isFinite(priorityNum) || !Number.isInteger(priorityNum) || priorityNum < 0)
         throw new Error("Prioridade inválida (use inteiro >= 0).");
 
-      const payload: any = {
+      const payload: {
+        appliesTo: PromoAppliesTo;
+        type: DiscountType;
+        value: number;
+        active: boolean;
+        startsAt: string;
+        priority: number;
+        endsAt: string | null;
+      } = {
         appliesTo: eAppliesTo,
         type: eType,
         value: valueNum,
@@ -581,7 +597,7 @@ function promoConflictMsg(appliesTo: string) {
       await qc.invalidateQueries({ queryKey: ["admin-product-promos", id] });
       await promosQ.refetch();
     },
-    onError: (e: any) => toast.error(apiErrorMessage(e, "Falha ao salvar promoção.")),
+    onError: (e: unknown) => toast.error(apiErrorMessage(e, "Falha ao salvar promoção.")),
   });
 
   const disablePromoM = useMutation({
@@ -597,8 +613,8 @@ function promoConflictMsg(appliesTo: string) {
       await qc.invalidateQueries({ queryKey: ["admin-product-promos", id] });
       await promosQ.refetch();
     },
-    onError: (e: any) => {
-  const status = e?.response?.status;
+    onError: (e: unknown) => {
+  const status = (e as { response?: { status?: number } })?.response?.status;
   if (status === 409) {
     toast.error(promoConflictMsg(eAppliesTo));
     return;

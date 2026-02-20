@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { RefreshCw, UserCheck, Wallet } from "lucide-react";
+import { RefreshCw, UserCheck, Wallet, type LucideIcon } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
@@ -86,7 +86,7 @@ function EmptyState({
   onRefresh,
   refreshing,
 }: {
-  icon: any;
+  icon: LucideIcon;
   title: string;
   subtitle: string;
   onRefresh: () => void;
@@ -216,9 +216,13 @@ export default function AdminInboxPage() {
 
   // “busy” por item (garante id certo)
   const actingSellerId =
-    (approveSeller.variables as any) ?? (rejectSeller.variables as any)?.id;
+    (typeof approveSeller.variables === "string"
+      ? approveSeller.variables
+      : (rejectSeller.variables as { id?: string } | undefined)?.id) ?? null;
   const actingPayoutId =
-    (markPaid.variables as any)?.id ?? (rejectPayout.variables as any)?.id;
+    (markPaid.variables as { id?: string } | undefined)?.id ??
+    (rejectPayout.variables as { id?: string } | undefined)?.id ??
+    null;
 
   const topRefreshing = unread.isFetching || sellers.isFetching || payouts.isFetching;
 

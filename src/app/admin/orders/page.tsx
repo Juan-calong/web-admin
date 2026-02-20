@@ -98,7 +98,7 @@ export default function AdminOrdersPage() {
     onError: (err) => toast.error(apiErrorMessage(err, "Falha ao aprovar/reprovar.")),
   });
 
-  const actingOrderId = (decideM.variables as any)?.orderId as string | undefined;
+  const actingOrderId = (decideM.variables as { orderId?: string } | undefined)?.orderId;
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 px-3 lg:px-6">
