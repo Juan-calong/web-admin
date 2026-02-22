@@ -58,7 +58,6 @@ type Product = {
   active: boolean;
   stock?: number | null;
 
-  // compat + novos
   categoryId?: string | null;
   categoryIds?: string[] | null;
   audience?: ProductAudience | null;
@@ -89,7 +88,6 @@ type ProductPromotion = {
   [k: string]: unknown;
 };
 
-// ===== helpers =====
 function normalizeMoney(s: string) {
   return s.trim().replace(",", ".");
 }
@@ -108,14 +106,12 @@ function fmtDateTime(iso?: string | null) {
   }
 }
 
-// "2026-01-24T15:30" (datetime-local) -> ISO
 function datetimeLocalToISO(local: string) {
   const d = new Date(local);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
 }
 
-// ISO -> "YYYY-MM-DDTHH:mm" (datetime-local)
 function toDatetimeLocalValue(v?: string | Date | null) {
   if (!v) return "";
   const d = typeof v === "string" ? new Date(v) : v;
@@ -129,29 +125,34 @@ function toDatetimeLocalValue(v?: string | Date | null) {
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
 }
 
-// Idempotency: depende do payload (evita conflito quando muda alguma coisa)
 function stableIdem(prefix: string, parts: Record<string, unknown>) {
   const keys = Object.keys(parts).sort();
   const flat = keys.map((k) => `${k}=${String(parts[k])}`).join("&");
   return `${prefix}:${flat}`;
 }
 
-/**
- * Bloqueia negativo e caracteres estranhos:
- * - money: permite dígitos + 1 separador decimal (.,)
- * - int: permite só dígitos
- */
+async function idemKey(prefix: string, payload: unknown) {
+  const json = JSON.stringify(payload);
+
+  const bytes = new TextEncoder().encode(json);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+
+  const b64 = btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  return `${prefix}:${b64}`; 
+}
+
 function sanitizeMoneyInput(v: string) {
-  // remove tudo que não seja dígito, ponto ou vírgula
   let s = String(v ?? "").replace(/[^\d.,]/g, "");
-  // se tiver mais de um separador, mantém só o primeiro e remove o resto
   const firstSepIndex = s.search(/[.,]/);
   if (firstSepIndex >= 0) {
     const head = s.slice(0, firstSepIndex);
     const tail = s.slice(firstSepIndex + 1).replace(/[.,]/g, "");
     s = head + s[firstSepIndex] + tail;
   }
-  // evita começar com separador
   s = s.replace(/^[.,]/, "");
   return s;
 }
@@ -175,7 +176,6 @@ function parseHighlights(text: string) {
     .map((s) => s.slice(0, 60));
 }
 
-// ✅ multi categorias
 function toggleCategoryId(id: string, prev: string[]) {
   return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
 }
@@ -184,7 +184,6 @@ function normalizeCategoryIds(mainId: string, ids: string[]) {
   return ids.includes(mainId) ? ids : [mainId, ...ids];
 }
 
-// ===== promo endpoints (ajuste se seu router for diferente) =====
 const promoEndpoints = {
   list: (productId: string) => `/admin/products/${productId}/promotions`,
   create: (productId: string) => `/admin/products/${productId}/promotions`,
@@ -215,7 +214,6 @@ export default function EditProductPage() {
     )} nesse período.`;
   }
 
-  // se alguém acessar /admin/products/new por engano nessa rota
   useEffect(() => {
     if (id === "new") router.replace("/admin/products/new");
   }, [id, router]);
@@ -244,24 +242,20 @@ export default function EditProductPage() {
     return [...items].sort((a, b) => a.name.localeCompare(b.name));
   }, [categoriesQ.data]);
 
-  // ===== form state =====
   const [sku, setSku] = useState("");
   const [name, setName] = useState("");
-  const [price, setPrice] = useState(""); // string (money)
+  const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
   const [highlightsText, setHighlightsText] = useState("");
   const [active, setActive] = useState(true);
   const [stock, setStock] = useState<number>(0);
 
-  // compat
   const [categoryId, setCategoryId] = useState<string>("");
 
-  // ✅ novos
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [availableToCustomer, setAvailableToCustomer] = useState(true);
   const audience: ProductAudience = availableToCustomer ? "ALL" : "STAFF_ONLY";
 
-  // ===== upload state =====
   const [file, setFile] = useState<File | null>(null);
   const [uploadErr, setUploadErr] = useState<string | null>(null);
 
@@ -275,7 +269,7 @@ export default function EditProductPage() {
     setDescription(product.description ?? "");
     setHighlightsText((product.highlights ?? []).join("\n"));
     setActive(!!product.active);
-    setStock(Math.max(0, Number(product.stock ?? 0))); // ✅ nunca negativo
+    setStock(Math.max(0, Number(product.stock ?? 0))); 
 
     const main = product.categoryId ?? "";
     const ids =
@@ -301,7 +295,6 @@ export default function EditProductPage() {
     ? categories.find((c) => c.id === categoryId)?.name
     : null;
 
-  // ===== salvar produto (com validações anti-negativo) =====
   const saveM = useMutation({
     mutationFn: async () => {
       const skuN = sku.trim();
@@ -329,7 +322,6 @@ export default function EditProductPage() {
         active: Boolean(active),
         stock: stockSafe,
 
-        // compat + novos:
         categoryId: categoryId ? categoryId : null,
         categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
         audience,
@@ -337,11 +329,11 @@ export default function EditProductPage() {
         highlights,
       };
 
-      const idem = stableIdem(`product-update:${id}`, payload);
+const idem = await idemKey(`product-update:${id}`, payload);
 
-      await api.patch(endpoints.products.update(id), payload, {
-        headers: { "Idempotency-Key": idem },
-      });
+await api.patch(endpoints.products.update(id), payload, {
+  headers: { "Idempotency-Key": idem },
+});
     },
     onSuccess: async () => {
       toast.success("Produto salvo.");
@@ -352,7 +344,6 @@ export default function EditProductPage() {
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Falha ao salvar.")),
   });
 
-  // ===== upload (presign -> PUT -> confirm) =====
   const uploadM = useMutation({
     mutationFn: async () => {
       setUploadErr(null);
@@ -442,9 +433,6 @@ export default function EditProductPage() {
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Falha ao definir primária.")),
   });
 
-  // ============================================================
-  // ==================== PROMOÇÕES DO PRODUTO ==================
-  // ============================================================
 
   const promosQ = useQuery({
     queryKey: ["admin-product-promos", id],
@@ -468,7 +456,6 @@ export default function EditProductPage() {
     });
   }, [promosQ.data]);
 
-  // create promo form
   const [pAppliesTo, setPAppliesTo] = useState<PromoAppliesTo>("BOTH");
   const [pType, setPType] = useState<DiscountType>("PCT");
   const [pValue, setPValue] = useState("");
@@ -479,7 +466,6 @@ export default function EditProductPage() {
 
   useEffect(() => {
     if (!pStartsAt) setPStartsAt(toDatetimeLocalValue(new Date()));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function validatePromo(type: DiscountType, valueNum: number) {
@@ -511,7 +497,6 @@ export default function EditProductPage() {
       }
 
       const priorityNum = pPriority.trim() ? Number(pPriority) : 0;
-      // ✅ prioridade não-negativa + inteiro
       if (!Number.isFinite(priorityNum) || !Number.isInteger(priorityNum) || priorityNum < 0)
         throw new Error("Prioridade inválida (use inteiro >= 0).");
 
@@ -562,7 +547,6 @@ export default function EditProductPage() {
     },
   });
 
-  // edição inline por promo
   const [editPromoId, setEditPromoId] = useState<string | null>(null);
   const [eAppliesTo, setEAppliesTo] = useState<PromoAppliesTo>("BOTH");
   const [eType, setEType] = useState<DiscountType>("PCT");
@@ -608,7 +592,6 @@ export default function EditProductPage() {
       }
 
       const priorityNum = ePriority.trim() ? Number(ePriority) : 0;
-      // ✅ prioridade não-negativa + inteiro
       if (!Number.isFinite(priorityNum) || !Number.isInteger(priorityNum) || priorityNum < 0)
         throw new Error("Prioridade inválida (use inteiro >= 0).");
 
