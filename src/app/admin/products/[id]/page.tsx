@@ -14,6 +14,7 @@ import {
   Tag,
   Image as ImageIcon,
 } from "lucide-react";
+import { ProductStatusPanel } from "@/components/admin/ProductStatusPanel";
 
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
@@ -36,6 +37,7 @@ import { Badge } from "@/components/ui/badge";
 
 type PromoAppliesTo = "SELLER" | "SALON" | "BOTH";
 type DiscountType = "PCT" | "FIXED" | "PRICE";
+type ProductAudience = "ALL" | "STAFF_ONLY";
 
 type ProductImage = {
   id: string;
@@ -55,7 +57,12 @@ type Product = {
   price: string;
   active: boolean;
   stock?: number | null;
+
+  // compat + novos
   categoryId?: string | null;
+  categoryIds?: string[] | null;
+  audience?: ProductAudience | null;
+
   highlights?: string[] | null;
   images?: ProductImage[];
 };
@@ -168,6 +175,15 @@ function parseHighlights(text: string) {
     .map((s) => s.slice(0, 60));
 }
 
+// ✅ multi categorias
+function toggleCategoryId(id: string, prev: string[]) {
+  return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+}
+function normalizeCategoryIds(mainId: string, ids: string[]) {
+  if (!mainId) return ids;
+  return ids.includes(mainId) ? ids : [mainId, ...ids];
+}
+
 // ===== promo endpoints (ajuste se seu router for diferente) =====
 const promoEndpoints = {
   list: (productId: string) => `/admin/products/${productId}/promotions`,
@@ -185,16 +201,19 @@ export default function EditProductPage() {
   const id = params.id;
 
   function appliesToLabel(v: string) {
-  if (v === "SELLER") return "Vendedor";
-  if (v === "SALON") return "Salão";
-  if (v === "BOTH") return "Ambos";
-  return v;
-}
+    if (v === "SELLER") return "Vendedor";
+    if (v === "SALON") return "Salão";
+    if (v === "BOTH") return "Ambos";
+    return v;
+  }
 
-function promoConflictMsg(appliesTo: string) {
-  if (appliesTo === "BOTH") return "Conflito: já existe promo ativa (Salão/Vendedor) nesse período.";
-  return `Conflito: já existe promo ativa para ${appliesToLabel(appliesTo)} nesse período.`;
-}
+  function promoConflictMsg(appliesTo: string) {
+    if (appliesTo === "BOTH")
+      return "Conflito: já existe promo ativa (Salão/Vendedor) nesse período.";
+    return `Conflito: já existe promo ativa para ${appliesToLabel(
+      appliesTo
+    )} nesse período.`;
+  }
 
   // se alguém acessar /admin/products/new por engano nessa rota
   useEffect(() => {
@@ -233,7 +252,14 @@ function promoConflictMsg(appliesTo: string) {
   const [highlightsText, setHighlightsText] = useState("");
   const [active, setActive] = useState(true);
   const [stock, setStock] = useState<number>(0);
+
+  // compat
   const [categoryId, setCategoryId] = useState<string>("");
+
+  // ✅ novos
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
+  const [availableToCustomer, setAvailableToCustomer] = useState(true);
+  const audience: ProductAudience = availableToCustomer ? "ALL" : "STAFF_ONLY";
 
   // ===== upload state =====
   const [file, setFile] = useState<File | null>(null);
@@ -250,7 +276,19 @@ function promoConflictMsg(appliesTo: string) {
     setHighlightsText((product.highlights ?? []).join("\n"));
     setActive(!!product.active);
     setStock(Math.max(0, Number(product.stock ?? 0))); // ✅ nunca negativo
-    setCategoryId(product.categoryId ?? "");
+
+    const main = product.categoryId ?? "";
+    const ids =
+      Array.isArray(product.categoryIds) && product.categoryIds.length > 0
+        ? product.categoryIds
+        : main
+        ? [main]
+        : [];
+
+    setCategoryId(main);
+    setCategoryIds(ids.filter((x) => x !== main));
+
+    setAvailableToCustomer((product.audience ?? "ALL") !== "STAFF_ONLY");
   }, [product?.id]);
 
   const images = product?.images ?? [];
@@ -290,12 +328,19 @@ function promoConflictMsg(appliesTo: string) {
         price: priceSan,
         active: Boolean(active),
         stock: stockSafe,
+
+        // compat + novos:
         categoryId: categoryId ? categoryId : null,
-         highlights,
+        categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
+        audience,
+
+        highlights,
       };
 
+      const idem = stableIdem(`product-update:${id}`, payload);
+
       await api.patch(endpoints.products.update(id), payload, {
-        headers: { "Idempotency-Key": `product-update:${id}` },
+        headers: { "Idempotency-Key": idem },
       });
     },
     onSuccess: async () => {
@@ -508,13 +553,13 @@ function promoConflictMsg(appliesTo: string) {
       await promosQ.refetch();
     },
     onError: (e: unknown) => {
-  const status = (e as { response?: { status?: number } })?.response?.status;
-  if (status === 409) {
-    toast.error(promoConflictMsg(pAppliesTo));
-    return;
-  }
-  toast.error(apiErrorMessage(e, "Falha ao criar promoção."));
-},
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      if (status === 409) {
+        toast.error(promoConflictMsg(pAppliesTo));
+        return;
+      }
+      toast.error(apiErrorMessage(e, "Falha ao criar promoção."));
+    },
   });
 
   // edição inline por promo
@@ -614,15 +659,14 @@ function promoConflictMsg(appliesTo: string) {
       await promosQ.refetch();
     },
     onError: (e: unknown) => {
-  const status = (e as { response?: { status?: number } })?.response?.status;
-  if (status === 409) {
-    toast.error(promoConflictMsg(eAppliesTo));
-    return;
-  }
-  toast.error(apiErrorMessage(e, "Falha ao salvar promoção."));
-},
+      const status = (e as { response?: { status?: number } })?.response?.status;
+      if (status === 409) {
+        toast.error(promoConflictMsg(eAppliesTo));
+        return;
+      }
+      toast.error(apiErrorMessage(e, "Falha ao salvar promoção."));
+    },
   });
-
 
   if (id === "new") return null;
 
@@ -660,9 +704,32 @@ function promoConflictMsg(appliesTo: string) {
                 <h1 className="text-xl sm:text-2xl font-black leading-tight break-words">
                   {name || "Editar produto"}
                 </h1>
+
                 <Badge className={cn("rounded-full", statusPill(active))}>
                   {active ? "ATIVO" : "INATIVO"}
                 </Badge>
+
+                {/* ✅ Audience badge */}
+                <Badge
+                  className={cn(
+                    "rounded-full",
+                    audience === "STAFF_ONLY"
+                      ? "bg-zinc-200 text-zinc-900 border-transparent"
+                      : "bg-emerald-600 text-white border-transparent"
+                  )}
+                >
+                  <Badge
+  className={cn(
+    "rounded-full border",
+    audience === "STAFF_ONLY"
+      ? "bg-zinc-50 text-zinc-700 border-zinc-200"
+      : "bg-emerald-50 text-emerald-700 border-emerald-200"
+  )}
+>
+  {audience === "STAFF_ONLY" ? "Somente staff" : "Cliente vê"}
+</Badge>
+                </Badge>
+
                 <Badge variant="secondary" className="rounded-full">
                   Admin
                 </Badge>
@@ -670,12 +737,9 @@ function promoConflictMsg(appliesTo: string) {
 
               <div className="text-sm text-black/60 break-words">
                 SKU:{" "}
-                <span className="font-mono text-black/70 break-all">
-                  {sku || "-"}
-                </span>{" "}
+                <span className="font-mono text-black/70 break-all">{sku || "-"}</span>{" "}
                 <span className="text-black/30">•</span>{" "}
-                ID:{" "}
-                <span className="font-mono text-black/60 break-all">{id}</span>
+                ID: <span className="font-mono text-black/60 break-all">{id}</span>
               </div>
             </div>
 
@@ -775,7 +839,7 @@ function promoConflictMsg(appliesTo: string) {
                     placeholder="Opcional..."
                   />
                 </div>
-                
+
                 <div className="grid gap-2">
                   <Label>Destaques (1 por linha)</Label>
                   <Textarea
@@ -789,60 +853,92 @@ function promoConflictMsg(appliesTo: string) {
                   </div>
                 </div>
 
-
-
                 {/* CATEGORIA + STATUS */}
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label>Categoria</Label>
-                    <select
-                      className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
-                      value={categoryId}
-                      onChange={(e) => setCategoryId(e.target.value)}
-                      disabled={categoriesQ.isLoading}
-                    >
-                      <option value="">Sem categoria</option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="rounded-2xl border bg-white p-4 shadow-sm">
+  <Label>Categoria principal (opcional)</Label>
+
+  <div className="mt-2">
+    <select
+      className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
+      value={categoryId}
+      onChange={(e) => {
+        const v = e.target.value;
+        setCategoryId(v);
+        setCategoryIds((prev) => prev.filter((x) => x !== v));
+      }}
+      disabled={categoriesQ.isLoading}
+    >
+      <option value="">Sem categoria principal</option>
+      {categories.map((c) => (
+        <option key={c.id} value={c.id}>
+          {c.name}
+        </option>
+      ))}
+    </select>
+  </div>
+
+  <div className="mt-2 min-h-[18px] text-xs text-black/50">
+    {categoriesQ.isLoading ? "Carregando categorias…" : null}
+    {categoriesQ.isError ? (
+      <span className="text-red-600">Erro ao carregar categorias.</span>
+    ) : null}
+    {!categoriesQ.isLoading && !categoriesQ.isError ? (
+      categoryId ? "Categoria principal definida." : "Nenhuma categoria principal."
+    ) : null}
+  </div>
+</div>
+
+<div className="rounded-2xl border bg-white p-4 shadow-sm">
+  <Label>Status</Label>
+
+  <div className="mt-2">
+    <ProductStatusPanel
+      active={active}
+      onActiveChange={setActive}
+      availableToCustomer={availableToCustomer}
+      onAvailableToCustomerChange={setAvailableToCustomer}
+    />
+  </div>
+</div>
+                </div>
+
+                {/* ✅ multi categorias */}
+                <div className="grid gap-2">
+                  <Label>Categorias (multi)</Label>
+
+                  <div className="rounded-2xl border p-3 space-y-2">
+                    <div className="text-xs text-black/60">
+                      Selecionadas: <b>{categoryIds.length}</b>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {categories.filter((c) => c.id !== categoryId).map((c) => {
+                        const checked = categoryIds.includes(c.id);
+                        return (
+                          <label
+                            key={c.id}
+                            className={cn(
+                              "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm cursor-pointer select-none",
+                              checked ? "bg-black/5" : "bg-white"
+                            )}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setCategoryIds((prev) => toggleCategoryId(c.id, prev))
+                              }
+                            />
+                            <span className="truncate">{c.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
 
                     <div className="text-xs text-black/50">
-                      {categoriesQ.isLoading ? "Carregando categorias…" : null}
-                      {categoriesQ.isError ? (
-                        <span className="text-red-600">Erro ao carregar categorias.</span>
-                      ) : null}
-                      {!categoriesQ.isLoading && !categoriesQ.isError ? (
-                        selectedCategoryName ? (
-                          <>
-                            Selecionada:{" "}
-                            <span className="font-semibold">{selectedCategoryName}</span>
-                          </>
-                        ) : (
-                          "Nenhuma categoria"
-                        )
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label>Status</Label>
-                    <div className="rounded-2xl border bg-zinc-50 p-3">
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={active}
-                          onChange={(e) => setActive(e.target.checked)}
-                        />
-                        Produto ativo
-                      </label>
-                      <div className="mt-2">
-                        <Badge className={cn("rounded-full", statusPill(active))}>
-                          {active ? "ATIVO" : "INATIVO"}
-                        </Badge>
-                      </div>
+                      Esse bloco preenche <code>categoryIds</code>. A categoria principal (
+                      <code>categoryId</code>) é opcional.
                     </div>
                   </div>
                 </div>
@@ -883,8 +979,8 @@ function promoConflictMsg(appliesTo: string) {
                   Promoções do produto
                 </CardTitle>
                 <CardDescription>
-                  Promoção é aplicada no preço do item (antes de cupom). Use{" "}
-                  <b>Prioridade</b> para escolher qual vence.
+                  Promoção é aplicada no preço do item (antes de cupom). Use <b>Prioridade</b>{" "}
+                  para escolher qual vence.
                 </CardDescription>
               </CardHeader>
 
@@ -921,9 +1017,7 @@ function promoConflictMsg(appliesTo: string) {
                         <option value="FIXED">Desconto (R$)</option>
                         <option value="PRICE">Preço promocional (R$)</option>
                       </select>
-                      <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                        {"\u00A0"}
-                      </div>
+                      <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
                     </div>
 
                     <div className="grid gap-2 md:col-span-4">
@@ -949,9 +1043,7 @@ function promoConflictMsg(appliesTo: string) {
                         value={pStartsAt}
                         onChange={(e) => setPStartsAt(e.target.value)}
                       />
-                      <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                        {"\u00A0"}
-                      </div>
+                      <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
                     </div>
 
                     <div className="grid gap-2 md:col-span-6">
@@ -997,7 +1089,7 @@ function promoConflictMsg(appliesTo: string) {
                       </div>
                     </div>
 
-                    {/* Botão: full no mobile, alinhado no desktop */}
+                    {/* Botão */}
                     <div className="md:col-span-4 flex flex-col md:items-end">
                       <div className="hidden md:block h-5" />
                       <div className="hidden md:block min-h-[32px]" />
@@ -1023,10 +1115,7 @@ function promoConflictMsg(appliesTo: string) {
                       disabled={promosQ.isFetching}
                     >
                       <RefreshCw
-                        className={cn(
-                          "mr-2 h-4 w-4",
-                          promosQ.isFetching ? "animate-spin" : ""
-                        )}
+                        className={cn("mr-2 h-4 w-4", promosQ.isFetching ? "animate-spin" : "")}
                       />
                       {promosQ.isFetching ? "Atualizando…" : "Atualizar"}
                     </Button>
@@ -1048,11 +1137,7 @@ function promoConflictMsg(appliesTo: string) {
                         const isEditing = editPromoId === p.id;
 
                         const statusLabel =
-                          p.active === false
-                            ? "INATIVA"
-                            : p.isActiveNow
-                            ? "ATIVA AGORA"
-                            : "PROGRAMADA/EXPIRADA";
+                          p.active === false ? "INATIVA" : p.isActiveNow ? "ATIVA AGORA" : "PROGRAMADA/EXPIRADA";
 
                         return (
                           <div key={p.id} className="rounded-3xl border bg-white p-4 space-y-3">
@@ -1078,9 +1163,7 @@ function promoConflictMsg(appliesTo: string) {
                                   Valor: <span className="font-mono">{String(p.value)}</span> • Início:{" "}
                                   {fmtDateTime(p.startsAt)} • Fim: {fmtDateTime(p.endsAt ?? null)}
                                 </div>
-                                <div className="text-[10px] text-black/50 font-mono break-all">
-                                  ID: {p.id}
-                                </div>
+                                <div className="text-[10px] text-black/50 font-mono break-all">ID: {p.id}</div>
                               </div>
 
                               <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
@@ -1110,8 +1193,7 @@ function promoConflictMsg(appliesTo: string) {
                                   className="w-full rounded-xl sm:w-auto"
                                   disabled={disablePromoM.isPending || p.active === false}
                                   onClick={() => {
-                                    if (confirm("Desativar esta promoção?"))
-                                      disablePromoM.mutate(p.id);
+                                    if (confirm("Desativar esta promoção?")) disablePromoM.mutate(p.id);
                                   }}
                                 >
                                   Desativar
@@ -1129,17 +1211,13 @@ function promoConflictMsg(appliesTo: string) {
                                     <select
                                       className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
                                       value={eAppliesTo}
-                                      onChange={(e) =>
-                                        setEAppliesTo(e.target.value as PromoAppliesTo)
-                                      }
+                                      onChange={(e) => setEAppliesTo(e.target.value as PromoAppliesTo)}
                                     >
                                       <option value="BOTH">Ambos</option>
                                       <option value="SALON">Somente Salão</option>
                                       <option value="SELLER">Somente Vendedor</option>
                                     </select>
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                                      {"\u00A0"}
-                                    </div>
+                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
                                   </div>
 
                                   <div className="grid gap-2 sm:col-span-2">
@@ -1153,9 +1231,7 @@ function promoConflictMsg(appliesTo: string) {
                                       <option value="FIXED">Desconto (R$)</option>
                                       <option value="PRICE">Preço promocional (R$)</option>
                                     </select>
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                                      {"\u00A0"}
-                                    </div>
+                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
                                   </div>
 
                                   <div className="grid gap-2 sm:col-span-2">
@@ -1180,9 +1256,7 @@ function promoConflictMsg(appliesTo: string) {
                                       value={eStartsAt}
                                       onChange={(e) => setEStartsAt(e.target.value)}
                                     />
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                                      {"\u00A0"}
-                                    </div>
+                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
                                   </div>
 
                                   <div className="grid gap-2 sm:col-span-3">
@@ -1221,9 +1295,7 @@ function promoConflictMsg(appliesTo: string) {
                                       />
                                       Ativa
                                     </label>
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                                      {"\u00A0"}
-                                    </div>
+                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
                                   </div>
 
                                   <div className="sm:col-span-2 flex flex-col sm:items-end">
@@ -1290,9 +1362,7 @@ function promoConflictMsg(appliesTo: string) {
                     onClick={() => productQ.refetch()}
                     disabled={productQ.isFetching}
                   >
-                    <RefreshCw
-                      className={cn("mr-2 h-4 w-4", productQ.isFetching ? "animate-spin" : "")}
-                    />
+                    <RefreshCw className={cn("mr-2 h-4 w-4", productQ.isFetching ? "animate-spin" : "")} />
                     Atualizar
                   </Button>
                 </div>
@@ -1309,9 +1379,7 @@ function promoConflictMsg(appliesTo: string) {
                   />
 
                   <div className="text-xs text-black/50 break-words">
-                    {file
-                      ? `Selecionado: ${file.name} (${Math.round(file.size / 1024)} KB)`
-                      : "Escolha um arquivo JPG/PNG/WEBP."}
+                    {file ? `Selecionado: ${file.name} (${Math.round(file.size / 1024)} KB)` : "Escolha um arquivo JPG/PNG/WEBP."}
                   </div>
 
                   {uploadErr ? <div className="text-sm text-red-600">{uploadErr}</div> : null}
@@ -1411,11 +1479,7 @@ function promoConflictMsg(appliesTo: string) {
             Voltar
           </Button>
 
-          <Button
-            className="w-1/2 rounded-xl"
-            onClick={() => saveM.mutate()}
-            disabled={saveM.isPending}
-          >
+          <Button className="w-1/2 rounded-xl" onClick={() => saveM.mutate()} disabled={saveM.isPending}>
             <Save className="mr-2 h-4 w-4" />
             {saveM.isPending ? "Salvando…" : "Salvar"}
           </Button>

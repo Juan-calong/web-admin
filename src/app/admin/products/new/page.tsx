@@ -9,14 +9,21 @@ import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+
+import { ProductStatusPanel } from "@/components/admin/ProductStatusPanel";
 
 type Category = {
   id: string;
@@ -24,7 +31,12 @@ type Category = {
   active: boolean;
 };
 
-function stableKey(prefix: string, ...parts: (string | number | boolean | null | undefined)[]) {
+type ProductAudience = "ALL" | "STAFF_ONLY";
+
+function stableKey(
+  prefix: string,
+  ...parts: (string | number | boolean | null | undefined)[]
+) {
   return `${prefix}:${parts.map((p) => String(p ?? "")).join(":")}`;
 }
 
@@ -38,6 +50,10 @@ function parseHighlights(text: string) {
     .map((s) => s.slice(0, 60));
 }
 
+function toggleCategoryId(id: string, prev: string[]) {
+  return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+}
+
 export default function NewProductPage() {
   const router = useRouter();
   const qc = useQueryClient();
@@ -46,15 +62,26 @@ export default function NewProductPage() {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
-  const [highlightsText, setHighlightsText] = useState(""); // ✅ NOVO
+  const [highlightsText, setHighlightsText] = useState("");
   const [stock, setStock] = useState<number>(0);
   const [active, setActive] = useState(true);
+
+  // compat (categoria principal)
   const [categoryId, setCategoryId] = useState<string>("");
+
+  // novo (multi) -> EXTRAS (não inclui a principal)
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
+
+  // novo (audience)
+  const [availableToCustomer, setAvailableToCustomer] = useState(true);
+  const audience: ProductAudience = availableToCustomer ? "ALL" : "STAFF_ONLY";
 
   const categoriesQ = useQuery({
     queryKey: ["categories", { active: true }],
     queryFn: async () => {
-      const res = await api.get(endpoints.categories.list, { params: { active: "true" } });
+      const res = await api.get(endpoints.categories.list, {
+        params: { active: "true" },
+      });
       return (res.data?.items ?? []) as Category[];
     },
     refetchOnWindowFocus: false,
@@ -62,7 +89,9 @@ export default function NewProductPage() {
   });
 
   useEffect(() => {
-    if (categoriesQ.isError) toast.error(apiErrorMessage(categoriesQ.error, "Erro ao carregar categorias."));
+    if (categoriesQ.isError) {
+      toast.error(apiErrorMessage(categoriesQ.error, "Erro ao carregar categorias."));
+    }
   }, [categoriesQ.isError, categoriesQ.error]);
 
   const categories = useMemo(() => {
@@ -77,6 +106,16 @@ export default function NewProductPage() {
 
   const createM = useMutation({
     mutationFn: async () => {
+      const skuN = sku.trim();
+      const nameN = name.trim();
+      const priceN = price.trim().replace(",", ".");
+
+      if (!skuN) throw new Error("SKU é obrigatório.");
+      if (!nameN) throw new Error("Nome é obrigatório.");
+      if (!priceN) throw new Error("Preço é obrigatório.");
+
+      const stockSafe = Number.isFinite(stock) ? Math.max(0, Math.trunc(stock)) : 0;
+
       const payload: {
         sku: string;
         name: string;
@@ -84,26 +123,42 @@ export default function NewProductPage() {
         active: boolean;
         stock: number;
         categoryId: string | null;
+
+        // ✅ novos:
+        categoryIds: string[];
+        audience: ProductAudience;
+
         description?: string;
         highlights?: string[];
       } = {
-        sku: sku.trim(),
-        name: name.trim(),
-        price: price.trim().replace(",", "."),
+        sku: skuN,
+        name: nameN,
+        price: priceN,
         active: Boolean(active),
-        stock: Number.isFinite(stock) ? stock : 0,
+        stock: stockSafe,
         categoryId: categoryId ? categoryId : null,
+
+        // ✅ envia principal + extras (sem duplicar)
+        categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
+        audience,
       };
 
       const desc = description.trim();
-      if (desc) payload.description = desc; // ✅ só manda se tiver
+      if (desc) payload.description = desc;
 
-      // ✅ highlights: só manda se tiver
       const highlights = parseHighlights(highlightsText);
       if (highlights.length) payload.highlights = highlights;
 
       await api.post(endpoints.products.create, payload, {
-        headers: { "Idempotency-Key": stableKey("product-create", payload.sku || payload.name || "no-key") },
+        headers: {
+          "Idempotency-Key": stableKey(
+            "product-create",
+            payload.sku || payload.name || "no-key",
+            payload.categoryId ?? "",
+            payload.categoryIds.join(","),
+            payload.audience
+          ),
+        },
       });
     },
     onSuccess: async () => {
@@ -169,7 +224,9 @@ export default function NewProductPage() {
                 onChange={(e) => setPrice(e.target.value)}
                 placeholder="Ex.: 59.90"
               />
-              <div className="text-xs text-black/50">Use o formato que seu backend espera (ex.: 59.90).</div>
+              <div className="text-xs text-black/50">
+                Use o formato que seu backend espera (ex.: 59.90).
+              </div>
             </div>
 
             <div className="grid gap-2">
@@ -182,7 +239,6 @@ export default function NewProductPage() {
               />
             </div>
 
-            {/* ✅ NOVO: Destaques */}
             <div className="grid gap-2">
               <Label>Destaques (1 por linha)</Label>
               <Textarea
@@ -191,27 +247,39 @@ export default function NewProductPage() {
                 onChange={(e) => setHighlightsText(e.target.value)}
                 placeholder={`Ex.:\nBrilho\nHidratação\nReconstrução`}
               />
-              <div className="text-xs text-black/50">Máx: 10 itens • 60 caracteres por linha.</div>
+              <div className="text-xs text-black/50">
+                Máx: 10 itens • 60 caracteres por linha.
+              </div>
             </div>
 
             <div className="grid gap-2">
               <Label>Estoque</Label>
               <Input
                 type="number"
+                min={0}
                 className="rounded-xl"
                 value={stock}
-                onChange={(e) => setStock(Number(e.target.value))}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setStock(Number.isFinite(n) ? Math.max(0, n) : 0);
+                }}
               />
             </div>
 
+            {/* ✅ Categoria principal (compat) */}
             <div className="grid gap-2">
-              <Label>Categoria</Label>
+              <Label>Categoria principal (opcional)</Label>
               <select
                 className="h-10 rounded-xl border bg-white px-3 text-sm"
                 value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setCategoryId(v);
+                  // garante que a principal NÃO fique dentro do multi
+                  setCategoryIds((prev) => prev.filter((x) => x !== v));
+                }}
               >
-                <option value="">Sem categoria</option>
+                <option value="">Sem categoria principal</option>
                 {categories.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -219,8 +287,12 @@ export default function NewProductPage() {
                 ))}
               </select>
 
-              {categoriesQ.isLoading ? <div className="text-xs text-black/50">Carregando categorias…</div> : null}
-              {categoriesQ.isError ? <div className="text-xs text-red-600">Erro ao carregar categorias.</div> : null}
+              {categoriesQ.isLoading ? (
+                <div className="text-xs text-black/50">Carregando categorias…</div>
+              ) : null}
+              {categoriesQ.isError ? (
+                <div className="text-xs text-red-600">Erro ao carregar categorias.</div>
+              ) : null}
 
               <div className="text-xs text-black/50">
                 {selectedCategoryName ? (
@@ -228,20 +300,77 @@ export default function NewProductPage() {
                     Selecionada: <span className="font-semibold">{selectedCategoryName}</span>
                   </>
                 ) : (
-                  "Nenhuma categoria"
+                  "Nenhuma categoria principal"
                 )}
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Checkbox checked={active} onCheckedChange={(v) => setActive(Boolean(v))} />
-              <span className="text-sm font-medium">Ativo</span>
+            {/* ✅ Status + Visibilidade */}
+            <div className="grid gap-2">
+              <Label>Status</Label>
+
+              <ProductStatusPanel
+                active={active}
+                onActiveChange={setActive}
+                availableToCustomer={availableToCustomer}
+                onAvailableToCustomerChange={setAvailableToCustomer}
+              />
+
+              <div className="text-xs text-black/50">
+                <b>Cliente final</b> • <b>Salão/Vendedor</b>
+              </div>
+            </div>
+
+            {/* ✅ Multi categorias (extras) */}
+            <div className="grid gap-2">
+              <Label>Categorias extras (multi)</Label>
+
+              <div className="rounded-2xl border p-3 space-y-2">
+                <div className="text-xs text-black/60">
+                  Selecionadas: <b>{categoryIds.length}</b>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {categories
+                    .filter((c) => c.id !== categoryId)
+                    .map((c) => {
+                      const checked = categoryIds.includes(c.id);
+                      return (
+                        <label
+                          key={c.id}
+                          className={[
+                            "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm cursor-pointer select-none",
+                            checked ? "bg-black/5" : "bg-white",
+                          ].join(" ")}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => setCategoryIds((prev) => toggleCategoryId(c.id, prev))}
+                          />
+                          <span className="truncate">{c.name}</span>
+                        </label>
+                      );
+                    })}
+                </div>
+
+                <div className="text-xs text-black/50">
+                  Este bloco preenche <code>categoryIds</code> (extras). A categoria principal (
+                  <code>categoryId</code>) fica separada.
+                </div>
+              </div>
             </div>
 
             <Separator />
 
             <div className="flex gap-2">
-              <Button type="button" variant="outline" className="rounded-xl" onClick={() => router.back()} disabled={createM.isPending}>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => router.back()}
+                disabled={createM.isPending}
+              >
                 Cancelar
               </Button>
 
