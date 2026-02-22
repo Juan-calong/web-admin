@@ -32,7 +32,9 @@ type Product = {
   id: string;
   sku: string;
   name: string;
-  price: string; // backend manda string
+  price: string; 
+  customerPrice?: string | null;
+effectivePrice?: string | null;
   description?: string | null;
   active: boolean;
   categoryId?: string | null;
@@ -438,7 +440,19 @@ function ProductRow({ p }: { p: Product }) {
       </TableCell>
 
       {/* PREÇO */}
-      <TableCell className="align-middle font-semibold whitespace-nowrap">{brl(p.price)}</TableCell>
+<TableCell className="align-middle whitespace-nowrap">
+  <div className="font-semibold leading-5">
+    {brl((p.effectivePrice ?? p.price) as string)}
+  </div>
+
+  {p.customerPrice ? (
+    <div className="text-[11px] text-black/60 leading-4">
+      Cliente: {brl(p.customerPrice)}
+    </div>
+  ) : (
+    <div className="text-[11px] text-black/40 leading-4">Cliente: padrão</div>
+  )}
+</TableCell>
 
       {/* PROMO */}
       <TableCell className="align-middle">{promoBadge}</TableCell>

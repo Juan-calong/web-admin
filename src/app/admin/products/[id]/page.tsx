@@ -35,7 +35,7 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 
-type PromoAppliesTo = "SELLER" | "SALON" | "BOTH";
+type PromoAppliesTo = "SELLER" | "SALON" | "CUSTOMER" | "BOTH";
 type DiscountType = "PCT" | "FIXED" | "PRICE";
 type ProductAudience = "ALL" | "STAFF_ONLY";
 
@@ -57,10 +57,13 @@ type Product = {
   price: string;
   active: boolean;
   stock?: number | null;
+  customerPrice?: string | null;
+  effectivePrice?: string | null;
 
   categoryId?: string | null;
   categoryIds?: string[] | null;
   audience?: ProductAudience | null;
+  
 
   highlights?: string[] | null;
   images?: ProductImage[];
@@ -203,12 +206,13 @@ export default function EditProductPage() {
     if (v === "SELLER") return "Vendedor";
     if (v === "SALON") return "Salão";
     if (v === "BOTH") return "Ambos";
+    if (v === "CUSTOMER") return "Cliente final";
     return v;
   }
 
   function promoConflictMsg(appliesTo: string) {
-    if (appliesTo === "BOTH")
-      return "Conflito: já existe promo ativa (Salão/Vendedor) nesse período.";
+if (appliesTo === "BOTH")
+  return "Conflito: já existe promo ativa (Cliente final/Salão/Vendedor) nesse período.";
     return `Conflito: já existe promo ativa para ${appliesToLabel(
       appliesTo
     )} nesse período.`;
@@ -246,6 +250,7 @@ export default function EditProductPage() {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
+  const [customerPrice, setCustomerPrice] = useState("");
   const [highlightsText, setHighlightsText] = useState("");
   const [active, setActive] = useState(true);
   const [stock, setStock] = useState<number>(0);
@@ -266,6 +271,7 @@ export default function EditProductPage() {
     setSku(product.sku ?? "");
     setName(product.name ?? "");
     setPrice(String(product.price ?? ""));
+    setCustomerPrice(product.customerPrice != null ? String(product.customerPrice) : "");
     setDescription(product.description ?? "");
     setHighlightsText((product.highlights ?? []).join("\n"));
     setActive(!!product.active);
@@ -319,6 +325,7 @@ export default function EditProductPage() {
         name: nameN,
         description: description.trim() ? description.trim() : null,
         price: priceSan,
+        customerPrice: customerPrice.trim() ? normalizeMoney(customerPrice) : null,
         active: Boolean(active),
         stock: stockSafe,
 
@@ -694,14 +701,6 @@ await api.patch(endpoints.products.update(id), payload, {
 
                 {/* ✅ Audience badge */}
                 <Badge
-                  className={cn(
-                    "rounded-full",
-                    audience === "STAFF_ONLY"
-                      ? "bg-zinc-200 text-zinc-900 border-transparent"
-                      : "bg-emerald-600 text-white border-transparent"
-                  )}
-                >
-                  <Badge
   className={cn(
     "rounded-full border",
     audience === "STAFF_ONLY"
@@ -709,9 +708,8 @@ await api.patch(endpoints.products.update(id), payload, {
       : "bg-emerald-50 text-emerald-700 border-emerald-200"
   )}
 >
-  {audience === "STAFF_ONLY" ? "Somente staff" : "Cliente vê"}
+  {audience === "STAFF_ONLY" ? "Salão/Vendedor" : "Cliente vê"}
 </Badge>
-                </Badge>
 
                 <Badge variant="secondary" className="rounded-full">
                   Admin
@@ -812,6 +810,21 @@ await api.patch(endpoints.products.update(id), payload, {
                     Somente números. Valor deve ser maior que 0.
                   </div>
                 </div>
+
+                <div className="grid gap-2">
+  <Label>Preço cliente final (opcional)</Label>
+  <Input
+    className="w-full rounded-xl"
+    value={customerPrice}
+    onChange={(e) => setCustomerPrice(sanitizeMoneyInput(e.target.value))}
+    placeholder="Ex.: 49,90"
+    inputMode="decimal"
+  />
+  <div className="text-xs text-black/50">
+    Se vazio, cliente final usa o preço padrão.
+  </div>
+</div>
+
 
                 <div className="grid gap-2">
                   <Label>Descrição</Label>
@@ -983,6 +996,7 @@ await api.patch(endpoints.products.update(id), payload, {
                         <option value="BOTH">Ambos</option>
                         <option value="SALON">Somente Salão</option>
                         <option value="SELLER">Somente Vendedor</option>
+                        <option value="CUSTOMER">Somente Cliente final</option>
                       </select>
                       <div className="min-h-[32px] text-xs leading-tight text-black/50">
                         Quem vê o desconto nessa promoção.
@@ -1199,6 +1213,7 @@ await api.patch(endpoints.products.update(id), payload, {
                                       <option value="BOTH">Ambos</option>
                                       <option value="SALON">Somente Salão</option>
                                       <option value="SELLER">Somente Vendedor</option>
+                                      <option value="CUSTOMER">Somente Cliente final</option>
                                     </select>
                                     <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
                                   </div>

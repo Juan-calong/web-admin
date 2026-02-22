@@ -40,7 +40,6 @@ function stableKey(
   return `${prefix}:${parts.map((p) => String(p ?? "")).join(":")}`;
 }
 
-// ✅ 1 por linha -> string[]
 function parseHighlights(text: string) {
   return String(text ?? "")
     .split("\n")
@@ -61,18 +60,16 @@ export default function NewProductPage() {
   const [sku, setSku] = useState("");
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
+  const [customerPrice, setCustomerPrice] = useState("");
   const [description, setDescription] = useState("");
   const [highlightsText, setHighlightsText] = useState("");
   const [stock, setStock] = useState<number>(0);
   const [active, setActive] = useState(true);
 
-  // compat (categoria principal)
   const [categoryId, setCategoryId] = useState<string>("");
 
-  // novo (multi) -> EXTRAS (não inclui a principal)
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
 
-  // novo (audience)
   const [availableToCustomer, setAvailableToCustomer] = useState(true);
   const audience: ProductAudience = availableToCustomer ? "ALL" : "STAFF_ONLY";
 
@@ -109,6 +106,7 @@ export default function NewProductPage() {
       const skuN = sku.trim();
       const nameN = name.trim();
       const priceN = price.trim().replace(",", ".");
+      const customerPriceN = customerPrice.trim().replace(",", ".");
 
       if (!skuN) throw new Error("SKU é obrigatório.");
       if (!nameN) throw new Error("Nome é obrigatório.");
@@ -117,31 +115,31 @@ export default function NewProductPage() {
       const stockSafe = Number.isFinite(stock) ? Math.max(0, Math.trunc(stock)) : 0;
 
       const payload: {
-        sku: string;
-        name: string;
-        price: string;
-        active: boolean;
-        stock: number;
-        categoryId: string | null;
+  sku: string;
+  name: string;
+  price: string;
+  customerPrice: string | null;
+  active: boolean;
+  stock: number;
+  categoryId: string | null;
 
-        // ✅ novos:
-        categoryIds: string[];
-        audience: ProductAudience;
+  categoryIds: string[];
+  audience: ProductAudience;
 
-        description?: string;
-        highlights?: string[];
-      } = {
-        sku: skuN,
-        name: nameN,
-        price: priceN,
-        active: Boolean(active),
-        stock: stockSafe,
-        categoryId: categoryId ? categoryId : null,
+  description?: string;
+  highlights?: string[];
+} = {
+  sku: skuN,
+  name: nameN,
+  price: priceN,
+  customerPrice: customerPriceN ? customerPriceN : null,
+  active: Boolean(active),
+  stock: stockSafe,
+  categoryId: categoryId ? categoryId : null,
 
-        // ✅ envia principal + extras (sem duplicar)
-        categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
-        audience,
-      };
+  categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
+  audience,
+};
 
       const desc = description.trim();
       if (desc) payload.description = desc;
@@ -230,6 +228,20 @@ export default function NewProductPage() {
             </div>
 
             <div className="grid gap-2">
+  <Label>Preço cliente final (opcional)</Label>
+  <Input
+    className="rounded-xl"
+    value={customerPrice}
+    onChange={(e) => setCustomerPrice(e.target.value)}
+    placeholder="Ex.: 49.90"
+    inputMode="decimal"
+  />
+  <div className="text-xs text-black/50">
+    Se vazio, cliente final usa o preço padrão.
+  </div>
+</div>
+
+            <div className="grid gap-2">
               <Label>Descrição</Label>
               <Textarea
                 className="rounded-xl min-h-[110px]"
@@ -266,7 +278,6 @@ export default function NewProductPage() {
               />
             </div>
 
-            {/* ✅ Categoria principal (compat) */}
             <div className="grid gap-2">
               <Label>Categoria principal (opcional)</Label>
               <select
@@ -275,7 +286,6 @@ export default function NewProductPage() {
                 onChange={(e) => {
                   const v = e.target.value;
                   setCategoryId(v);
-                  // garante que a principal NÃO fique dentro do multi
                   setCategoryIds((prev) => prev.filter((x) => x !== v));
                 }}
               >

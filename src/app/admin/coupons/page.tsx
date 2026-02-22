@@ -41,7 +41,7 @@ import {
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 
-type PromoAppliesTo = "SELLER" | "SALON" | "BOTH";
+type PromoAppliesTo = "SELLER" | "SALON" | "CUSTOMER" | "BOTH";
 type DiscountType = "PCT" | "FIXED";
 
 type Coupon = {
@@ -114,7 +114,8 @@ function datetimeLocalToISO(local: string) {
 }
 
 function appliesToLabel(v: PromoAppliesTo) {
-  if (v === "BOTH") return "Salão + Vendedor";
+  if (v === "BOTH") return "Cliente final + Salão + Vendedor";
+  if (v === "CUSTOMER") return "Somente Cliente final";
   if (v === "SALON") return "Somente Salão";
   return "Somente Vendedor";
 }
@@ -476,6 +477,7 @@ export default function AdminCouponsPage() {
                 <option value="BOTH">Salão + Vendedor</option>
                 <option value="SALON">Somente Salão</option>
                 <option value="SELLER">Somente Vendedor</option>
+                <option value="CUSTOMER">Somente Cliente final</option>
               </select>
             </div>
 

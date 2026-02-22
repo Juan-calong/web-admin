@@ -32,7 +32,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 
-type PromoAppliesTo = "SELLER" | "SALON" | "BOTH";
+type PromoAppliesTo = "SELLER" | "SALON" | "CUSTOMER" | "BOTH";
 type DiscountType = "PCT" | "FIXED";
 
 type Coupon = {
@@ -340,9 +340,10 @@ export default function EditCouponPage() {
                 value={appliesTo}
                 onChange={(e) => setAppliesTo(e.target.value as PromoAppliesTo)}
               >
-                <option value="BOTH">Ambos (Salão + Vendedor)</option>
+                <option value="BOTH">Cliente final + Salão + Vendedor</option>
                 <option value="SELLER">Somente Vendedor</option>
                 <option value="SALON">Somente Salão</option>
+                <option value="CUSTOMER">Somente Cliente final</option>
               </select>
             </div>
 
