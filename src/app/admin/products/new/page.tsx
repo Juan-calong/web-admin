@@ -24,6 +24,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 
 import { ProductStatusPanel } from "@/components/admin/ProductStatusPanel";
+import { Upload } from "lucide-react";
 
 type Category = {
   id: string;
@@ -32,6 +33,11 @@ type Category = {
 };
 
 type ProductAudience = "ALL" | "STAFF_ONLY";
+
+type ProductApiResponse = {
+  item?: { id?: string };
+  id?: string;
+};
 
 function stableKey(
   prefix: string,
@@ -70,8 +76,58 @@ export default function NewProductPage() {
 
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
 
-  const [availableToCustomer, setAvailableToCustomer] = useState(true);
-  const audience: ProductAudience = availableToCustomer ? "ALL" : "STAFF_ONLY";
+const [audience, setAudience] = useState<ProductAudience>("ALL");
+const availableToCustomer = audience === "ALL";
+
+  const [file, setFile] = useState<File | null>(null);
+
+  async function uploadProductImage(productId: string, imageFile: File) {
+    const contentType =
+      imageFile.type === "image/jpg"
+        ? "image/jpeg"
+        : imageFile.type || "application/octet-stream";
+
+    const presignRes = await api.post(
+      endpoints.products.images.presign(productId),
+      {
+        contentType,
+        size: imageFile.size,
+        filename: imageFile.name,
+        mime: contentType,
+      },
+      {
+        headers: {
+          "Idempotency-Key": `prod-img-presign:new:${productId}:${imageFile.name}:${imageFile.size}`,
+        },
+      }
+    );
+
+    const { uploadUrl, publicUrl, key } = presignRes.data ?? {};
+    if (!uploadUrl || !key) throw new Error("Presign inválido: faltou uploadUrl/key.");
+
+    const putRes = await fetch(uploadUrl, {
+      method: "PUT",
+      body: imageFile,
+      headers: { "Content-Type": contentType },
+    });
+
+    if (!putRes.ok) {
+      const t = await putRes.text().catch(() => "");
+      throw new Error(`Falha no upload (PUT): ${putRes.status} ${t}`.slice(0, 200));
+    }
+
+    await api.post(
+      endpoints.products.images.confirm(productId),
+      {
+        key,
+        url: publicUrl,
+        mime: contentType,
+        size: imageFile.size,
+        isPrimary: true,
+      },
+      { headers: { "Idempotency-Key": `prod-img-confirm:new:${productId}:${key}` } }
+    );
+  }
 
   const categoriesQ = useQuery({
     queryKey: ["categories", { active: true }],
@@ -147,7 +203,7 @@ export default function NewProductPage() {
       const highlights = parseHighlights(highlightsText);
       if (highlights.length) payload.highlights = highlights;
 
-      await api.post(endpoints.products.create, payload, {
+      const createRes = await api.post(endpoints.products.create, payload, {
         headers: {
           "Idempotency-Key": stableKey(
             "product-create",
@@ -158,9 +214,17 @@ export default function NewProductPage() {
           ),
         },
       });
+      
+      const created = createRes.data as ProductApiResponse;
+      const productId = created?.item?.id ?? created?.id;
+
+      if (file) {
+        if (!productId) throw new Error("Produto criado, mas sem ID para enviar imagem.");
+        await uploadProductImage(productId, file);
+      }
     },
     onSuccess: async () => {
-      toast.success("Produto criado.");
+      toast.success(file ? "Produto criado com imagem." : "Produto criado.");
       await qc.invalidateQueries({ queryKey: ["products"] });
       router.replace("/admin/products");
     },
@@ -252,6 +316,25 @@ export default function NewProductPage() {
             </div>
 
             <div className="grid gap-2">
+              <Label>Imagem do produto (opcional)</Label>
+              <Input
+                type="file"
+                className="rounded-xl"
+                accept="image/*"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+              <div className="text-xs text-black/50">
+                A imagem será enviada após criar o produto e definida como primária.
+              </div>
+              {file ? (
+                <div className="text-xs text-black/60 inline-flex items-center gap-1">
+                  <Upload className="h-3 w-3" />
+                  {file.name}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="grid gap-2">
               <Label>Destaques (1 por linha)</Label>
               <Textarea
                 className="rounded-xl min-h-[110px]"
@@ -320,11 +403,11 @@ export default function NewProductPage() {
               <Label>Status</Label>
 
               <ProductStatusPanel
-                active={active}
-                onActiveChange={setActive}
-                availableToCustomer={availableToCustomer}
-                onAvailableToCustomerChange={setAvailableToCustomer}
-              />
+  active={active}
+  onActiveChange={setActive}
+  availableToCustomer={availableToCustomer}
+  onAvailableToCustomerChange={(v) => setAudience(v ? "ALL" : "STAFF_ONLY")}
+/>
 
               <div className="text-xs text-black/50">
                 <b>Cliente final</b> • <b>Salão/Vendedor</b>

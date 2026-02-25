@@ -63,7 +63,6 @@ type Product = {
   categoryId?: string | null;
   categoryIds?: string[] | null;
   audience?: ProductAudience | null;
-  
 
   highlights?: string[] | null;
   images?: ProductImage[];
@@ -222,74 +221,77 @@ if (appliesTo === "BOTH")
     if (id === "new") router.replace("/admin/products/new");
   }, [id, router]);
 
-  const productQ = useQuery({
-    queryKey: ["product", id],
-    queryFn: async () => {
-      const res = await api.get(endpoints.products.byId(id));
-      return (res.data?.item ?? res.data) as Product;
-    },
-    enabled: id !== "new",
-    retry: false,
-  });
+const productQ = useQuery({
+  queryKey: ["product", id],
+  queryFn: async () => {
+    const res = await api.get(endpoints.products.byId(id));
+    const raw = res.data;
+    return (raw?.item ?? raw) as Product; 
+  },
+  enabled: id !== "new",
+  retry: false,
+  refetchOnWindowFocus: false,
+});
 
-  const categoriesQ = useQuery({
-    queryKey: ["categories", "all"],
-    queryFn: async () => {
-      const res = await api.get(endpoints.categories.list);
-      return (res.data?.items ?? []) as Category[];
-    },
-    retry: false,
-  });
+const categoriesQ = useQuery({
+  queryKey: ["categories", "all"],
+  queryFn: async () => {
+    const res = await api.get(endpoints.categories.list);
+    return (res.data?.items ?? []) as Category[];
+  },
+  retry: false,
+});
 
-  const categories = useMemo(() => {
-    const items = categoriesQ.data ?? [];
-    return [...items].sort((a, b) => a.name.localeCompare(b.name));
-  }, [categoriesQ.data]);
+const categories = useMemo(() => {
+  const items = categoriesQ.data ?? [];
+  return [...items].sort((a, b) => a.name.localeCompare(b.name));
+}, [categoriesQ.data]);
 
-  const [sku, setSku] = useState("");
-  const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
-  const [description, setDescription] = useState("");
-  const [customerPrice, setCustomerPrice] = useState("");
-  const [highlightsText, setHighlightsText] = useState("");
-  const [active, setActive] = useState(true);
-  const [stock, setStock] = useState<number>(0);
+const [sku, setSku] = useState("");
+const [name, setName] = useState("");
+const [price, setPrice] = useState("");
+const [description, setDescription] = useState("");
+const [customerPrice, setCustomerPrice] = useState("");
+const [highlightsText, setHighlightsText] = useState("");
+const [active, setActive] = useState(true);
+const [stock, setStock] = useState<number>(0);
 
-  const [categoryId, setCategoryId] = useState<string>("");
+const [categoryId, setCategoryId] = useState<string>("");
 
-  const [categoryIds, setCategoryIds] = useState<string[]>([]);
-  const [availableToCustomer, setAvailableToCustomer] = useState(true);
-  const audience: ProductAudience = availableToCustomer ? "ALL" : "STAFF_ONLY";
+const [categoryIds, setCategoryIds] = useState<string[]>([]);
+const [audience, setAudience] = useState<ProductAudience>("ALL");
+const availableToCustomer = audience === "ALL";
 
-  const [file, setFile] = useState<File | null>(null);
-  const [uploadErr, setUploadErr] = useState<string | null>(null);
+const [file, setFile] = useState<File | null>(null);
+const [uploadErr, setUploadErr] = useState<string | null>(null);
 
-  const product = productQ.data ?? null;
+const product = productQ.data ?? null;
 
-  useEffect(() => {
-    if (!product) return;
-    setSku(product.sku ?? "");
-    setName(product.name ?? "");
-    setPrice(String(product.price ?? ""));
-    setCustomerPrice(product.customerPrice != null ? String(product.customerPrice) : "");
-    setDescription(product.description ?? "");
-    setHighlightsText((product.highlights ?? []).join("\n"));
-    setActive(!!product.active);
-    setStock(Math.max(0, Number(product.stock ?? 0))); 
+useEffect(() => {
+  if (!product) return;
 
-    const main = product.categoryId ?? "";
-    const ids =
-      Array.isArray(product.categoryIds) && product.categoryIds.length > 0
-        ? product.categoryIds
-        : main
-        ? [main]
-        : [];
+  setSku(product.sku ?? "");
+  setName(product.name ?? "");
+  setPrice(String(product.price ?? ""));
+  setCustomerPrice(product.customerPrice != null ? String(product.customerPrice) : "");
+  setDescription(product.description ?? "");
+  setHighlightsText((product.highlights ?? []).join("\n"));
+  setActive(!!product.active);
+  setStock(Math.max(0, Number(product.stock ?? 0)));
 
-    setCategoryId(main);
-    setCategoryIds(ids.filter((x) => x !== main));
+  const main = product.categoryId ?? "";
+  const ids =
+    Array.isArray(product.categoryIds) && product.categoryIds.length > 0
+      ? product.categoryIds
+      : main
+      ? [main]
+      : [];
 
-    setAvailableToCustomer((product.audience ?? "ALL") !== "STAFF_ONLY");
-  }, [product?.id]);
+  setCategoryId(main);
+  setCategoryIds(ids.filter((x: string) => x !== main));
+
+  if (product.audience) setAudience(product.audience);
+}, [productQ.dataUpdatedAt]);
 
   const images = product?.images ?? [];
   const primaryUrl =
@@ -332,7 +334,6 @@ if (appliesTo === "BOTH")
         categoryId: categoryId ? categoryId : null,
         categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
         audience,
-
         highlights,
       };
 
@@ -402,6 +403,7 @@ await api.patch(endpoints.products.update(id), payload, {
       await qc.invalidateQueries({ queryKey: ["product", id] });
       await qc.invalidateQueries({ queryKey: ["products"] });
       await productQ.refetch();
+      
     },
     onError: (err: unknown) => {
       const msg = apiErrorMessage(err, "Falha no upload.");
@@ -890,11 +892,11 @@ await api.patch(endpoints.products.update(id), payload, {
 
   <div className="mt-2">
     <ProductStatusPanel
-      active={active}
-      onActiveChange={setActive}
-      availableToCustomer={availableToCustomer}
-      onAvailableToCustomerChange={setAvailableToCustomer}
-    />
+  active={active}
+  onActiveChange={setActive}
+  availableToCustomer={availableToCustomer}
+  onAvailableToCustomerChange={(v) => setAudience(v ? "ALL" : "STAFF_ONLY")}
+/>
   </div>
 </div>
                 </div>

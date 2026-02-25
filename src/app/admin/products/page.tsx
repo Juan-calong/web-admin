@@ -32,9 +32,9 @@ type Product = {
   id: string;
   sku: string;
   name: string;
-  price: string; 
+  price: string;
   customerPrice?: string | null;
-effectivePrice?: string | null;
+  effectivePrice?: string | null;
   description?: string | null;
   active: boolean;
   categoryId?: string | null;
@@ -64,9 +64,7 @@ function brl(value: string | number) {
 }
 
 function statusBadgeClass(active: boolean) {
-  return active
-    ? "bg-emerald-600 text-white border-transparent"
-    : "bg-zinc-300 text-zinc-900 border-transparent";
+  return active ? "bg-emerald-600 text-white border-transparent" : "bg-zinc-300 text-zinc-900 border-transparent";
 }
 
 export default function AdminProductsPage() {
@@ -88,9 +86,7 @@ export default function AdminProductsPage() {
   });
 
   useEffect(() => {
-    if (productsQ.isError) {
-      toast.error(apiErrorMessage(productsQ.error, "Erro ao carregar produtos."));
-    }
+    if (productsQ.isError) toast.error(apiErrorMessage(productsQ.error, "Erro ao carregar produtos."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productsQ.isError]);
 
@@ -112,15 +108,11 @@ export default function AdminProductsPage() {
         if (promoFilter === "now") return p.promoNow === true;
         if (promoFilter === "scheduled") return p.promoScheduled === true;
         if (promoFilter === "none") return !p.promoNow && !p.promoScheduled;
-        return true; // all
+        return true;
       })
       .filter((p) => {
         if (!qq) return true;
-        return (
-          p.name?.toLowerCase().includes(qq) ||
-          p.sku?.toLowerCase().includes(qq) ||
-          p.id?.toLowerCase().includes(qq)
-        );
+        return p.name?.toLowerCase().includes(qq) || p.sku?.toLowerCase().includes(qq) || p.id?.toLowerCase().includes(qq);
       });
   }, [productsQ.data, q, activeFilter, promoFilter]);
 
@@ -170,32 +162,15 @@ export default function AdminProductsPage() {
           <div className="text-sm text-black/60">Catálogo</div>
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            <Badge className="rounded-full bg-slate-200/70 text-slate-900 border-transparent">
-              Total: {summary.total}
-            </Badge>
-            <Badge className="rounded-full bg-emerald-600 text-white border-transparent">
-              Ativos: {summary.active}
-            </Badge>
-            <Badge className="rounded-full bg-zinc-300 text-zinc-900 border-transparent">
-              Inativos: {summary.inactive}
-            </Badge>
-            <Badge className="rounded-full bg-rose-600 text-white border-transparent">
-              Sem estoque: {summary.out}
-            </Badge>
-            <Badge className="rounded-full bg-amber-500 text-white border-transparent">
-              Pouco: {summary.low}
-            </Badge>
+            <Badge className="rounded-full bg-slate-200/70 text-slate-900 border-transparent">Total: {summary.total}</Badge>
+            <Badge className="rounded-full bg-emerald-600 text-white border-transparent">Ativos: {summary.active}</Badge>
+            <Badge className="rounded-full bg-zinc-300 text-zinc-900 border-transparent">Inativos: {summary.inactive}</Badge>
+            <Badge className="rounded-full bg-rose-600 text-white border-transparent">Sem estoque: {summary.out}</Badge>
+            <Badge className="rounded-full bg-amber-500 text-white border-transparent">Pouco: {summary.low}</Badge>
 
-            {/* ✅ Promo summary */}
-            <Badge className="rounded-full bg-indigo-600 text-white border-transparent">
-              Promo ativa: {summary.promoNow}
-            </Badge>
-            <Badge className="rounded-full bg-sky-600 text-white border-transparent">
-              Agendada: {summary.promoScheduled}
-            </Badge>
-            <Badge className="rounded-full bg-slate-300 text-slate-900 border-transparent">
-              Sem promo: {summary.promoNone}
-            </Badge>
+            <Badge className="rounded-full bg-indigo-600 text-white border-transparent">Promo ativa: {summary.promoNow}</Badge>
+            <Badge className="rounded-full bg-sky-600 text-white border-transparent">Agendada: {summary.promoScheduled}</Badge>
+            <Badge className="rounded-full bg-slate-300 text-slate-900 border-transparent">Sem promo: {summary.promoNone}</Badge>
           </div>
         </div>
 
@@ -234,12 +209,7 @@ export default function AdminProductsPage() {
               <Label>Buscar</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/50" />
-                <Input
-                  className="h-10 rounded-xl pl-9 pr-9"
-                  placeholder="Nome, SKU ou ID…"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                />
+                <Input className="h-10 rounded-xl pl-9 pr-9" placeholder="Nome ou SKU…" value={q} onChange={(e) => setQ(e.target.value)} />
                 {q.trim() ? (
                   <button
                     type="button"
@@ -283,9 +253,7 @@ export default function AdminProductsPage() {
 
           <Separator />
 
-          <div className="text-xs text-black/50">
-            “Promo ativa” aparece mesmo se o produto estiver INATIVO
-          </div>
+          <div className="text-xs text-black/50">“Promo ativa” aparece mesmo se o produto estiver INATIVO</div>
         </CardContent>
       </Card>
 
@@ -303,17 +271,20 @@ export default function AdminProductsPage() {
             <div className="text-sm text-red-600">{apiErrorMessage(productsQ.error, "Erro ao carregar produtos.")}</div>
           ) : (
             <>
-              <div className="overflow-hidden rounded-2xl border border-slate-200/70">
-                <Table>
+              {/* 👇 min-w aqui é importante: garante uma largura mínima e evita “amassar” tudo */}
+              <div className="rounded-2xl border border-slate-200/70 overflow-x-auto">
+                <Table className="w-full min-w-[980px] table-fixed">
                   <TableHeader className="bg-slate-50/70">
                     <TableRow>
-                      <TableHead className="w-[70px]">Foto</TableHead>
-                      <TableHead className="w-[170px] hidden md:table-cell">SKU</TableHead>
-                      <TableHead>Produto</TableHead>
+                      <TableHead className="w-[84px]">Foto</TableHead>
+                      {/* some em telas menores */}
+                      <TableHead className="w-[160px] hidden lg:table-cell">SKU</TableHead>
+                      {/* coluna flexível */}
+                      <TableHead className="w-auto">Produto</TableHead>
                       <TableHead className="w-[140px]">Preço</TableHead>
-                      <TableHead className="w-[120px]">Promo</TableHead>
-                      <TableHead className="w-[120px]">Estoque</TableHead>
-                      <TableHead className="w-[120px]">Status</TableHead>
+                      <TableHead className="w-[120px] hidden md:table-cell">Promo</TableHead>
+                      <TableHead className="w-[110px]">Estoque</TableHead>
+                      <TableHead className="w-[110px]">Status</TableHead>
                       <TableHead className="w-[140px] text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -332,11 +303,9 @@ export default function AdminProductsPage() {
                 </Table>
               </div>
 
-              {/* Pagination */}
               <div className="flex items-center justify-between">
                 <div className="text-xs text-black/60">
-                  Página {safePage} de {pageCount} • mostrando {start + 1}-{Math.min(end, filtered.length)} de{" "}
-                  {filtered.length}
+                  Página {safePage} de {pageCount} • mostrando {start + 1}-{Math.min(end, filtered.length)} de {filtered.length}
                 </div>
 
                 <div className="flex gap-2">
@@ -376,98 +345,79 @@ function ProductRow({ p }: { p: Product }) {
   const [broken, setBroken] = useState(false);
   const showImg = !!img && !broken;
 
+  // limita o que aparece (sem “empurrar” altura de outras linhas)
   const desc = (p.description ?? "").trim();
-
-  const stockLabel = stock <= 0 ? "Sem estoque" : stock <= 5 ? "Pouco" : null;
-
-  const stockBadgeClass =
-    stock <= 0 ? "bg-rose-600 text-white border-transparent" : "bg-amber-500 text-white border-transparent";
-
   const statusCls = statusBadgeClass(p.active);
 
-  // ✅ Promo badge (prioriza “ativa agora”)
   const promoNow = !!p.promoNow;
   const promoScheduled = !!p.promoScheduled;
 
   const promoBadge = promoNow ? (
-    <Badge className="rounded-full bg-indigo-600 text-white border-transparent">PROMO ATIVA</Badge>
+    <Badge className="rounded-full bg-indigo-600 text-white border-transparent">PROMO</Badge>
   ) : promoScheduled ? (
     <Badge className="rounded-full bg-sky-600 text-white border-transparent">AGENDADA</Badge>
   ) : (
-    <Badge className="rounded-full bg-slate-200 text-slate-900 border-transparent">SEM PROMO</Badge>
+    <Badge className="rounded-full bg-slate-200 text-slate-900 border-transparent">SEM</Badge>
   );
 
   return (
     <TableRow className="hover:bg-slate-50/70 [&>td]:border-b [&>td]:border-slate-100">
       {/* FOTO */}
       <TableCell className="align-middle">
-        <div className="relative h-12 w-12 overflow-hidden rounded-xl border border-slate-200/70 bg-white">
+        <div className="relative h-16 w-16 overflow-hidden rounded-xl border border-slate-200/70 bg-white">
           {showImg ? (
-            <Image
-              src={img!}
-              alt={p.name}
-              fill
-              className="object-cover"
-              sizes="48px"
-              onError={() => setBroken(true)}
-            />
+            <Image src={img!} alt={p.name} fill className="object-cover" sizes="64px" onError={() => setBroken(true)} />
           ) : (
             <div className="grid h-full w-full place-items-center text-[10px] text-black/40">sem</div>
           )}
         </div>
       </TableCell>
 
-      {/* SKU + ID */}
-      <TableCell className="align-middle hidden md:table-cell">
-        <div className="font-mono text-xs text-black/70">{p.sku}</div>
-        <div className="mt-1 font-mono text-[10px] text-black/40">{p.id}</div>
+      {/* SKU (desktop grande) */}
+      <TableCell className="align-middle hidden lg:table-cell">
+        <div className="font-mono text-xs text-black/70 truncate max-w-[150px]" title={p.sku}>
+          {p.sku}
+        </div>
       </TableCell>
 
       {/* PRODUTO */}
-      <TableCell className="align-middle">
-        <div className="font-semibold text-[14px] leading-5">{p.name}</div>
-
-        {desc ? (
-          <div className="mt-1 text-xs text-black/60 line-clamp-2 max-w-[520px]" title={desc}>
-            {desc}
+      <TableCell className="align-middle min-w-0">
+        <div className="min-w-0">
+          <div className="font-semibold text-[14px] leading-5 truncate" title={p.name}>
+            {p.name}
           </div>
-        ) : (
-          <div className="mt-1 text-xs text-black/40">Sem descrição</div>
-        )}
 
-        {/* ID no mobile */}
-        <div className="mt-2 font-mono text-[10px] text-black/40 md:hidden">{p.id}</div>
+          {/* SKU no mobile/tablet (uma linha só) */}
+          <div className="mt-1 font-mono text-[10px] text-black/45 lg:hidden truncate max-w-[260px]" title={p.sku}>
+            {p.sku}
+          </div>
+
+          {desc ? (
+            <div className="mt-1 text-xs text-black/60 line-clamp-1 break-all" title={desc}>
+              {desc}
+            </div>
+          ) : (
+            <div className="mt-1 text-xs text-black/40">Sem descrição</div>
+          )}
+        </div>
       </TableCell>
 
       {/* PREÇO */}
-<TableCell className="align-middle whitespace-nowrap">
-  <div className="font-semibold leading-5">
-    {brl((p.effectivePrice ?? p.price) as string)}
-  </div>
+      <TableCell className="align-middle whitespace-nowrap">
+        <div className="font-semibold leading-5">{brl((p.effectivePrice ?? p.price) as string)}</div>
+        {p.customerPrice ? (
+          <div className="text-[11px] text-black/60 leading-4">Cliente: {brl(p.customerPrice)}</div>
+        ) : (
+          <div className="text-[11px] text-black/40 leading-4">Cliente: padrão</div>
+        )}
+      </TableCell>
 
-  {p.customerPrice ? (
-    <div className="text-[11px] text-black/60 leading-4">
-      Cliente: {brl(p.customerPrice)}
-    </div>
-  ) : (
-    <div className="text-[11px] text-black/40 leading-4">Cliente: padrão</div>
-  )}
-</TableCell>
-
-      {/* PROMO */}
-      <TableCell className="align-middle">{promoBadge}</TableCell>
+      {/* PROMO (some no mobile pequeno) */}
+      <TableCell className="align-middle hidden md:table-cell">{promoBadge}</TableCell>
 
       {/* ESTOQUE */}
       <TableCell className="align-middle">
-        <div className="flex flex-col items-start gap-1">
-          <div className="font-semibold leading-5">{stock}</div>
-
-          {stockLabel ? (
-            <Badge className={`rounded-full px-2 py-0.5 text-[11px] ${stockBadgeClass}`}>{stockLabel}</Badge>
-          ) : (
-            <div className="h-[18px]" />
-          )}
-        </div>
+        <div className="font-semibold leading-5">{stock}</div>
       </TableCell>
 
       {/* STATUS */}

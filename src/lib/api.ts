@@ -3,10 +3,10 @@ import axios, { AxiosError, type InternalAxiosRequestConfig } from "axios";
 import { authStore } from "@/lib/auth";
 import { endpoints } from "@/lib/endpoints";
 
-const baseURL = process.env.NEXT_PUBLIC_API_BASE_URL;
+const baseURL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
-if (!baseURL) {
-    throw new Error("NEXT_PUBLIC_API_BASE_URL não está definido.");
+if (!baseURL && process.env.NODE_ENV !== "production") {
+    console.warn("[api] NEXT_PUBLIC_API_BASE_URL não está definido. Usando URL relativa.");
 }
 
 
