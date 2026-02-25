@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { RefreshCw, Plus, Search, X, MoreHorizontal, Copy, Link2 } from "lucide-react";
+import { RefreshCw, Plus, Search, X, MoreHorizontal, Copy } from "lucide-react";
 import Link from "next/link";
 
 import { api } from "@/lib/api";
@@ -40,6 +40,9 @@ import {
 } from "@/components/ui/alert-dialog";
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+
+// ✅ precisa existir no seu shadcn: npx shadcn-ui@latest add tabs
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type PromoAppliesTo = "SELLER" | "SALON" | "CUSTOMER" | "BOTH" | "CUSTOMER_SALON";
 type DiscountType = "PCT" | "FIXED";
@@ -160,33 +163,34 @@ function humanWindowHint(c: Coupon, now = new Date()) {
   return "Sem data final";
 }
 
-type UiStatus = "ACTIVE_NOW" | "SCHEDULED" | "EXPIRED" | "INACTIVE" | "INVALID";
+type UiStatus = "ACTIVE_NOW" | "SCHEDULED" | "EXPIRED" | "INACTIVE";
 
 function computeStatus(c: Coupon, now = new Date()): { key: UiStatus; label: string } {
   const s = safeDate(c.startsAt);
   const e = safeDate(c.endsAt ?? null);
 
-  if (!s) return { key: "INVALID", label: "DATA INVÁLIDA" };
+  // ✅ se a data vier ruim, joga pra INATIVO (não aparece “Inválido”)
+  if (!s) return { key: "INACTIVE", label: "INATIVO" };
+
   if (c.active === false) return { key: "INACTIVE", label: "INATIVO" };
   if (now < s) return { key: "SCHEDULED", label: "AGENDADO" };
   if (e && now >= e) return { key: "EXPIRED", label: "EXPIRADO" };
   return { key: "ACTIVE_NOW", label: "ATIVO AGORA" };
 }
 
+
 function statusBadgeClass(key: UiStatus) {
   if (key === "ACTIVE_NOW") return "bg-emerald-600 text-white border-transparent";
-  if (key === "SCHEDULED") return "bg-amber-500 text-white border-transparent";
+  if (key === "SCHEDULED") return "bg-sky-600 text-white border-transparent";
   if (key === "EXPIRED") return "bg-zinc-200 text-zinc-900 border-transparent";
-  if (key === "INACTIVE") return "bg-zinc-300 text-zinc-900 border-transparent";
-  return "bg-rose-600 text-white border-transparent";
+  return "bg-rose-600 text-white border-transparent"; // INACTIVE
 }
 
 function statusDotClass(key: UiStatus) {
   if (key === "ACTIVE_NOW") return "bg-emerald-300";
-  if (key === "SCHEDULED") return "bg-amber-200";
+  if (key === "SCHEDULED") return "bg-sky-300";
   if (key === "EXPIRED") return "bg-zinc-400";
-  if (key === "INACTIVE") return "bg-zinc-500";
-  return "bg-rose-300";
+  return "bg-rose-300"; // INACTIVE
 }
 
 function stableIdemForCreateCoupon(args: {
@@ -221,10 +225,34 @@ function sanitizeMoneyInput(v: string) {
   return s;
 }
 
+type StatusFilter = UiStatus | "ALL";
+
+function statusLabel(k: StatusFilter) {
+  if (k === "ALL") return "Todos";
+  if (k === "ACTIVE_NOW") return "Ativos agora";
+  if (k === "SCHEDULED") return "Agendados";
+  if (k === "EXPIRED") return "Expirados";
+  return "Inativos";
+}
+
+const STATUS_ORDER: UiStatus[] = ["ACTIVE_NOW", "SCHEDULED", "EXPIRED", "INACTIVE"];
+
 export default function AdminCouponsPage() {
   const qc = useQueryClient();
 
   const [q, setQ] = useState("");
+
+  // ✅ filtro e paginação incremental por status (pra milhares)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+
+  const PAGE_SIZE = 50;
+  const [limitByStatus, setLimitByStatus] = useState<Record<UiStatus, number>>({
+    ACTIVE_NOW: PAGE_SIZE,
+    SCHEDULED: PAGE_SIZE,
+    EXPIRED: PAGE_SIZE,
+    INACTIVE: PAGE_SIZE,
+
+  });
 
   // Create form (básico)
   const [newCode, setNewCode] = useState("");
@@ -245,7 +273,7 @@ export default function AdminCouponsPage() {
     retry: false,
   });
 
-  const items = useMemo(() => {
+  const baseItems = useMemo(() => {
     const list = couponsQ.data ?? [];
     const qq = q.trim().toLowerCase();
     if (!qq) return list;
@@ -256,33 +284,31 @@ export default function AdminCouponsPage() {
     });
   }, [couponsQ.data, q]);
 
-  const itemsSorted = useMemo(() => {
+  const grouped = useMemo(() => {
     const now = new Date();
-    const arr = [...items];
+    const groups: Record<UiStatus, Coupon[]> = {
+      ACTIVE_NOW: [],
+      SCHEDULED: [],
+      EXPIRED: [],
+      INACTIVE: [],
 
-    const rank = (s: UiStatus) => {
-      if (s === "ACTIVE_NOW") return 0;
-      if (s === "SCHEDULED") return 1;
-      if (s === "EXPIRED") return 2;
-      if (s === "INACTIVE") return 3;
-      return 4;
     };
 
-    arr.sort((a, b) => {
-      const sa = computeStatus(a, now).key;
-      const sb = computeStatus(b, now).key;
+    for (const c of baseItems) {
+      const k = computeStatus(c, now).key;
+      groups[k].push(c);
+    }
 
-      const ra = rank(sa);
-      const rb = rank(sb);
-      if (ra !== rb) return ra - rb;
-
+    // Ordena dentro de cada grupo (mais recente primeiro)
+    const sortByStartDesc = (a: Coupon, b: Coupon) => {
       const da = safeDate(a.startsAt)?.getTime() ?? 0;
       const db = safeDate(b.startsAt)?.getTime() ?? 0;
       return db - da;
-    });
+    };
+    for (const k of Object.keys(groups) as UiStatus[]) groups[k].sort(sortByStartDesc);
 
-    return arr;
-  }, [items]);
+    return groups;
+  }, [baseItems]);
 
   const summary = useMemo(() => {
     const now = new Date();
@@ -307,6 +333,16 @@ export default function AdminCouponsPage() {
     return count;
   }, [couponsQ.data]);
 
+  // quando trocar de aba ou buscar, volta os limites pra primeira página
+  function resetLimits() {
+    setLimitByStatus({
+      ACTIVE_NOW: PAGE_SIZE,
+      SCHEDULED: PAGE_SIZE,
+      EXPIRED: PAGE_SIZE,
+      INACTIVE: PAGE_SIZE,
+    });
+  }
+
   const createM = useMutation({
     mutationFn: async () => {
       const code = newCode.trim().toUpperCase();
@@ -316,9 +352,8 @@ export default function AdminCouponsPage() {
       if (!Number.isFinite(valueNum)) throw new Error("Informe um valor numérico válido.");
 
       if (newType === "PCT" && (valueNum <= 0 || valueNum > 100))
-        throw new Error('Percentual deve ser > 0 e <= 100.');
-      if (newType === "FIXED" && valueNum <= 0)
-        throw new Error("Desconto em R$ deve ser > 0.");
+        throw new Error("Percentual deve ser > 0 e <= 100.");
+      if (newType === "FIXED" && valueNum <= 0) throw new Error("Desconto em R$ deve ser > 0.");
 
       if (!newStartsAt) throw new Error("Informe a data/hora de início.");
       const startsISO = datetimeLocalToISO(newStartsAt);
@@ -374,6 +409,7 @@ export default function AdminCouponsPage() {
 
       await qc.invalidateQueries({ queryKey: ["admin-coupons"] });
       await couponsQ.refetch();
+      resetLimits();
     },
     onError: (e: unknown) => {
       const apiErr = (e as { response?: { data?: { error?: unknown } } })?.response?.data?.error;
@@ -387,19 +423,243 @@ export default function AdminCouponsPage() {
 
   const disableM = useMutation({
     mutationFn: async (id: string) => {
-      await api.patch(
-        endpoints.adminCoupons.disable(id),
-        {},
-        { headers: { "Idempotency-Key": `admin-coupon-disable:${id}` } }
-      );
+      await api.patch(endpoints.adminCoupons.disable(id), {}, { headers: { "Idempotency-Key": `admin-coupon-disable:${id}` } });
     },
     onSuccess: async () => {
       toast.success("Cupom desativado.");
       await qc.invalidateQueries({ queryKey: ["admin-coupons"] });
       await couponsQ.refetch();
+      resetLimits();
     },
     onError: (e) => toast.error(apiErrorMessage(e, "Falha ao desativar.")),
   });
+
+  function CouponActions({ c }: { c: Coupon }) {
+    return (
+      <AlertDialog>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="icon-sm" className="rounded-xl bg-white hover:bg-slate-50">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent align="end" className="rounded-xl border-slate-200 bg-white shadow-lg">
+            <DropdownMenuItem
+              onSelect={async (e) => {
+                e.preventDefault();
+                const ok = await copyToClipboard(c.code ?? "");
+                toast[ok ? "success" : "error"](ok ? "Código copiado." : "Não foi possível copiar.");
+              }}
+            >
+              <Copy className="h-4 w-4" />
+              Copiar código
+            </DropdownMenuItem>
+
+            {/* ❌ Removido: Copiar link */}
+
+            <DropdownMenuSeparator />
+
+            <AlertDialogTrigger asChild>
+              <DropdownMenuItem variant="destructive" disabled={disableM.isPending || c.active === false}>
+                Desativar
+              </DropdownMenuItem>
+            </AlertDialogTrigger>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <AlertDialogContent className="rounded-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Desativar este cupom?</AlertDialogTitle>
+            <AlertDialogDescription>Ele não poderá mais ser aplicado no checkout.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+            <AlertDialogAction className="rounded-xl" onClick={() => disableM.mutate(c.id)}>
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    );
+  }
+
+  function CouponRow({ c }: { c: Coupon }) {
+    const now = new Date();
+    const st = computeStatus(c, now);
+    const hint = humanWindowHint(c, now);
+
+    return (
+      <TableRow key={c.id} className="hover:bg-slate-50/70 [&>td]:border-b [&>td]:border-slate-100">
+        <TableCell className="align-top whitespace-normal">
+          <div className="font-semibold">{c.code ?? "-"}</div>
+          <div className="text-xs text-black/60">{appliesToLabel(c.appliesTo)}</div>
+          <div className="text-[10px] text-black/50 font-mono break-all">{c.id}</div>
+        </TableCell>
+
+        <TableCell className="align-top">
+          <div className="space-y-1">
+            <Badge className={cn("rounded-full gap-2", statusBadgeClass(st.key))}>
+              <span className={cn("inline-block h-2 w-2 rounded-full", statusDotClass(st.key))} />
+              {st.label}
+            </Badge>
+            <div className="text-[11px] text-black/50">{hint}</div>
+          </div>
+        </TableCell>
+
+        <TableCell className="align-top whitespace-normal">
+          <div className="text-sm">{typeLabel(c.type)}</div>
+          <div className="text-xs text-black/60">{formatValue(c)}</div>
+        </TableCell>
+
+        <TableCell className="align-top whitespace-normal text-xs text-black/60">
+          <div>Início: {fmtDate(c.startsAt)}</div>
+          <div>Fim: {fmtDate(c.endsAt ?? null)}</div>
+        </TableCell>
+
+        <TableCell className="text-right align-top">
+          <div className="flex justify-end gap-2">
+            <Button asChild variant="outline" className="rounded-xl">
+              <Link href={`/admin/coupons/${c.id}`}>Editar</Link>
+            </Button>
+            <CouponActions c={c} />
+          </div>
+        </TableCell>
+      </TableRow>
+    );
+  }
+
+  function CouponCard({ c }: { c: Coupon }) {
+    const now = new Date();
+    const st = computeStatus(c, now);
+    const hint = humanWindowHint(c, now);
+
+    return (
+      <div className="rounded-2xl border bg-white p-4 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-semibold break-words">{c.code ?? "-"}</div>
+            <div className="text-xs text-black/60">{appliesToLabel(c.appliesTo)}</div>
+            <div className="text-[10px] text-black/50 font-mono break-all mt-1">{c.id}</div>
+          </div>
+
+          <Badge className={cn("rounded-full gap-2 shrink-0", statusBadgeClass(st.key))}>
+            <span className={cn("inline-block h-2 w-2 rounded-full", statusDotClass(st.key))} />
+            {st.label}
+          </Badge>
+        </div>
+
+        <div className="grid gap-2">
+          <div className="rounded-xl border bg-slate-50/60 p-3">
+            <div className="text-xs text-black/60">Desconto</div>
+            <div className="text-sm font-medium">{typeLabel(c.type)}</div>
+            <div className="text-xs text-black/60">{formatValue(c)}</div>
+          </div>
+
+          <div className="rounded-xl border bg-slate-50/60 p-3">
+            <div className="text-xs text-black/60">Validade</div>
+            <div className="text-xs text-black/70">{hint}</div>
+            <div className="text-[11px] text-black/60 mt-1">
+              Início: {fmtDate(c.startsAt)} • Fim: {fmtDate(c.endsAt ?? null)}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button asChild variant="outline" className="rounded-xl">
+            <Link href={`/admin/coupons/${c.id}`}>Editar</Link>
+          </Button>
+
+          <AlertDialog>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="rounded-xl">
+                  <MoreHorizontal className="mr-2 h-4 w-4" />
+                  Mais
+                </Button>
+              </DropdownMenuTrigger>
+
+              <DropdownMenuContent align="end" className="rounded-xl border-slate-200 bg-white shadow-lg">
+                <DropdownMenuItem
+                  onSelect={async (e) => {
+                    e.preventDefault();
+                    const ok = await copyToClipboard(c.code ?? "");
+                    toast[ok ? "success" : "error"](ok ? "Código copiado." : "Não foi possível copiar.");
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                  Copiar código
+                </DropdownMenuItem>
+
+                {/* ❌ Removido: Copiar link */}
+
+                <DropdownMenuSeparator />
+
+                <AlertDialogTrigger asChild>
+                  <DropdownMenuItem variant="destructive" disabled={disableM.isPending || c.active === false}>
+                    Desativar
+                  </DropdownMenuItem>
+                </AlertDialogTrigger>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <AlertDialogContent className="rounded-2xl">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Desativar este cupom?</AlertDialogTitle>
+                <AlertDialogDescription>Ele não poderá mais ser aplicado no checkout.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+                <AlertDialogAction className="rounded-xl" onClick={() => disableM.mutate(c.id)}>
+                  Confirmar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+
+        <div className="text-[11px] text-black/50">Dica: {hint}</div>
+      </div>
+    );
+  }
+
+  function SectionHeader({ k, total }: { k: UiStatus; total: number }) {
+    return (
+      <div className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50/70 border-b">
+        <div className="flex items-center gap-2">
+          <div className={cn("h-2 w-2 rounded-full", statusDotClass(k))} />
+          <div className="font-semibold">{statusLabel(k)}</div>
+          <Badge className="rounded-full bg-slate-200/70 text-slate-900 border-transparent">{total}</Badge>
+        </div>
+        <div className="text-xs text-black/50">Mais recentes primeiro</div>
+      </div>
+    );
+  }
+
+  function LoadMore({ k, shown, total }: { k: UiStatus; shown: number; total: number }) {
+    if (shown >= total) return null;
+    return (
+      <div className="flex justify-center p-3 border-t bg-white">
+        <Button
+          variant="outline"
+          className="rounded-xl"
+          onClick={() => setLimitByStatus((prev) => ({ ...prev, [k]: prev[k] + PAGE_SIZE }))}
+        >
+          Mostrar mais ({Math.min(PAGE_SIZE, total - shown)})
+        </Button>
+      </div>
+    );
+  }
+
+  const counts = {
+  ALL: baseItems.length,
+  ACTIVE_NOW: grouped.ACTIVE_NOW.length,
+  SCHEDULED: grouped.SCHEDULED.length,
+  EXPIRED: grouped.EXPIRED.length,
+  INACTIVE: grouped.INACTIVE.length,
+};
+
+  const anyItems = baseItems.length > 0;
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 px-3 lg:px-6">
@@ -410,25 +670,14 @@ export default function AdminCouponsPage() {
           <div className="text-sm text-black/60">Crie e gerencie cupons de desconto</div>
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            <Badge className="rounded-full bg-slate-200/70 text-slate-900 border-transparent">
-              Total: {summary.total}
-            </Badge>
+            <Badge className="rounded-full bg-slate-200/70 text-slate-900 border-transparent">Total: {summary.total}</Badge>
 
             <Badge className="rounded-full bg-emerald-600 text-white border-transparent">
               Ativos agora: {summary.activeNow}
             </Badge>
-
-            <Badge className="rounded-full bg-amber-500 text-white border-transparent">
-              Agendados: {summary.scheduled}
-            </Badge>
-
-            <Badge className="rounded-full bg-zinc-200 text-zinc-900 border-transparent">
-              Expirados: {summary.expired}
-            </Badge>
-
-            <Badge className="rounded-full bg-zinc-300 text-zinc-900 border-transparent">
-              Inativos: {summary.inactive}
-            </Badge>
+            <Badge className="rounded-full bg-amber-500 text-white border-transparent">Agendados: {summary.scheduled}</Badge>
+            <Badge className="rounded-full bg-zinc-200 text-zinc-900 border-transparent">Expirados: {summary.expired}</Badge>
+            <Badge className="rounded-full bg-zinc-300 text-zinc-900 border-transparent">Inativos: {summary.inactive}</Badge>
           </div>
         </div>
 
@@ -518,14 +767,11 @@ export default function AdminCouponsPage() {
               />
             </div>
 
-            {/* fim opcional: ocupa linha inteira em mobile, metade no LG */}
             <div className="lg:col-span-6">
               <div className="rounded-2xl border p-4">
                 <Accordion type="single" collapsible>
                   <AccordionItem value="end" className="border-0">
-                    <AccordionTrigger className="py-0 hover:no-underline">
-                      Fim (opcional)
-                    </AccordionTrigger>
+                    <AccordionTrigger className="py-0 hover:no-underline">Fim (opcional)</AccordionTrigger>
                     <AccordionContent className="pt-3">
                       <div className="grid gap-2">
                         <Label className="text-xs text-black/60">Data e hora de expiração</Label>
@@ -557,7 +803,9 @@ export default function AdminCouponsPage() {
       <Card className="rounded-2xl border-slate-200/70 bg-white shadow-sm border-t-4 border-t-indigo-500/70">
         <CardHeader className="rounded-t-2xl border-b border-slate-200/60 bg-slate-50/50">
           <CardTitle>Lista</CardTitle>
-          <CardDescription>{itemsSorted.length} cupom(ns) encontrado(s)</CardDescription>
+          <CardDescription>
+            {statusFilter === "ALL" ? baseItems.length : counts[statusFilter]} cupom(ns) encontrado(s)
+          </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-3">
@@ -568,13 +816,20 @@ export default function AdminCouponsPage() {
               <Input
                 className="rounded-xl h-10 pl-9 pr-9"
                 value={q}
-                onChange={(e) => setQ(e.target.value)}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  // reset leve quando começa a buscar, evita “aparecer 200”
+                  resetLimits();
+                }}
                 placeholder="por código ou id…"
               />
               {q.trim() ? (
                 <button
                   type="button"
-                  onClick={() => setQ("")}
+                  onClick={() => {
+                    setQ("");
+                    resetLimits();
+                  }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 hover:bg-black/5"
                   aria-label="Limpar busca"
                 >
@@ -584,253 +839,265 @@ export default function AdminCouponsPage() {
             </div>
           </div>
 
+          <Tabs
+  value={statusFilter}
+  onValueChange={(v) => {
+    setStatusFilter(v as StatusFilter);
+    resetLimits();
+  }}
+>
+  {/* Desktop: grid preenchendo 100% | Mobile: scroll horizontal */}
+  <TabsList
+    className={cn(
+      "w-full rounded-2xl p-2 bg-slate-100",
+      "grid grid-cols-5 gap-2", // ✅ preenche tudo no desktop
+      "sm:grid-cols-5",
+      "max-sm:flex max-sm:w-full max-sm:gap-2 max-sm:overflow-x-auto max-sm:whitespace-nowrap max-sm:[&::-webkit-scrollbar]:hidden"
+    )}
+  >
+    {/* helperzinho pra evitar repetir classe */}
+    <TabsTrigger
+      value="ALL"
+      className={cn(
+        "h-11 rounded-xl justify-center",
+        "data-[state=active]:bg-slate-900 data-[state=active]:text-white",
+        "bg-white/60 text-slate-700 hover:bg-white",
+        "border border-slate-200/60 data-[state=active]:border-transparent",
+        "shrink-0 max-sm:min-w-[140px]" // ✅ no mobile vira pill rolável
+      )}
+    >
+      <span className="inline-flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-slate-500" />
+        <span className="font-semibold">Todos</span>
+        <span className="ml-1 rounded-full px-2 py-0.5 text-xs bg-black/10 data-[state=active]:bg-white/20 data-[state=active]:text-white">
+          {counts.ALL}
+        </span>
+      </span>
+    </TabsTrigger>
+
+    <TabsTrigger
+      value="ACTIVE_NOW"
+      className={cn(
+        "h-11 rounded-xl justify-center",
+        "data-[state=active]:bg-emerald-600 data-[state=active]:text-white",
+        "bg-white/60 text-slate-700 hover:bg-white",
+        "border border-slate-200/60 data-[state=active]:border-transparent",
+        "shrink-0 max-sm:min-w-[170px]"
+      )}
+    >
+      <span className="inline-flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-emerald-500" />
+        <span className="font-semibold">Ativos agora</span>
+        <span className="ml-1 rounded-full px-2 py-0.5 text-xs bg-black/10 data-[state=active]:bg-white/20 data-[state=active]:text-white">
+          {counts.ACTIVE_NOW}
+        </span>
+      </span>
+    </TabsTrigger>
+
+    <TabsTrigger
+      value="SCHEDULED"
+      className={cn(
+        "h-11 rounded-xl justify-center",
+        "data-[state=active]:bg-sky-600 data-[state=active]:text-white",
+        "bg-white/60 text-slate-700 hover:bg-white",
+        "border border-slate-200/60 data-[state=active]:border-transparent",
+        "shrink-0 max-sm:min-w-[150px]"
+      )}
+    >
+      <span className="inline-flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-sky-500" />
+        <span className="font-semibold">Agendados</span>
+        <span className="ml-1 rounded-full px-2 py-0.5 text-xs bg-black/10 data-[state=active]:bg-white/20 data-[state=active]:text-white">
+          {counts.SCHEDULED}
+        </span>
+      </span>
+    </TabsTrigger>
+
+    <TabsTrigger
+      value="EXPIRED"
+      className={cn(
+        "h-11 rounded-xl justify-center",
+        "data-[state=active]:bg-zinc-700 data-[state=active]:text-white",
+        "bg-white/60 text-slate-700 hover:bg-white",
+        "border border-slate-200/60 data-[state=active]:border-transparent",
+        "shrink-0 max-sm:min-w-[140px]"
+      )}
+    >
+      <span className="inline-flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-zinc-500" />
+        <span className="font-semibold">Expirados</span>
+        <span className="ml-1 rounded-full px-2 py-0.5 text-xs bg-black/10 data-[state=active]:bg-white/20 data-[state=active]:text-white">
+          {counts.EXPIRED}
+        </span>
+      </span>
+    </TabsTrigger>
+
+    <TabsTrigger
+      value="INACTIVE"
+      className={cn(
+        "h-11 rounded-xl justify-center",
+        "data-[state=active]:bg-rose-600 data-[state=active]:text-white",
+        "bg-white/60 text-slate-700 hover:bg-white",
+        "border border-slate-200/60 data-[state=active]:border-transparent",
+        "shrink-0 max-sm:min-w-[130px]"
+      )}
+    >
+      <span className="inline-flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-rose-500" />
+        <span className="font-semibold">Inativos</span>
+        <span className="ml-1 rounded-full px-2 py-0.5 text-xs bg-black/10 data-[state=active]:bg-white/20 data-[state=active]:text-white">
+          {counts.INACTIVE}
+        </span>
+      </span>
+    </TabsTrigger>
+  </TabsList>
+</Tabs>
+
           <Separator />
 
           {couponsQ.isLoading ? (
             <div className="text-sm">Carregando…</div>
           ) : couponsQ.isError ? (
             <div className="text-sm text-red-600">{apiErrorMessage(couponsQ.error, "Erro ao carregar cupons.")}</div>
+          ) : !anyItems ? (
+            <div className="rounded-2xl border p-4 text-sm text-black/60">Nenhum cupom.</div>
           ) : (
             <>
-              {/* ===== TABLE: só em LG+ (evita corte com sidebar) ===== */}
-              <div className="hidden lg:block overflow-x-auto rounded-2xl border">
-                <Table className="min-w-[860px]">
-                  <TableHeader className="bg-slate-50/70">
-                    <TableRow>
-                      <TableHead>Cupom</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Desconto</TableHead>
-                      <TableHead>Validade</TableHead>
-                      <TableHead className="text-right">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-
-                  <TableBody>
-                    {itemsSorted.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={5} className="text-sm text-black/60">
-                          Nenhum cupom.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      itemsSorted.map((c) => {
-                        const now = new Date();
-                        const st = computeStatus(c, now);
-                        const hint = humanWindowHint(c, now);
-
-                        return (
-                          <TableRow key={c.id} className="hover:bg-slate-50/70 [&>td]:border-b [&>td]:border-slate-100">
-                            <TableCell className="align-top whitespace-normal">
-                              <div className="font-semibold">{c.code ?? "-"}</div>
-                              <div className="text-xs text-black/60">{appliesToLabel(c.appliesTo)}</div>
-                              <div className="text-[10px] text-black/50 font-mono break-all">{c.id}</div>
-                            </TableCell>
-
-                            <TableCell className="align-top">
-                              <div className="space-y-1">
-                                <Badge className={cn("rounded-full gap-2", statusBadgeClass(st.key))}>
-                                  <span className={cn("inline-block h-2 w-2 rounded-full", statusDotClass(st.key))} />
-                                  {st.label}
-                                </Badge>
-                                <div className="text-[11px] text-black/50">{hint}</div>
-                              </div>
-                            </TableCell>
-
-                            <TableCell className="align-top whitespace-normal">
-                              <div className="text-sm">{typeLabel(c.type)}</div>
-                              <div className="text-xs text-black/60">{formatValue(c)}</div>
-                            </TableCell>
-
-                            <TableCell className="align-top whitespace-normal text-xs text-black/60">
-                              <div>Início: {fmtDate(c.startsAt)}</div>
-                              <div>Fim: {fmtDate(c.endsAt ?? null)}</div>
-                            </TableCell>
-
-                            <TableCell className="text-right align-top">
-                              <div className="flex justify-end gap-2">
-                                <Button asChild variant="outline" className="rounded-xl">
-                                  <Link href={`/admin/coupons/${c.id}`}>Editar</Link>
-                                </Button>
-
-                                <AlertDialog>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button
-                                        variant="outline"
-                                        size="icon-sm"
-                                        className="rounded-xl bg-white hover:bg-slate-50"
-                                      >
-                                        <MoreHorizontal className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-
-                                    <DropdownMenuContent align="end" className="rounded-xl border-slate-200 bg-white shadow-lg">
-                                      <DropdownMenuItem
-                                        onSelect={async (e) => {
-                                          e.preventDefault();
-                                          const ok = await copyToClipboard(c.code ?? "");
-                                          toast[ok ? "success" : "error"](ok ? "Código copiado." : "Não foi possível copiar.");
-                                        }}
-                                      >
-                                        <Copy className="h-4 w-4" />
-                                        Copiar código
-                                      </DropdownMenuItem>
-
-                                      <DropdownMenuItem
-                                        onSelect={async (e) => {
-                                          e.preventDefault();
-                                          const url = `${window.location.origin}/admin/coupons/${c.id}`;
-                                          const ok = await copyToClipboard(url);
-                                          toast[ok ? "success" : "error"](ok ? "Link copiado." : "Não foi possível copiar.");
-                                        }}
-                                      >
-                                        <Link2 className="h-4 w-4" />
-                                        Copiar link
-                                      </DropdownMenuItem>
-
-                                      <DropdownMenuSeparator />
-
-                                      <AlertDialogTrigger asChild>
-                                        <DropdownMenuItem variant="destructive" disabled={disableM.isPending || c.active === false}>
-                                          Desativar
-                                        </DropdownMenuItem>
-                                      </AlertDialogTrigger>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-
-                                  <AlertDialogContent className="rounded-2xl">
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Desativar este cupom?</AlertDialogTitle>
-                                      <AlertDialogDescription>Ele não poderá mais ser aplicado no checkout.</AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
-                                      <AlertDialogAction className="rounded-xl" onClick={() => disableM.mutate(c.id)}>
-                                        Confirmar
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* ===== MOBILE: cards ===== */}
-              <div className="lg:hidden space-y-3">
-                {itemsSorted.length === 0 ? (
-                  <div className="rounded-2xl border p-4 text-sm text-black/60">Nenhum cupom.</div>
-                ) : (
-                  itemsSorted.map((c) => {
-                    const now = new Date();
-                    const st = computeStatus(c, now);
-                    const hint = humanWindowHint(c, now);
+              {/* ✅ Desktop: scroll interno + seções */}
+              <div className="hidden lg:block space-y-4">
+                {statusFilter === "ALL" ? (
+                  STATUS_ORDER.map((k) => {
+                    const list = grouped[k];
+                    const shown = Math.min(list.length, limitByStatus[k]);
+                    const slice = list.slice(0, shown);
 
                     return (
-                      <div key={c.id} className="rounded-2xl border bg-white p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="font-semibold break-words">{c.code ?? "-"}</div>
-                            <div className="text-xs text-black/60">{appliesToLabel(c.appliesTo)}</div>
-                            <div className="text-[10px] text-black/50 font-mono break-all mt-1">{c.id}</div>
-                          </div>
+                      <div key={k} className="rounded-2xl border overflow-hidden bg-white">
+                        <SectionHeader k={k} total={list.length} />
 
-                          <Badge className={cn("rounded-full gap-2 shrink-0", statusBadgeClass(st.key))}>
-                            <span className={cn("inline-block h-2 w-2 rounded-full", statusDotClass(st.key))} />
-                            {st.label}
-                          </Badge>
+                        <div className="max-h-[520px] overflow-auto">
+                          <Table className="min-w-[860px]">
+                            <TableHeader className="bg-white sticky top-0 z-10 border-b">
+                              <TableRow>
+                                <TableHead>Cupom</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Desconto</TableHead>
+                                <TableHead>Validade</TableHead>
+                                <TableHead className="text-right">Ações</TableHead>
+                              </TableRow>
+                            </TableHeader>
+
+                            <TableBody>
+                              {slice.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={5} className="text-sm text-black/60">
+                                    Nenhum cupom.
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                slice.map((c) => <CouponRow key={c.id} c={c} />)
+                              )}
+                            </TableBody>
+                          </Table>
                         </div>
 
-                        <div className="grid gap-2">
-                          <div className="rounded-xl border bg-slate-50/60 p-3">
-                            <div className="text-xs text-black/60">Desconto</div>
-                            <div className="text-sm font-medium">{typeLabel(c.type)}</div>
-                            <div className="text-xs text-black/60">{formatValue(c)}</div>
-                          </div>
-
-                          <div className="rounded-xl border bg-slate-50/60 p-3">
-                            <div className="text-xs text-black/60">Validade</div>
-                            <div className="text-xs text-black/70">{hint}</div>
-                            <div className="text-[11px] text-black/60 mt-1">
-                              Início: {fmtDate(c.startsAt)} • Fim: {fmtDate(c.endsAt ?? null)}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <Button asChild variant="outline" className="rounded-xl">
-                            <Link href={`/admin/coupons/${c.id}`}>Editar</Link>
-                          </Button>
-
-                          <AlertDialog>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="outline" className="rounded-xl">
-                                  <MoreHorizontal className="mr-2 h-4 w-4" />
-                                  Mais
-                                </Button>
-                              </DropdownMenuTrigger>
-
-                              <DropdownMenuContent align="end" className="rounded-xl border-slate-200 bg-white shadow-lg">
-                                <DropdownMenuItem
-                                  onSelect={async (e) => {
-                                    e.preventDefault();
-                                    const ok = await copyToClipboard(c.code ?? "");
-                                    toast[ok ? "success" : "error"](ok ? "Código copiado." : "Não foi possível copiar.");
-                                  }}
-                                >
-                                  <Copy className="h-4 w-4" />
-                                  Copiar código
-                                </DropdownMenuItem>
-
-                                <DropdownMenuItem
-                                  onSelect={async (e) => {
-                                    e.preventDefault();
-                                    const url = `${window.location.origin}/admin/coupons/${c.id}`;
-                                    const ok = await copyToClipboard(url);
-                                    toast[ok ? "success" : "error"](ok ? "Link copiado." : "Não foi possível copiar.");
-                                  }}
-                                >
-                                  <Link2 className="h-4 w-4" />
-                                  Copiar link
-                                </DropdownMenuItem>
-
-                                <DropdownMenuSeparator />
-
-                                <AlertDialogTrigger asChild>
-                                  <DropdownMenuItem variant="destructive" disabled={disableM.isPending || c.active === false}>
-                                    Desativar
-                                  </DropdownMenuItem>
-                                </AlertDialogTrigger>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-
-                            <AlertDialogContent className="rounded-2xl">
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Desativar este cupom?</AlertDialogTitle>
-                                <AlertDialogDescription>Ele não poderá mais ser aplicado no checkout.</AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
-                                <AlertDialogAction className="rounded-xl" onClick={() => disableM.mutate(c.id)}>
-                                  Confirmar
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-
-                        <div className="text-[11px] text-black/50">
-                          Dica: {hint}
-                        </div>
+                        <LoadMore k={k} shown={shown} total={list.length} />
                       </div>
                     );
                   })
+                ) : (
+                  (() => {
+                    const k = statusFilter as UiStatus;
+                    const list = grouped[k];
+                    const shown = Math.min(list.length, limitByStatus[k]);
+                    const slice = list.slice(0, shown);
+
+                    return (
+                      <div className="rounded-2xl border overflow-hidden bg-white">
+                        <SectionHeader k={k} total={list.length} />
+
+                        <div className="max-h-[620px] overflow-auto">
+                          <Table className="min-w-[860px]">
+                            <TableHeader className="bg-white sticky top-0 z-10 border-b">
+                              <TableRow>
+                                <TableHead>Cupom</TableHead>
+                                <TableHead>Status</TableHead>
+                                <TableHead>Desconto</TableHead>
+                                <TableHead>Validade</TableHead>
+                                <TableHead className="text-right">Ações</TableHead>
+                              </TableRow>
+                            </TableHeader>
+
+                            <TableBody>
+                              {slice.length === 0 ? (
+                                <TableRow>
+                                  <TableCell colSpan={5} className="text-sm text-black/60">
+                                    Nenhum cupom em {statusLabel(statusFilter)}.
+                                  </TableCell>
+                                </TableRow>
+                              ) : (
+                                slice.map((c) => <CouponRow key={c.id} c={c} />)
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+
+                        <LoadMore k={k} shown={shown} total={list.length} />
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+
+              {/* ✅ Mobile: cards + seções + mostrar mais */}
+              <div className="lg:hidden space-y-4">
+                {statusFilter === "ALL" ? (
+                  STATUS_ORDER.map((k) => {
+                    const list = grouped[k];
+                    const shown = Math.min(list.length, limitByStatus[k]);
+                    const slice = list.slice(0, shown);
+
+                    return (
+                      <div key={k} className="rounded-2xl border bg-white overflow-hidden">
+                        <SectionHeader k={k} total={list.length} />
+
+                        <div className="p-3 space-y-3">
+                          {slice.length === 0 ? (
+                            <div className="rounded-2xl border p-4 text-sm text-black/60">Nenhum cupom.</div>
+                          ) : (
+                            slice.map((c) => <CouponCard key={c.id} c={c} />)
+                          )}
+                        </div>
+
+                        <LoadMore k={k} shown={shown} total={list.length} />
+                      </div>
+                    );
+                  })
+                ) : (
+                  (() => {
+                    const k = statusFilter as UiStatus;
+                    const list = grouped[k];
+                    const shown = Math.min(list.length, limitByStatus[k]);
+                    const slice = list.slice(0, shown);
+
+                    return (
+                      <div className="rounded-2xl border bg-white overflow-hidden">
+                        <SectionHeader k={k} total={list.length} />
+
+                        <div className="p-3 space-y-3">
+                          {slice.length === 0 ? (
+                            <div className="rounded-2xl border p-4 text-sm text-black/60">
+                              Nenhum cupom em {statusLabel(statusFilter)}.
+                            </div>
+                          ) : (
+                            slice.map((c) => <CouponCard key={c.id} c={c} />)
+                          )}
+                        </div>
+
+                        <LoadMore k={k} shown={shown} total={list.length} />
+                      </div>
+                    );
+                  })()
                 )}
               </div>
             </>

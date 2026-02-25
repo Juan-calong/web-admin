@@ -3,32 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Search, X } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
 
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 type Category = {
   id: string;
@@ -48,21 +36,30 @@ export default function AdminCategoriesPage() {
   const [filter, setFilter] = useState<"all" | "true" | "false">("all");
   const [newName, setNewName] = useState("");
 
+  // ✅ busca local (UX)
+  const [q, setQ] = useState("");
+
+  // ✅ key correta (inclui filtro)
+  const categoriesKey = useMemo(() => ["categories", { filter }] as const, [filter]);
+
   const categoriesQ = useQuery({
-    queryKey: ["categories", { filter }],
-    queryFn: async () => {
-      const params = filter === "all" ? undefined : { active: filter };
-      const res = await api.get(endpoints.categories.list, { params });
-      return (res.data?.items ?? []) as Category[];
-    },
-    refetchOnWindowFocus: false,
-    retry: false,
-  });
+  queryKey: categoriesKey,
+  queryFn: async () => {
+    const params = filter === "all" ? undefined : { active: filter };
+    const res = await api.get(endpoints.categories.list, { params });
+    return (res.data?.items ?? []) as Category[];
+  },
+  placeholderData: (prev) => prev, // ✅ mantém a lista enquanto refetch acontece
+  refetchOnWindowFocus: false,
+  retry: false,
+});
 
   useEffect(() => {
-    if (categoriesQ.isError) toast.error(apiErrorMessage(categoriesQ.error, "Erro ao carregar categorias."));
+    if (categoriesQ.isError) {
+      toast.error(apiErrorMessage(categoriesQ.error, "Erro ao carregar categorias."));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [categoriesQ.isError, categoriesQ.error]);
+  }, [categoriesQ.isError, categoriesQ.error]);
 
   const createM = useMutation({
     mutationFn: async () => {
@@ -79,169 +76,262 @@ export default function AdminCategoriesPage() {
       toast.success("Categoria criada.");
       setNewName("");
       await qc.invalidateQueries({ queryKey: ["categories"] });
-      await categoriesQ.refetch();
     },
     onError: (e) => toast.error(apiErrorMessage(e, "Erro ao criar categoria.")),
   });
 
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
   const patchM = useMutation({
-    mutationFn: async (vars: { id: string; patch: { name?: string; active?: boolean } }) => {
-      await api.patch(endpoints.categories.update(vars.id), vars.patch, {
-        headers: { "Idempotency-Key": stableKey("cat-patch", vars.id, JSON.stringify(vars.patch)) },
+  mutationFn: async (vars: {
+    id: string;
+    patch: { name?: string; active?: boolean };
+    opId: string;
+  }) => {
+    const res = await api.patch(endpoints.categories.update(vars.id), vars.patch, {
+      headers: {
+        "Idempotency-Key": stableKey("cat-patch", vars.id, vars.opId),
+      },
+    });
+
+    return res.data as Category;
+  },
+
+  onMutate: async (vars) => {
+    setPendingId(vars.id);
+
+    await qc.cancelQueries({ queryKey: categoriesKey });
+
+    const prev = qc.getQueryData<Category[]>(categoriesKey);
+
+    qc.setQueryData<Category[]>(categoriesKey, (old) => {
+      const list = old ?? [];
+      return list.map((c) => {
+        if (c.id !== vars.id) return c;
+        return { ...c, ...vars.patch, updatedAt: new Date().toISOString() };
       });
-    },
-    onSuccess: async () => {
-      toast.success("Categoria atualizada.");
-      await qc.invalidateQueries({ queryKey: ["categories"] });
-      await categoriesQ.refetch();
-    },
-    onError: (e) => toast.error(apiErrorMessage(e, "Erro ao atualizar categoria.")),
-  });
+    });
+
+    return { prev };
+  },
+
+  onError: (e, _vars, ctx) => {
+    if (ctx?.prev) qc.setQueryData(categoriesKey, ctx.prev);
+    toast.error(apiErrorMessage(e, "Erro ao atualizar categoria."));
+  },
+
+  onSettled: async () => {
+    setPendingId(null);
+    setTimeout(() => {
+      qc.invalidateQueries({ queryKey: ["categories"] });
+    }, 800);
+  },
+});
 
   const items = useMemo(() => categoriesQ.data ?? [], [categoriesQ.data]);
 
+  // ✅ filtro de busca local (por nome e id)
+  const itemsFiltered = useMemo(() => {
+    const qq = q.trim().toLowerCase();
+    if (!qq) return items;
+    return items.filter((c) => `${c.name} ${c.id}`.toLowerCase().includes(qq));
+  }, [items, q]);
+
+  const itemsSorted = useMemo(() => {
+  const list = [...itemsFiltered];
+
+  // Ativas primeiro; dentro de cada grupo, por nome
+  list.sort((a, b) => {
+    if (a.active !== b.active) return a.active ? -1 : 1;
+    return a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" });
+  });
+
+  return list;
+}, [itemsFiltered]);
+
   return (
-    <div className="space-y-4 px-3 lg:px-6">
-      <div className="space-y-1">
-        <div className="text-xl lg:text-2xl font-black">Categorias</div>
-        <div className="text-sm text-black/60">Crie e organize categorias</div>
-      </div>
+    <div className="min-h-[calc(100vh-64px)] bg-slate-50">
+      <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:py-8 space-y-5">
+        {/* Cabeçalho */}
+        <div className="space-y-1">
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">Categorias</h1>
+          <p className="text-sm text-slate-600">Crie e organize categorias</p>
+        </div>
 
-      <Card className="rounded-2xl">
-        <CardHeader>
-          <CardTitle>Gerenciar</CardTitle>
-          <CardDescription>Filtro + criação rápida</CardDescription>
-        </CardHeader>
+        {/* Gerenciar */}
+        <Card className="rounded-2xl border border-slate-200/70 shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg font-semibold text-slate-900">Gerenciar categorias</CardTitle>
+            <CardDescription className="text-sm text-slate-500">Filtrar + pesquisa + criação rápida</CardDescription>
+          </CardHeader>
 
-        <CardContent className="space-y-3">
-          {/* IMPORTANTE: só vira “3 colunas” no LG (porque com sidebar o conteúdo fica estreito) */}
-          <div className="grid gap-3 lg:grid-cols-3">
-            <div className="grid gap-2">
-              <Label>Filtro</Label>
-              <select
-                className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value as "all" | "true" | "false")}
-              >
-                <option value="all">Todos</option>
-                <option value="true">Ativos</option>
-                <option value="false">Inativos</option>
-              </select>
-            </div>
-
-            <div className="grid gap-2 lg:col-span-2">
-              <Label>Nova categoria</Label>
-
-              {/* no “conteúdo estreito” sempre empilha; só vira linha no LG */}
-              <div className="flex flex-col gap-2 lg:flex-row">
-                <Input
-                  className="w-full rounded-xl"
-                  placeholder="Ex.: Cabelo"
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  disabled={createM.isPending}
-                />
-
-                <Button
-                  className="w-full rounded-xl lg:w-auto"
-                  onClick={() => createM.mutate()}
-                  disabled={createM.isPending}
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.5fr)]">
+              {/* Filtro */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-slate-800">Filtrar</Label>
+                <select
+                  className="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-800 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value as "all" | "true" | "false")}
                 >
-                  {createM.isPending ? "Criando…" : "Criar"}
-                </Button>
+                  <option value="all">Todos</option>
+                  <option value="true">Ativos</option>
+                  <option value="false">Inativos</option>
+                </select>
               </div>
 
-              {createM.isError ? (
-                <div className="text-sm text-red-600">
-                  {apiErrorMessage(createM.error, "Erro ao criar categoria.")}
+              {/* Busca */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-slate-800">Buscar</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/50" />
+                  <Input
+                    className="h-10 rounded-xl pl-9 pr-9 border-slate-300 bg-white text-sm shadow-sm focus-visible:ring-emerald-500"
+                    placeholder="Digite o nome ou id…"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                  />
+                  {q.trim() ? (
+                    <button
+                      type="button"
+                      onClick={() => setQ("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 hover:bg-black/5"
+                      aria-label="Limpar busca"
+                    >
+                      <X className="h-4 w-4 text-black/60" />
+                    </button>
+                  ) : null}
                 </div>
-              ) : null}
-            </div>
-          </div>
+                <div className="text-xs text-slate-500">
+                  Mostrando {itemsFiltered.length} de {items.length}
+                </div>
+              </div>
 
-          <Separator />
+              {/* Nova categoria */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-slate-800">Nova categoria</Label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <Input
+                    className="h-10 w-full rounded-xl border-slate-300 bg-white text-sm shadow-sm focus-visible:ring-emerald-500"
+                    placeholder="Ex.: Cabelo"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    disabled={createM.isPending}
+                  />
 
-          <div className="flex flex-col gap-2 lg:flex-row lg:justify-end">
-            <Button
-              variant="outline"
-              className="w-full rounded-xl lg:w-auto"
-              onClick={() => categoriesQ.refetch()}
-              disabled={categoriesQ.isFetching}
-            >
-              {categoriesQ.isFetching ? "Atualizando…" : "Atualizar"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="rounded-2xl">
-        <CardHeader>
-          <CardTitle>Lista</CardTitle>
-          <CardDescription>{items.length} categoria(s)</CardDescription>
-        </CardHeader>
-
-        <CardContent>
-          {categoriesQ.isLoading ? (
-            <div className="text-sm">Carregando…</div>
-          ) : categoriesQ.isError ? (
-            <div className="text-sm text-red-600">
-              {apiErrorMessage(categoriesQ.error, "Erro ao carregar categorias.")}
-            </div>
-          ) : (
-            <>
-              {/* ===== TABELA: só no LG+ (com sidebar, o “md/sm” ainda fica estreito e corta) ===== */}
-              <div className="hidden lg:block rounded-2xl border overflow-x-auto">
-                <Table className="min-w-[720px]">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nome</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-
-                  <TableBody>
-                    {items.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={3} className="text-sm text-black/60">
-                          Nenhuma categoria.
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      items.map((c) => (
-                        <CategoryRowTable
-                          key={c.id}
-                          c={c}
-                          busy={patchM.isPending}
-                          onRename={(name) => patchM.mutate({ id: c.id, patch: { name } })}
-                          onToggle={() => patchM.mutate({ id: c.id, patch: { active: !c.active } })}
-                        />
-                      ))
+                  <Button
+                    className={cn(
+                      "h-10 w-full rounded-xl sm:w-auto",
+                      "bg-emerald-500 text-white hover:bg-emerald-600",
+                      "shadow-sm"
                     )}
-                  </TableBody>
-                </Table>
-              </div>
+                    onClick={() => createM.mutate()}
+                    disabled={createM.isPending}
+                  >
+                    {createM.isPending ? "Criando…" : "Criar"}
+                  </Button>
+                </div>
 
-              {/* ===== COMPACTO: cards (default) ===== */}
-              <div className="lg:hidden space-y-3">
-                {items.length === 0 ? (
-                  <div className="rounded-2xl border p-4 text-sm text-black/60">Nenhuma categoria.</div>
-                ) : (
-                  items.map((c) => (
-                    <CategoryCard
-                      key={c.id}
-                      c={c}
-                      busy={patchM.isPending}
-                      onRename={(name) => patchM.mutate({ id: c.id, patch: { name } })}
-                      onToggle={() => patchM.mutate({ id: c.id, patch: { active: !c.active } })}
-                    />
-                  ))
-                )}
+                {createM.isError ? (
+                  <div className="text-sm text-red-600">{apiErrorMessage(createM.error, "Erro ao criar categoria.")}</div>
+                ) : null}
               </div>
-            </>
-          )}
-        </CardContent>
-      </Card>
+            </div>
+
+            <Separator className="bg-slate-200/80" />
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="outline"
+                className="h-10 w-full rounded-xl border-slate-300 bg-white text-sm text-slate-900 shadow-sm hover:bg-slate-50 sm:w-auto"
+                onClick={() => categoriesQ.refetch()}
+                disabled={categoriesQ.isFetching}
+              >
+                {categoriesQ.isFetching ? "Atualizando…" : "Atualizar"}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Lista */}
+        <Card className="rounded-2xl border border-slate-200/70 shadow-sm">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-lg font-semibold text-slate-900">Lista de categorias</CardTitle>
+            <CardDescription className="text-sm text-slate-500">{itemsFiltered.length} categoria(s)</CardDescription>
+          </CardHeader>
+
+          <CardContent>
+            {categoriesQ.isLoading ? (
+              <div className="text-sm text-slate-600">Carregando…</div>
+            ) : categoriesQ.isError ? (
+              <div className="text-sm text-red-600">{apiErrorMessage(categoriesQ.error, "Erro ao carregar categorias.")}</div>
+            ) : (
+              <>
+                {/* Desktop table */}
+                <div className="hidden lg:block overflow-x-auto rounded-2xl border border-slate-200/80 bg-white">
+                  <Table className="min-w-[720px]">
+                    <TableHeader>
+                      <TableRow className="border-b border-slate-200/80">
+                        <TableHead className="text-slate-500">Nome</TableHead>
+                        <TableHead className="text-slate-500">Status</TableHead>
+                        <TableHead className="text-right text-slate-500">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+
+                    <TableBody>
+                      {itemsFiltered.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={3} className="py-6 text-center text-sm text-slate-500">
+                            Nenhuma categoria encontrada.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        itemsSorted.map((c) => (
+                          <CategoryRowTable
+  key={c.id}
+  c={c}
+  busy={pendingId === c.id}
+  onRename={(name) =>
+    patchM.mutate({ id: c.id, patch: { name }, opId: crypto.randomUUID() })
+  }
+  onToggle={() =>
+    patchM.mutate({ id: c.id, patch: { active: !c.active }, opId: crypto.randomUUID() })
+  }
+/>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                {/* Mobile cards */}
+                <div className="space-y-3 lg:hidden">
+                  {itemsFiltered.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                      Nenhuma categoria encontrada.
+                    </div>
+                  ) : (
+                    itemsSorted.map((c) => (
+                      <CategoryCard
+  key={c.id}
+  c={c}
+  busy={pendingId === c.id}
+  onRename={(name) =>
+    patchM.mutate({ id: c.id, patch: { name }, opId: crypto.randomUUID() })
+  }
+  onToggle={() =>
+    patchM.mutate({ id: c.id, patch: { active: !c.active }, opId: crypto.randomUUID() })
+  }
+/>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
@@ -260,17 +350,26 @@ function CategoryRowTable({
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(c.name);
 
+  useEffect(() => {
+    setName(c.name);
+  }, [c.name]);
+
   return (
-    <TableRow className="hover:bg-black/[0.02]">
+    <TableRow className="border-b border-slate-100 hover:bg-slate-50/60">
       <TableCell className="align-top">
-        <div className="font-semibold">{c.name}</div>
-        <div className="text-xs text-black/50 font-mono break-all">{c.id}</div>
+        <div className="font-semibold text-slate-900">{c.name}</div>
+        <div className="mt-1 text-xs font-mono text-slate-400 break-all">{c.id}</div>
 
         {editing ? (
-          <div className="mt-2 flex flex-wrap gap-2">
-            <Input className="h-9 w-full sm:w-auto rounded-xl" value={name} onChange={(e) => setName(e.target.value)} />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Input
+              className="h-9 w-full rounded-xl border-slate-300 bg-white text-sm shadow-sm focus-visible:ring-emerald-500 sm:w-auto"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={busy}
+            />
             <Button
-              className="h-9 rounded-xl"
+              className="h-9 rounded-xl bg-emerald-500 text-white hover:bg-emerald-600"
               onClick={() => {
                 const v = name.trim();
                 if (!v) return;
@@ -283,7 +382,7 @@ function CategoryRowTable({
             </Button>
             <Button
               variant="outline"
-              className="h-9 rounded-xl"
+              className="h-9 rounded-xl border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
               onClick={() => {
                 setName(c.name);
                 setEditing(false);
@@ -296,27 +395,40 @@ function CategoryRowTable({
         ) : null}
       </TableCell>
 
-      <TableCell>
+      <TableCell className="align-middle">
         <Badge
-          variant={c.active ? "default" : "secondary"}
-          className={cn("rounded-full", c.active ? "" : "text-black/70")}
+          variant="outline"
+          className={cn(
+            "rounded-full px-3 py-1 text-xs font-medium",
+            c.active ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"
+          )}
         >
           {c.active ? "ATIVA" : "INATIVA"}
         </Badge>
       </TableCell>
 
-      <TableCell className="text-right">
+      <TableCell className="align-middle text-right">
         <div className="flex justify-end gap-2">
           {!editing ? (
-            <Button variant="outline" className="rounded-xl whitespace-nowrap" onClick={() => {
+            <Button
+              variant="outline"
+              className="rounded-xl border-slate-300 bg-white px-4 text-sm text-slate-900 hover:bg-slate-50"
+              onClick={() => {
                 setName(c.name);
                 setEditing(true);
-              }} disabled={busy}>
-                Renomear
+              }}
+              disabled={busy}
+            >
+              Renomear
             </Button>
           ) : null}
-          <Button variant="outline" className="rounded-xl whitespace-nowrap" onClick={onToggle} disabled={busy}>
-            {c.active ? "Desativar" : "Ativar"}
+          <Button
+            variant="outline"
+            className="rounded-xl border-slate-300 bg-white px-4 text-sm text-slate-900 hover:bg-slate-50"
+            onClick={onToggle}
+            disabled={busy}
+          >
+            {busy ? "Salvando…" : c.active ? "Desativar" : "Ativar"}
           </Button>
         </div>
       </TableCell>
@@ -338,17 +450,24 @@ function CategoryCard({
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(c.name);
 
+  useEffect(() => {
+    setName(c.name);
+  }, [c.name]);
+
   return (
-    <div className="rounded-2xl border bg-white p-4 space-y-3">
+    <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="font-semibold break-words">{c.name}</div>
-          <div className="text-xs text-black/50 font-mono break-all mt-1">{c.id}</div>
+          <div className="break-words font-semibold text-slate-900">{c.name}</div>
+          <div className="mt-1 break-all text-xs font-mono text-slate-400">{c.id}</div>
         </div>
 
         <Badge
-          variant={c.active ? "default" : "secondary"}
-          className={cn("rounded-full shrink-0", c.active ? "" : "text-black/70")}
+          variant="outline"
+          className={cn(
+            "shrink-0 rounded-full px-3 py-1 text-xs font-medium",
+            c.active ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-600"
+          )}
         >
           {c.active ? "ATIVA" : "INATIVA"}
         </Badge>
@@ -356,10 +475,15 @@ function CategoryCard({
 
       {editing ? (
         <div className="space-y-2">
-          <Input className="w-full rounded-xl" value={name} onChange={(e) => setName(e.target.value)} disabled={busy} />
+          <Input
+            className="w-full rounded-xl border-slate-300 bg-white text-sm shadow-sm focus-visible:ring-emerald-500"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            disabled={busy}
+          />
           <div className="grid grid-cols-2 gap-2">
             <Button
-              className="rounded-xl"
+              className="rounded-xl bg-emerald-500 text-white hover:bg-emerald-600"
               onClick={() => {
                 const v = name.trim();
                 if (!v) return;
@@ -373,7 +497,7 @@ function CategoryCard({
 
             <Button
               variant="outline"
-              className="rounded-xl"
+              className="rounded-xl border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
               onClick={() => {
                 setName(c.name);
                 setEditing(false);
@@ -386,14 +510,24 @@ function CategoryCard({
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-2">
-          <Button variant="outline" className="rounded-xl" onClick={() => {
-                setName(c.name);
-                setEditing(true);
-              }} disabled={busy}>
-                Renomear
+          <Button
+            variant="outline"
+            className="rounded-xl border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
+            onClick={() => {
+              setName(c.name);
+              setEditing(true);
+            }}
+            disabled={busy}
+          >
+            Renomear
           </Button>
-          <Button variant="outline" className="rounded-xl" onClick={onToggle} disabled={busy}>
-            {c.active ? "Desativar" : "Ativar"}
+          <Button
+            variant="outline"
+            className="rounded-xl border-slate-300 bg-white text-slate-900 hover:bg-slate-50"
+            onClick={onToggle}
+            disabled={busy}
+          >
+            {busy ? "Salvando…" : c.active ? "Desativar" : "Ativar"}
           </Button>
         </div>
       )}
