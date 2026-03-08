@@ -1,89 +1,114 @@
 export const endpoints = {
-    health: "/health",
-    ready: "/ready",
+  health: "/health",
+  ready: "/ready",
 
-    auth: {
-        login: "/auth/login",
-        refresh: "/auth/refresh",
-        logout: "/auth/logout",
-    },
+  auth: {
+    login: "/auth/login",
+    refresh: "/auth/refresh",
+    logout: "/auth/logout",
+  },
 
-    integrations: {
-        cnpjVerify: (cnpj: string) => `/integrations/cnpj/${cnpj}/verify`,
-    },
+  integrations: {
+    cnpjVerify: (cnpj: string) => `/integrations/cnpj/${cnpj}/verify`,
+  },
 
-    products: {
-        list: "/products",
-        create: "/products",
-        update: (id: string) => `/products/${id}`,
-        byId: (id: string) => `/products/${id}`,
-        images: {
-            presign: (id: string) => `/products/${id}/images/presign`,
-            confirm: (id: string) => `/products/${id}/images/confirm`,
-            delete: (id: string, imageId: string) => `/products/${id}/images/${imageId}`,
-            update: (id: string) => `/products/${id}/images`,
-        },
-    },
+  products: {
+  list: "/products",
+  create: "/products",
+  update: (id: string) => `/products/${id}`,
+  byId: (id: string) => `/products/${id}`,
+  related: (id: string) => `/products/${id}/related`,
+  images: {
+    presign: (id: string) => `/products/${id}/images/presign`,
+    confirm: (id: string) => `/products/${id}/images/confirm`,
+    delete: (id: string, imageId: string) => `/products/${id}/images/${imageId}`,
+    update: (id: string) => `/products/${id}/images`,
+  },
+},
 
-    categories: {
-        list: "/categories",
-        create: "/categories",
-        update: (id: string) => `/categories/${id}`,
-    },
+  categories: {
+    list: "/categories",
+    create: "/categories",
+    update: (id: string) => `/categories/${id}`,
+  },
 
-    orders: {
-        list: "/orders",
-        byId: (id: string) => `/orders/${id}`,
-    },
+  orders: {
+    list: "/orders",
+    byId: (id: string) => `/orders/${id}`,
+  },
 
-    adminOrders: {
-        decide: (orderId: string) => `/admin/orders/${orderId}`,
-        details: (orderId: string) => `/admin/orders/${orderId}`,
-        refund: (orderId: string) => `/admin/orders/${orderId}/refund`,
-    },
+  adminOrders: {
+    decide: (orderId: string) => `/admin/orders/${orderId}`,
+    details: (orderId: string) => `/admin/orders/${orderId}`,
+    refund: (orderId: string) => `/admin/orders/${orderId}/refund`,
+  },
 
-    adminCoupons: {
-        list: "/admin/coupons",
-        byId: (id: string) => `/admin/coupons/${id}`,
-        create: "/admin/coupons",
-        patch: (id: string) => `/admin/coupons/${id}`,
-        disable: (id: string) => `/admin/coupons/${id}/disable`,
-    },
+  adminCoupons: {
+    list: "/admin/coupons",
+    byId: (id: string) => `/admin/coupons/${id}`,
+    create: "/admin/coupons",
+    patch: (id: string) => `/admin/coupons/${id}`,
+    disable: (id: string) => `/admin/coupons/${id}/disable`,
+  },
 
-    adminPayoutConfig: {
-        get: "/admin/payout-config",
-        save: "/admin/payout-config",
-    },
+  adminPayoutConfig: {
+    get: "/admin/payout-config",
+    save: "/admin/payout-config",
+  },
 
-    adminPromos: {
-        listByProduct: (productId: string) => `/admin/products/${productId}/promotions`,
-        createForProduct: (productId: string) => `/admin/products/${productId}/promotions`,
-        patch: (productId: string, promoId: string) => `/admin/products/${productId}/promotions/${promoId}`,
-        disable: (productId: string, promoId: string) =>
-            `/admin/products/${productId}/promotions/${promoId}/disable`,
-    },
+  adminPromos: {
+    listByProduct: (productId: string) => `/admin/products/${productId}/promotions`,
+    createForProduct: (productId: string) => `/admin/products/${productId}/promotions`,
+    patch: (productId: string, promoId: string) =>
+      `/admin/products/${productId}/promotions/${promoId}`,
+    disable: (productId: string, promoId: string) =>
+      `/admin/products/${productId}/promotions/${promoId}/disable`,
+  },
 
-    adminInbox: {
-        list: "/admin/notifications",
-        markRead: (id: string) => `/admin/notifications/${id}/read`,
+  bbFunds: {
+    get: "/admin/bb/balance",
+    set: "/admin/bb/balance",
+    summary: "/admin/bb/malote/summary",
+  },
 
-        unreadCount: "/admin/notifications/unread-count",
-        pendingSellers: "/admin/sellers/pending",
-        approveSeller: (id: string) => `/admin/sellers/${id}/approve`,
-        rejectSeller: (id: string) => `/admin/sellers/${id}/reject`,
-        requestedPayouts: "/admin/payouts/requested",
-        markPayoutPaid: (id: string) => `/admin/payouts/${id}/paid`,
-        rejectPayout: (id: string) => `/admin/payouts/${id}/reject`,
-    },
+  adminInbox: {
+    notifications: "/admin/notifications",
+    unreadCount: "/admin/notifications/unread-count",
+    readOne: (id: string) => `/admin/notifications/${id}/read`,
+    readAll: "/admin/notifications/read-all",
+    readMany: "/admin/notifications/read-many",
 
-    adminPayouts: {
-        byId: (id: string) => `/admin/payouts/${id}`,
-    },
+    pendingSellers: "/admin/sellers/pending",
+    approveSeller: (id: string) => `/admin/sellers/${id}/approve`,
+    rejectSeller: (id: string) => `/admin/sellers/${id}/reject`,
 
-    coupons: {
-        validate: "/coupons/validate",
-    },
-    adminDashboard: {
+    requestedPayouts: "/admin/payouts/requested",
+    markPayoutPaid: (id: string) => `/admin/payouts/${id}/paid`,
+    rejectPayout: (id: string) => `/admin/payouts/${id}/reject`,
+  },
+
+  coupons: {
+    validate: "/coupons/validate",
+  },
+
+  adminDashboard: {
     summary: "/admin/dashboard/summary",
-    },
+  },
+
+  homeBanners: {
+    list: "/admin/home-banners",
+    byId: (id: string) => `/admin/home-banners/${id}`,
+    create: "/admin/home-banners",
+    update: (id: string) => `/admin/home-banners/${id}`,
+    delete: (id: string) => `/admin/home-banners/${id}`,
+    reorder: "/admin/home-banners/reorder",
+
+    presignImage: "/admin/home-banners/images/presign",
+    confirmImage: "/admin/home-banners/images/confirm",
+  },
+
+  mobileHome: {
+    banners: "/home/banners",
+  },
+
 } as const;

@@ -65,6 +65,10 @@ type Product = {
   audience?: ProductAudience | null;
 
   highlights?: string[] | null;
+  brand?: string | null;
+  line?: string | null;
+  volume?: string | null;
+  effect?: string | null;
   images?: ProductImage[];
 };
 
@@ -265,6 +269,12 @@ const availableToCustomer = audience === "ALL";
 const [file, setFile] = useState<File | null>(null);
 const [uploadErr, setUploadErr] = useState<string | null>(null);
 
+const [brand, setBrand] = useState("");
+const [line, setLine] = useState("");
+
+const [volume, setVolume]  = useState ("");
+const [effect, setEffect]  = useState ("");
+
 const product = productQ.data ?? null;
 
 useEffect(() => {
@@ -275,6 +285,10 @@ useEffect(() => {
   setPrice(String(product.price ?? ""));
   setCustomerPrice(product.customerPrice != null ? String(product.customerPrice) : "");
   setDescription(product.description ?? "");
+  setBrand(product.brand ?? "");
+  setLine(product.line ?? "");
+  setVolume(product.volume ?? "");
+  setEffect(product.effect ?? "");
   setHighlightsText((product.highlights ?? []).join("\n"));
   setActive(!!product.active);
   setStock(Math.max(0, Number(product.stock ?? 0)));
@@ -323,19 +337,24 @@ useEffect(() => {
       const highlights = parseHighlights(highlightsText);
 
       const payload = {
-        sku: skuN,
-        name: nameN,
-        description: description.trim() ? description.trim() : null,
-        price: priceSan,
-        customerPrice: customerPrice.trim() ? normalizeMoney(customerPrice) : null,
-        active: Boolean(active),
-        stock: stockSafe,
+  sku: skuN,
+  name: nameN,
+  description: description.trim() ? description.trim() : null,
+  price: priceSan,
+  customerPrice: customerPrice.trim() ? normalizeMoney(customerPrice) : null,
+  active: Boolean(active),
+  stock: stockSafe,
 
-        categoryId: categoryId ? categoryId : null,
-        categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
-        audience,
-        highlights,
-      };
+  categoryId: categoryId ? categoryId : null,
+  categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
+  audience,
+  highlights,
+  brand: brand.trim() ? brand.trim() : null,
+  line: line.trim() ? line.trim() : null,
+  volume: volume.trim() ? volume.trim() : null,
+  effect: effect.trim() ? effect.trim() : null,
+
+};
 
 const idem = await idemKey(`product-update:${id}`, payload);
 
@@ -798,6 +817,58 @@ await api.patch(endpoints.products.update(id), payload, {
                     onChange={(e) => setName(e.target.value)}
                   />
                 </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+  <div className="grid gap-2">
+    <Label>Marca</Label>
+    <Input
+      className="w-full rounded-xl"
+      value={brand}
+      onChange={(e) => setBrand(e.target.value)}
+      placeholder="Ex.: Wella"
+    />
+  </div>
+
+  <div className="grid gap-2">
+    <Label>Linha / Família</Label>
+    <Input
+      className="w-full rounded-xl"
+      value={line}
+      onChange={(e) => setLine(e.target.value)}
+      placeholder="Ex.: Fusion"
+    />
+  </div>
+</div>
+
+<div className="grid gap-3 sm:grid-cols-2">
+  <div className="grid gap-2">
+    <Label>Volume</Label>
+    <Input
+      className="w-full rounded-xl"
+      value={volume}
+      onChange={(e) => setVolume(e.target.value)}
+      placeholder="Ex.: 500ml"
+      maxLength={20}
+    />
+    <div className="text-xs text-black/50">
+      Máx. 20 caracteres.
+    </div>
+  </div>
+
+  <div className="grid gap-2">
+    <Label>Efeito</Label>
+    <Input
+      className="w-full rounded-xl"
+      value={effect}
+      onChange={(e) => setEffect(e.target.value)}
+      placeholder="Ex.: Brilho intenso"
+      maxLength={20}
+    />
+    <div className="text-xs text-black/50">
+      Texto curto. Máx. 20 caracteres.
+    </div>
+  </div>
+</div>
 
                 <div className="grid gap-2">
                   <Label>Preço</Label>

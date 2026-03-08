@@ -84,8 +84,11 @@ export default function NewProductPage() {
 
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [brand, setBrand] = useState("");
+  const [line, setLine] = useState("");
 
-  
+  const [volume, setVolume] = useState("");
+  const [effect, setEffect] = useState("");
 
 
   useEffect(() => {
@@ -189,18 +192,22 @@ export default function NewProductPage() {
       const stockSafe = Number.isFinite(stock) ? Math.max(0, Math.trunc(stock)) : 0;
 
       const payload: {
-        sku: string;
-        name: string;
-        price: string;
-        customerPrice: string | null;
-        active: boolean;
-        stock: number;
-        categoryId: string | null;
-        categoryIds: string[];
-        audience: ProductAudience;
-        description?: string;
-        highlights?: string[];
-      } = {
+  sku: string;
+  name: string;
+  price: string;
+  customerPrice: string | null;
+  active: boolean;
+  stock: number;
+  categoryId: string | null;
+  categoryIds: string[];
+  audience: ProductAudience;
+  description?: string;
+  highlights?: string[];
+  brand?: string | null;
+  line?: string | null;
+  volume?: string | null;
+  effect?: string | null;
+} = {
         sku: skuN,
         name: nameN,
         price: priceN,
@@ -212,6 +219,10 @@ export default function NewProductPage() {
           new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])
         ),
         audience,
+        brand: brand.trim() ? brand.trim() : null,
+        line: line.trim() ? line.trim() : null,
+        volume: volume.trim() ? volume.trim() : null,
+        effect: effect.trim() ? effect.trim() : null,
       };
 
       const desc = description.trim();
@@ -331,6 +342,58 @@ const filteredExtraCategories = useMemo(() => {
                         />
                       </div>
                     </div>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+  <div className="grid gap-2">
+    <Label>Marca</Label>
+    <Input
+      className="rounded-xl"
+      value={brand}
+      onChange={(e) => setBrand(e.target.value)}
+      placeholder="Ex: Wella"
+    />
+  </div>
+
+  <div className="grid gap-2">
+    <Label>Linha / Família</Label>
+    <Input
+      className="rounded-xl"
+      value={line}
+      onChange={(e) => setLine(e.target.value)}
+      placeholder="Ex: Fusion"
+    />
+  </div>
+</div>
+
+<div className="grid gap-4 sm:grid-cols-2">
+  <div className="grid gap-2">
+    <Label>Volume</Label>
+    <Input
+      className="rounded-xl"
+      value={volume}
+      onChange={(e) => setVolume(e.target.value)}
+      placeholder="Ex.: 500ml"
+      maxLength={20}
+    />
+    <div className="text-xs text-black/50">
+      Máx. 20 caracteres.
+    </div>
+  </div>
+
+  <div className="grid gap-2">
+    <Label>Efeito</Label>
+    <Input
+      className="rounded-xl"
+      value={effect}
+      onChange={(e) => setEffect(e.target.value)}
+      placeholder="Ex.: Brilho intenso"
+      maxLength={20}
+    />
+    <div className="text-xs text-black/50">
+      Texto curto. Máx. 20 caracteres.
+    </div>
+  </div>
+</div>
 
                     {/* Preços */}
                     <div className="grid gap-4 sm:grid-cols-2">

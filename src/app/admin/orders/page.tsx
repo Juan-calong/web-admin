@@ -13,7 +13,6 @@ import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 
 import {
   AlertDialog,
@@ -56,14 +55,6 @@ function idempotencyKey(orderId: string, action: string) {
   return `admin-order:${orderId}:${action}`;
 }
 
-function StatusBadge({ value }: { value?: string }) {
-  return (
-    <Badge variant="outline" className="rounded-full bg-white">
-      {value ?? "-"}
-    </Badge>
-  );
-}
-
 export default function AdminOrdersPage() {
   const qc = useQueryClient();
 
@@ -73,12 +64,16 @@ export default function AdminOrdersPage() {
       const res = await api.get(endpoints.orders.list, { params: { take: 100 } });
       return (res.data?.items ?? []) as Order[];
     },
-    refetchOnWindowFocus: false,
     retry: false,
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
+    staleTime: 15000,
   });
 
   const pending = useMemo(() => {
-    return (ordersQ.data ?? []).filter((o) => o.paymentStatus === "PAID" && o.adminApprovalStatus === "PENDING");
+    return (ordersQ.data ?? []).filter(
+      (o) => o.paymentStatus === "PAID" && o.adminApprovalStatus === "PENDING"
+    );
   }, [ordersQ.data]);
 
   const decideM = useMutation({
@@ -102,16 +97,15 @@ export default function AdminOrdersPage() {
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 px-3 lg:px-6">
-      {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black">Pedidos pendentes</h1>
-          <p className="text-sm text-black/60">Pagos (PAID) aguardando aprovação (PENDING)</p>
+          <h1 className="text-xl font-black sm:text-2xl">Pedidos pendentes</h1>
+          <p className="text-sm text-black/60">Pedidos aguardando decisão do admin</p>
         </div>
 
         <Button
           variant="outline"
-          className="rounded-xl w-full sm:w-auto"
+          className="w-full rounded-xl sm:w-auto"
           onClick={() => ordersQ.refetch()}
           disabled={ordersQ.isFetching}
         >
@@ -123,14 +117,18 @@ export default function AdminOrdersPage() {
       <Card className="rounded-2xl">
         <CardHeader>
           <CardTitle>Fila</CardTitle>
-          <CardDescription>{ordersQ.isLoading ? "Carregando…" : `${pending.length} pendente(s)`}</CardDescription>
+          <CardDescription>
+            {ordersQ.isLoading ? "Carregando…" : `${pending.length} pendente(s)`}
+          </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-3">
           {ordersQ.isLoading ? (
             <div className="text-sm">Carregando…</div>
           ) : ordersQ.isError ? (
-            <div className="text-sm text-red-600">{apiErrorMessage(ordersQ.error, "Erro ao carregar pedidos.")}</div>
+            <div className="text-sm text-red-600">
+              {apiErrorMessage(ordersQ.error, "Erro ao carregar pedidos.")}
+            </div>
           ) : pending.length === 0 ? (
             <div className="text-sm text-black/70">Nenhum pedido pendente 🎉</div>
           ) : (
@@ -142,41 +140,38 @@ export default function AdminOrdersPage() {
                 return (
                   <div key={o.id} className="rounded-2xl border bg-white p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      {/* Info */}
                       <div className="min-w-0 space-y-1">
-                        <div className="font-semibold break-words">
+                        <div className="break-words font-semibold">
                           Pedido #{o.id.slice(0, 8)}{" "}
-                          {busyThis ? <span className="text-xs text-black/50">• Processando…</span> : null}
+                          {busyThis ? (
+                            <span className="text-xs text-black/50">• Processando…</span>
+                          ) : null}
                         </div>
 
-                        <div className="text-sm text-black/60 break-words">
+                        <div className="break-words text-sm text-black/60">
                           {o.salonName ? `Salão: ${o.salonName} • ` : ""}
                           {fmtDate(o.createdAt)}
                           {total ? ` • ${total}` : ""}
                         </div>
 
-                        <div className="flex flex-wrap gap-2">
-                          <StatusBadge value={o.paymentStatus} />
-                          <StatusBadge value={o.adminApprovalStatus} />
-                        </div>
-
-                        <div className="pt-1 text-xs text-black/50 break-all">
+                        <div className="pt-1 break-all text-xs text-black/50">
                           ID completo: <span className="font-mono">{o.id}</span>
                         </div>
                       </div>
 
-                      {/* Actions: grid on mobile, row on desktop */}
                       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="outline" className="rounded-xl w-full" disabled={decideM.isPending}>
+                            <Button variant="outline" className="w-full rounded-xl" disabled={decideM.isPending}>
                               Reprovar
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent className="rounded-2xl">
                             <AlertDialogHeader>
                               <AlertDialogTitle>Reprovar este pedido?</AlertDialogTitle>
-                              <AlertDialogDescription>Esta ação muda o status de aprovação do admin.</AlertDialogDescription>
+                              <AlertDialogDescription>
+                                Esta ação muda o status de aprovação do admin.
+                              </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
@@ -192,14 +187,16 @@ export default function AdminOrdersPage() {
 
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button className="rounded-xl w-full" disabled={decideM.isPending}>
+                            <Button className="w-full rounded-xl" disabled={decideM.isPending}>
                               Aprovar
                             </Button>
                           </AlertDialogTrigger>
                           <AlertDialogContent className="rounded-2xl">
                             <AlertDialogHeader>
                               <AlertDialogTitle>Aprovar este pedido?</AlertDialogTitle>
-                              <AlertDialogDescription>Esta ação libera o pedido para seguir o fluxo.</AlertDialogDescription>
+                              <AlertDialogDescription>
+                                Esta ação libera o pedido para seguir o fluxo.
+                              </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
@@ -213,9 +210,8 @@ export default function AdminOrdersPage() {
                           </AlertDialogContent>
                         </AlertDialog>
 
-                        {/* "Abrir" full width on mobile (spans 2 cols) */}
                         <Link href={`/admin/orders/${o.id}`} className="col-span-2 sm:col-span-1">
-                          <Button variant="outline" className="rounded-xl w-full" disabled={decideM.isPending}>
+                          <Button variant="outline" className="w-full rounded-xl" disabled={decideM.isPending}>
                             Abrir
                             <ArrowRight className="ml-2 h-4 w-4" />
                           </Button>

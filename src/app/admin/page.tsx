@@ -132,7 +132,6 @@ function KpiCard({
   );
 }
 
-/** Mini gráfico (mock) — depois você liga com série real se quiser */
 function RevenueLineChart({
   range,
   series,
@@ -160,7 +159,6 @@ function RevenueLineChart({
 
   function y(v: number) {
     const t = (Number(v) - min) / (max - min || 1);
-    // invertendo (0 embaixo, max em cima)
     return PAD + (H - PAD * 2) * (1 - t);
   }
 
@@ -169,7 +167,8 @@ function RevenueLineChart({
   const lineD =
     points.length <= 1
       ? `M ${PAD} ${y(values[0] ?? 0)}`
-      : `M ${points[0][0]} ${points[0][1]} ` + points.slice(1).map(([px, py]) => `L ${px} ${py}`).join(" ");
+      : `M ${points[0][0]} ${points[0][1]} ` +
+        points.slice(1).map(([px, py]) => `L ${px} ${py}`).join(" ");
 
   const areaD =
     points.length <= 1
@@ -194,7 +193,6 @@ function RevenueLineChart({
 
       <div className="px-4 pb-4">
         <div className="relative h-52 w-full overflow-hidden rounded-lg bg-slate-50">
-          {/* grid */}
           <div className="absolute inset-0">
             {Array.from({ length: 5 }).map((_, i) => (
               <div
@@ -262,16 +260,16 @@ export default function AdminHome() {
       return data as DashResponse;
     },
     retry: false,
-    refetchOnWindowFocus: false,
+    refetchInterval: 60000,
+    refetchOnWindowFocus: true,
+    staleTime: 30000,
   });
 
-  // ✅ não pode dar toast no render
   useEffect(() => {
     if (dashQ.isError) {
       toast.error(apiErrorMessage(dashQ.error, "Erro ao carregar dashboard."));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dashQ.isError]);
+  }, [dashQ.isError, dashQ.error]);
 
   const topRows = useMemo(() => {
     return (dashQ.data?.topProducts ?? []).map((x) => ({ name: x.name, qty: x.qty }));
@@ -294,7 +292,6 @@ export default function AdminHome() {
     <div className="min-h-[calc(100vh-2rem)] bg-slate-50">
       <div className="mx-auto max-w-7xl px-4 py-6">
         <main className="space-y-6">
-          {/* Top bar */}
           <div className="rounded-2xl border bg-white p-4 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -354,7 +351,6 @@ export default function AdminHome() {
             </div>
           </div>
 
-          {/* KPIs */}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard
               title="Receita"
@@ -378,18 +374,16 @@ export default function AdminHome() {
             />
           </div>
 
-          {/* Charts */}
           <div className="grid gap-4 xl:grid-cols-3">
             <div className="xl:col-span-2">
               <RevenueLineChart
                 range={range}
                 series={dashQ.data?.revenueSeries ?? []}
-                />
+              />
             </div>
             <TopProductsBars rows={topRows} />
           </div>
 
-          {/* Table */}
           <Card className="rounded-2xl shadow-sm">
             <CardHeader>
               <CardTitle className="text-sm font-semibold">Últimos pedidos</CardTitle>
