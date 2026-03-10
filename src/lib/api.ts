@@ -21,7 +21,7 @@ type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 const authApi = axios.create({
     baseURL,
     withCredentials: true,
-    timeout: 30000,
+    timeout: 3000,
 });
 
 let refreshing: Promise<string> | null = null;
