@@ -136,4 +136,9 @@ export const endpoints = {
 trainingVideos: {
   listByProduct: (productId: string) => `/products/${productId}/training-videos`,
 },
+
+  admin: {
+    productQuantityDiscounts: (productId: string) =>
+      `/admin/products/${productId}/quantity-discounts`,
+  },
 } as const;

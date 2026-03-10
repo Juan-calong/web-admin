@@ -12,6 +12,11 @@ import {
   Eye,
   EyeOff,
   Upload,
+  Loader2,
+  ImagePlus,
+  LayoutPanelTop,
+  ExternalLink,
+  CalendarClock,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -263,6 +268,13 @@ function targetTypeLabel(type: TargetType) {
   }
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("pt-BR");
+}
+
 export default function AdminHomeBannersPage() {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -278,7 +290,15 @@ export default function AdminHomeBannersPage() {
     retry: false,
   });
 
-  const items = useMemo(() => bannersQ.data?.items ?? [], [bannersQ.data?.items]);
+  const items = useMemo(() => {
+    const list = bannersQ.data?.items ?? [];
+    return [...list].sort((a, b) => {
+      if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+    });
+  }, [bannersQ.data?.items]);
+
+  const activeCount = useMemo(() => items.filter((item) => item.active).length, [items]);
 
   const saveM = useMutation({
     mutationFn: async () => {
@@ -307,12 +327,14 @@ export default function AdminHomeBannersPage() {
 
   const deleteM = useMutation({
     mutationFn: async (id: string) => deleteBanner(id),
-    onSuccess: async () => {
+    onSuccess: async (_data, deletedId) => {
       toast.success("Banner removido.");
-      if (editingId) {
+
+      if (editingId === deletedId) {
         setEditingId(null);
         setForm(createEmptyForm());
       }
+
       await qc.invalidateQueries({ queryKey: ["admin-home-banners"] });
     },
     onError: (err) => {
@@ -336,6 +358,7 @@ export default function AdminHomeBannersPage() {
   function resetForm() {
     setEditingId(null);
     setForm(createEmptyForm());
+
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -374,6 +397,7 @@ export default function AdminHomeBannersPage() {
       toast.error(apiErrorMessage(err, "Falha ao enviar imagem."));
     } finally {
       setUploadingImage(false);
+
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -385,94 +409,146 @@ export default function AdminHomeBannersPage() {
       ...s,
       imageUrl: "",
     }));
+
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-4 px-3 lg:px-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl font-black sm:text-2xl">Banners da Home</h1>
-          <p className="text-sm text-black/60">
-            Gerencie os banners que aparecem no topo do app.
-          </p>
-        </div>
+    <div className="mx-auto w-full max-w-7xl space-y-6 px-3 pb-6 lg:px-6">
+      <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+        <Card className="border border-slate-200 bg-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)]">
+          <CardHeader className="pb-4">
+            <div className="flex items-start gap-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-100 p-3 text-slate-700">
+                <LayoutPanelTop className="h-5 w-5" />
+              </div>
 
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Button
-            variant="outline"
-            className="rounded-xl"
-            onClick={() => bannersQ.refetch()}
-            disabled={bannersQ.isFetching}
-          >
-            <RefreshCw
-              className={cn("mr-2 h-4 w-4", bannersQ.isFetching ? "animate-spin" : "")}
-            />
-            {bannersQ.isFetching ? "Atualizando…" : "Atualizar"}
-          </Button>
-
-          <Button className="rounded-xl" onClick={resetForm}>
-            <Plus className="mr-2 h-4 w-4" />
-            Novo banner
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
-        <Card className="rounded-2xl">
-          <CardHeader>
-            <CardTitle>{editingId ? "Editar banner" : "Novo banner"}</CardTitle>
-            <CardDescription>
-              Configure imagem, ordem e destino do clique.
-            </CardDescription>
+              <div className="min-w-0">
+                <CardTitle className="text-xl text-slate-900 sm:text-2xl">
+                  Banners da Home
+                </CardTitle>
+                <CardDescription className="mt-1 text-sm leading-6 text-slate-600">
+                  Gerencie os banners que aparecem no topo do app, com controle de
+                  imagem, ordem, status e destino do clique.
+                </CardDescription>
+              </div>
+            </div>
           </CardHeader>
 
           <CardContent className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+              Use esta tela para manter a home organizada. Você pode ativar ou
+              desativar banners, definir a ordem de exibição e controlar para onde o
+              usuário será enviado ao tocar.
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Button
+                variant="outline"
+                className="h-11 rounded-xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+                onClick={() => bannersQ.refetch()}
+                disabled={bannersQ.isFetching}
+              >
+                <RefreshCw
+                  className={cn(
+                    "mr-2 h-4 w-4",
+                    bannersQ.isFetching ? "animate-spin" : ""
+                  )}
+                />
+                {bannersQ.isFetching ? "Atualizando..." : "Atualizar"}
+              </Button>
+
+              <Button
+                className="h-11 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
+                onClick={resetForm}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Novo banner
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border border-slate-200 bg-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)]">
+          <CardHeader>
+            <CardTitle className="text-xl text-slate-900">Resumo</CardTitle>
+            <CardDescription className="text-slate-600">
+              Visão rápida desta área
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm text-slate-500">Total de banners</p>
+              <p className="mt-1 text-3xl font-semibold text-slate-900">{items.length}</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm text-slate-500">Banners ativos</p>
+              <p className="mt-1 text-3xl font-semibold text-slate-900">{activeCount}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[430px_1fr]">
+        <Card className="border border-slate-200 bg-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)] xl:sticky xl:top-4 xl:h-fit">
+          <CardHeader className="border-b border-slate-100 pb-4">
+            <CardTitle className="text-slate-900">
+              {editingId ? "Editar banner" : "Novo banner"}
+            </CardTitle>
+            <CardDescription className="text-slate-600">
+              Configure imagem, ordem, janela de exibição e destino do banner.
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-5 pt-5">
             <div className="grid gap-2">
-              <Label>Título</Label>
+              <Label className="text-slate-700">Título</Label>
               <Input
                 value={form.title}
                 onChange={(e) => setForm((s) => ({ ...s, title: e.target.value }))}
                 placeholder="Ex.: Promo da semana"
-                className="rounded-xl"
+                className="h-11 rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
               />
             </div>
 
             <div className="grid gap-2">
-              <Label>Subtítulo</Label>
+              <Label className="text-slate-700">Subtítulo</Label>
               <Textarea
                 value={form.subtitle}
                 onChange={(e) => setForm((s) => ({ ...s, subtitle: e.target.value }))}
                 placeholder="Ex.: Até 30% off em produtos selecionados"
-                className="min-h-[90px] rounded-xl"
+                className="min-h-[96px] rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
               />
             </div>
 
             <div className="grid gap-2">
-              <Label>Texto do botão</Label>
+              <Label className="text-slate-700">Texto do botão</Label>
               <Input
                 value={form.buttonLabel}
                 onChange={(e) => setForm((s) => ({ ...s, buttonLabel: e.target.value }))}
                 placeholder="Ex.: Ver promoções"
-                className="rounded-xl"
+                className="h-11 rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
               />
             </div>
 
             <div className="grid gap-2">
-              <Label>Imagem do banner</Label>
+              <Label className="text-slate-700">Imagem do banner</Label>
 
               {form.imageUrl ? (
-                <div className="overflow-hidden rounded-xl border bg-slate-50">
+                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 shadow-sm">
                   <img
                     src={form.imageUrl}
                     alt="Preview do banner"
-                    className="h-44 w-full object-cover"
+                    className="h-48 w-full object-cover"
                   />
                 </div>
               ) : (
-                <div className="flex h-44 items-center justify-center rounded-xl border bg-slate-50 text-sm text-slate-400">
+                <div className="flex h-48 flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
+                  <ImagePlus className="h-6 w-6" />
                   Nenhuma imagem selecionada
                 </div>
               )}
@@ -489,11 +565,15 @@ export default function AdminHomeBannersPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="rounded-xl"
+                  className="h-11 rounded-xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={uploadingImage}
                 >
-                  <Upload className="mr-2 h-4 w-4" />
+                  {uploadingImage ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
                   {uploadingImage ? "Enviando..." : "Selecionar imagem"}
                 </Button>
 
@@ -501,7 +581,7 @@ export default function AdminHomeBannersPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    className="rounded-xl"
+                    className="h-11 rounded-xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
                     onClick={removeImage}
                     disabled={uploadingImage}
                   >
@@ -510,32 +590,37 @@ export default function AdminHomeBannersPage() {
                 ) : null}
               </div>
 
-              <div className="space-y-1 text-xs text-black/50">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs leading-6 text-slate-600">
                 <p>Upload direto para o Cloudflare R2.</p>
                 <p>Formatos aceitos: JPG, PNG e WEBP.</p>
                 <p>Tamanho máximo: 5MB.</p>
-                <p>Recomendado: banner horizontal, ex. 1200x500.</p>
+                <p>Recomendado: banner horizontal, como 1200x500.</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="grid gap-2">
-                <Label>Ordem</Label>
+                <Label className="text-slate-700">Ordem</Label>
                 <Input
                   value={form.sortOrder}
                   onChange={(e) => setForm((s) => ({ ...s, sortOrder: e.target.value }))}
                   type="number"
                   min={0}
-                  className="rounded-xl"
+                  className="h-11 rounded-xl border-slate-300 bg-white text-slate-900"
                 />
               </div>
 
               <div className="grid gap-2">
-                <Label>Status</Label>
+                <Label className="text-slate-700">Status</Label>
                 <Button
                   type="button"
+                  className={cn(
+                    "h-11 rounded-xl",
+                    form.active
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                      : "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+                  )}
                   variant={form.active ? "default" : "outline"}
-                  className="rounded-xl"
                   onClick={() => setForm((s) => ({ ...s, active: !s.active }))}
                 >
                   {form.active ? "Ativo" : "Inativo"}
@@ -546,7 +631,7 @@ export default function AdminHomeBannersPage() {
             <Separator />
 
             <div className="grid gap-2">
-              <Label>Destino do banner</Label>
+              <Label className="text-slate-700">Destino do banner</Label>
               <select
                 value={form.targetType}
                 onChange={(e) =>
@@ -557,7 +642,7 @@ export default function AdminHomeBannersPage() {
                     targetUrl: "",
                   }))
                 }
-                className="h-10 rounded-xl border bg-white px-3 text-sm"
+                className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
               >
                 <option value="NONE">Sem ação</option>
                 <option value="PROMOTIONS">Promoções</option>
@@ -571,7 +656,9 @@ export default function AdminHomeBannersPage() {
 
             {(form.targetType === "PRODUCT" || form.targetType === "CATEGORY") && (
               <div className="grid gap-2">
-                <Label>{form.targetType === "PRODUCT" ? "ID do produto" : "ID da categoria"}</Label>
+                <Label className="text-slate-700">
+                  {form.targetType === "PRODUCT" ? "ID do produto" : "ID da categoria"}
+                </Label>
                 <Input
                   value={form.targetId}
                   onChange={(e) => setForm((s) => ({ ...s, targetId: e.target.value }))}
@@ -580,41 +667,41 @@ export default function AdminHomeBannersPage() {
                       ? "UUID do produto"
                       : "UUID da categoria"
                   }
-                  className="rounded-xl"
+                  className="h-11 rounded-xl border-slate-300 bg-white text-slate-900"
                 />
               </div>
             )}
 
             {form.targetType === "URL" && (
               <div className="grid gap-2">
-                <Label>URL de destino</Label>
+                <Label className="text-slate-700">URL de destino</Label>
                 <Input
                   value={form.targetUrl}
                   onChange={(e) => setForm((s) => ({ ...s, targetUrl: e.target.value }))}
                   placeholder="https://..."
-                  className="rounded-xl"
+                  className="h-11 rounded-xl border-slate-300 bg-white text-slate-900"
                 />
               </div>
             )}
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div className="grid gap-2">
-                <Label>Início</Label>
+                <Label className="text-slate-700">Início</Label>
                 <Input
                   type="datetime-local"
                   value={form.startsAt}
                   onChange={(e) => setForm((s) => ({ ...s, startsAt: e.target.value }))}
-                  className="rounded-xl"
+                  className="h-11 rounded-xl border-slate-300 bg-white text-slate-900"
                 />
               </div>
 
               <div className="grid gap-2">
-                <Label>Fim (opcional)</Label>
+                <Label className="text-slate-700">Fim (opcional)</Label>
                 <Input
                   type="datetime-local"
                   value={form.endsAt}
                   onChange={(e) => setForm((s) => ({ ...s, endsAt: e.target.value }))}
-                  className="rounded-xl"
+                  className="h-11 rounded-xl border-slate-300 bg-white text-slate-900"
                 />
               </div>
             </div>
@@ -623,22 +710,25 @@ export default function AdminHomeBannersPage() {
 
             <div className="flex flex-col gap-2 sm:flex-row">
               <Button
-                className="rounded-xl"
+                className="h-11 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
                 onClick={() => saveM.mutate()}
                 disabled={saveM.isPending || uploadingImage}
               >
-                {saveM.isPending
-                  ? editingId
-                    ? "Salvando…"
-                    : "Criando…"
-                  : editingId
-                    ? "Salvar alterações"
-                    : "Criar banner"}
+                {saveM.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {editingId ? "Salvando..." : "Criando..."}
+                  </>
+                ) : editingId ? (
+                  "Salvar alterações"
+                ) : (
+                  "Criar banner"
+                )}
               </Button>
 
               <Button
                 variant="outline"
-                className="rounded-xl"
+                className="h-11 rounded-xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
                 onClick={resetForm}
                 disabled={saveM.isPending || uploadingImage}
               >
@@ -648,23 +738,26 @@ export default function AdminHomeBannersPage() {
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl">
-          <CardHeader>
-            <CardTitle>Lista de banners</CardTitle>
-            <CardDescription>
-              Se houver 1 banner ativo, o app mostra só ele. Se houver mais de 1, vira carrossel.
+        <Card className="border border-slate-200 bg-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)]">
+          <CardHeader className="border-b border-slate-100 pb-4">
+            <CardTitle className="text-slate-900">Lista de banners</CardTitle>
+            <CardDescription className="text-slate-600">
+              Se houver 1 banner ativo, o app mostra só ele. Se houver mais de 1,
+              vira carrossel.
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="space-y-3">
+          <CardContent className="space-y-3 pt-5">
             {bannersQ.isLoading ? (
-              <div className="text-sm text-black/60">Carregando…</div>
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-sm text-slate-500">
+                Carregando banners...
+              </div>
             ) : bannersQ.isError ? (
-              <div className="text-sm text-red-600">
+              <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
                 {apiErrorMessage(bannersQ.error, "Erro ao carregar banners.")}
               </div>
             ) : items.length === 0 ? (
-              <div className="rounded-2xl border bg-white p-6 text-sm text-black/60">
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-sm text-slate-500">
                 Nenhum banner cadastrado ainda.
               </div>
             ) : (
@@ -678,11 +771,21 @@ export default function AdminHomeBannersPage() {
                     toggleActiveM.isPending &&
                     (toggleActiveM.variables as HomeBanner | undefined)?.id === item.id;
 
+                  const editingThis = editingId === item.id;
+
                   return (
-                    <div key={item.id} className="rounded-2xl border bg-white p-4">
+                    <div
+                      key={item.id}
+                      className={cn(
+                        "rounded-3xl border bg-white p-4 shadow-sm transition-all",
+                        editingThis
+                          ? "border-slate-900 ring-1 ring-slate-900/10"
+                          : "border-slate-200"
+                      )}
+                    >
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="flex min-w-0 gap-4">
-                          <div className="h-24 w-40 shrink-0 overflow-hidden rounded-xl border bg-slate-50">
+                          <div className="h-24 w-40 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
                             {item.imageUrl ? (
                               <img
                                 src={item.imageUrl}
@@ -696,63 +799,75 @@ export default function AdminHomeBannersPage() {
                             )}
                           </div>
 
-                          <div className="min-w-0 space-y-2">
+                          <div className="min-w-0 space-y-3">
                             <div className="flex flex-wrap items-center gap-2">
-                              <div className="font-semibold">
+                              <div className="truncate text-base font-semibold text-slate-900">
                                 {item.title || "Sem título"}
                               </div>
 
+                              {editingThis && (
+                                <Badge className="border-0 bg-slate-900 text-white hover:bg-slate-900">
+                                  Em edição
+                                </Badge>
+                              )}
+
                               <Badge
-                                variant="outline"
                                 className={cn(
-                                  "rounded-full",
+                                  "rounded-full border-0",
                                   item.active
-                                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                    : "border-zinc-200 bg-zinc-50 text-zinc-700"
+                                    ? "bg-emerald-600 text-white hover:bg-emerald-600"
+                                    : "bg-slate-200 text-slate-700 hover:bg-slate-200"
                                 )}
                               >
                                 {item.active ? "Ativo" : "Inativo"}
                               </Badge>
 
-                              <Badge variant="outline" className="rounded-full bg-white">
+                              <Badge className="rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-white">
                                 Ordem {item.sortOrder}
                               </Badge>
 
-                              <Badge variant="outline" className="rounded-full bg-white">
+                              <Badge className="rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-white">
                                 {targetTypeLabel(item.targetType)}
                               </Badge>
                             </div>
 
                             {item.subtitle ? (
-                              <p className="text-sm text-black/60">{item.subtitle}</p>
+                              <p className="text-sm leading-6 text-slate-600">
+                                {item.subtitle}
+                              </p>
                             ) : null}
 
-                            <div className="text-xs text-black/50">
-                              {item.buttonLabel ? `Botão: ${item.buttonLabel} • ` : ""}
-                              Atualizado em {new Date(item.updatedAt).toLocaleString("pt-BR")}
+                            <div className="grid gap-2 text-xs text-slate-500">
+                              <div>
+                                {item.buttonLabel ? `Botão: ${item.buttonLabel} • ` : ""}
+                                Atualizado em {formatDateTime(item.updatedAt)}
+                              </div>
+
+                              {(item.targetId || item.targetUrl) && (
+                                <div className="break-all">
+                                  {item.targetId ? `targetId: ${item.targetId}` : ""}
+                                  {item.targetId && item.targetUrl ? " • " : ""}
+                                  {item.targetUrl ? `targetUrl: ${item.targetUrl}` : ""}
+                                </div>
+                              )}
+
+                              {(item.startsAt || item.endsAt) && (
+                                <div className="flex items-start gap-2">
+                                  <CalendarClock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                                  <span>
+                                    Janela: {formatDateTime(item.startsAt)} até{" "}
+                                    {formatDateTime(item.endsAt)}
+                                  </span>
+                                </div>
+                              )}
                             </div>
-
-                            {(item.targetId || item.targetUrl) && (
-                              <div className="text-xs text-black/50 break-all">
-                                {item.targetId ? `targetId: ${item.targetId}` : ""}
-                                {item.targetId && item.targetUrl ? " • " : ""}
-                                {item.targetUrl ? `targetUrl: ${item.targetUrl}` : ""}
-                              </div>
-                            )}
-
-                            {(item.startsAt || item.endsAt) && (
-                              <div className="text-xs text-black/50">
-                                Janela: {item.startsAt ? new Date(item.startsAt).toLocaleString("pt-BR") : "—"} até{" "}
-                                {item.endsAt ? new Date(item.endsAt).toLocaleString("pt-BR") : "—"}
-                              </div>
-                            )}
                           </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
                           <Button
                             variant="outline"
-                            className="rounded-xl"
+                            className="h-10 rounded-xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
                             onClick={() => startEdit(item)}
                           >
                             <Pencil className="mr-2 h-4 w-4" />
@@ -761,11 +876,16 @@ export default function AdminHomeBannersPage() {
 
                           <Button
                             variant="outline"
-                            className="rounded-xl"
+                            className="h-10 rounded-xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
                             onClick={() => toggleActiveM.mutate(item)}
                             disabled={togglingThis}
                           >
-                            {item.active ? (
+                            {togglingThis ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Alterando...
+                              </>
+                            ) : item.active ? (
                               <>
                                 <EyeOff className="mr-2 h-4 w-4" />
                                 Desativar
@@ -782,29 +902,32 @@ export default function AdminHomeBannersPage() {
                             <AlertDialogTrigger asChild>
                               <Button
                                 variant="outline"
-                                className="col-span-2 rounded-xl text-red-600 hover:text-red-700 sm:col-span-1"
+                                className="col-span-2 h-10 rounded-xl border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700 sm:col-span-1"
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Excluir
                               </Button>
                             </AlertDialogTrigger>
-                            <AlertDialogContent className="rounded-2xl">
+
+                            <AlertDialogContent className="rounded-2xl border border-slate-200 bg-white">
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Excluir banner?</AlertDialogTitle>
                                 <AlertDialogDescription>
                                   Essa ação remove o banner permanentemente.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
+
                               <AlertDialogFooter>
-                                <AlertDialogCancel className="rounded-xl">
+                                <AlertDialogCancel className="rounded-xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50">
                                   Cancelar
                                 </AlertDialogCancel>
+
                                 <AlertDialogAction
-                                  className="rounded-xl"
+                                  className="rounded-xl bg-red-600 text-white hover:bg-red-700"
                                   onClick={() => deleteM.mutate(item.id)}
                                   disabled={deletingThis}
                                 >
-                                  {deletingThis ? "Excluindo…" : "Confirmar"}
+                                  {deletingThis ? "Excluindo..." : "Confirmar"}
                                 </AlertDialogAction>
                               </AlertDialogFooter>
                             </AlertDialogContent>
@@ -820,20 +943,32 @@ export default function AdminHomeBannersPage() {
         </Card>
       </div>
 
-      <Card className="rounded-2xl">
+      <Card className="border border-slate-200 bg-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)]">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+          <CardTitle className="flex items-center gap-2 text-slate-900">
             <Images className="h-5 w-5" />
             Como isso funciona no app
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-slate-600">
             O mobile consome só os banners ativos e dentro da janela de data.
           </CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-black/60">
-          Se existir apenas 1 banner ativo, o app mostra apenas esse banner. Se existirem 2 ou mais,
-          a área vira um carrossel. Se não existir nenhum banner ativo, você pode usar um banner padrão
-          local no mobile como fallback.
+
+        <CardContent className="space-y-3 text-sm leading-6 text-slate-600">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            Se existir apenas 1 banner ativo, o app mostra somente esse banner.
+            Se existirem 2 ou mais, a área vira um carrossel.
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            Se não existir nenhum banner ativo, você pode usar um banner padrão local
+            no mobile como fallback.
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            Para banners com URL externa, revise o link antes de publicar para evitar
+            navegação quebrada.
+          </div>
         </CardContent>
       </Card>
     </div>

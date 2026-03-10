@@ -15,6 +15,7 @@ import {
   Images,
   ShieldCheck,
   Clapperboard,
+  Layers3
 } from "lucide-react";
 import { TicketPercent } from "lucide-react";
 
@@ -145,6 +146,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <NavItem href="/admin/home-banners" label="Banners Home" icon={Images} />
               <NavItem href="/admin/security" label="Segurança" icon={ShieldCheck} />
               <NavItem href="/admin/training-videos" label="Vídeos" icon={Clapperboard} />
+              <NavItem href="/admin/quantity-discounts" label="Promoções por quantidade" icon={Layers3} />
             </nav>
 
             <div className="mt-6">
