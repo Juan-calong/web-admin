@@ -13,18 +13,18 @@ export const endpoints = {
   },
 
   products: {
-  list: "/products",
-  create: "/products",
-  update: (id: string) => `/products/${id}`,
-  byId: (id: string) => `/products/${id}`,
-  related: (id: string) => `/products/${id}/related`,
-  images: {
-    presign: (id: string) => `/products/${id}/images/presign`,
-    confirm: (id: string) => `/products/${id}/images/confirm`,
-    delete: (id: string, imageId: string) => `/products/${id}/images/${imageId}`,
-    update: (id: string) => `/products/${id}/images`,
+    list: "/products",
+    create: "/products",
+    update: (id: string) => `/products/${id}`,
+    byId: (id: string) => `/products/${id}`,
+    related: (id: string) => `/products/${id}/related`,
+    images: {
+      presign: (id: string) => `/products/${id}/images/presign`,
+      confirm: (id: string) => `/products/${id}/images/confirm`,
+      delete: (id: string, imageId: string) => `/products/${id}/images/${imageId}`,
+      update: (id: string) => `/products/${id}/images`,
+    },
   },
-},
 
   categories: {
     list: "/categories",
@@ -87,6 +87,21 @@ export const endpoints = {
     rejectPayout: (id: string) => `/admin/payouts/${id}/reject`,
   },
 
+  adminSecurity: {
+    sellers: "/admin/users/sellers",
+    salons: "/admin/users/salons",
+    customers: "/admin/users/customers",
+
+    patchUserAccess: (id: string) => `/admin/users/${id}/access`,
+    patchSalonAccess: (id: string) => `/admin/salons/${id}/access`,
+  },
+
+  adminCommissionAudits: {
+    list: "/admin/commissions/audits",
+    byOrderId: (orderId: string) => `/admin/commissions/audits/${orderId}`,
+    review: (orderId: string) => `/admin/commissions/audits/${orderId}/review`,
+  },
+
   coupons: {
     validate: "/coupons/validate",
   },
@@ -111,4 +126,14 @@ export const endpoints = {
     banners: "/home/banners",
   },
 
+  adminTrainingVideos: {
+  initUpload: (productId: string) => `/admin/products/${productId}/training-videos/init-upload`,
+  finalize: (productId: string) => `/admin/products/${productId}/training-videos/finalize`,
+  adminList: (productId: string) => `/admin/products/${productId}/training-videos`,
+  update: (id: string) => `/admin/training-videos/${id}`,
+  remove: (id: string) => `/admin/training-videos/${id}`,
+},
+trainingVideos: {
+  listByProduct: (productId: string) => `/products/${productId}/training-videos`,
+},
 } as const;

@@ -12,7 +12,9 @@ import {
   LogOut,
   Bell,
   Landmark,
-  Images
+  Images,
+  ShieldCheck,
+  Clapperboard,
 } from "lucide-react";
 import { TicketPercent } from "lucide-react";
 
@@ -141,6 +143,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <NavItem href="/admin/inbox" label="Inbox" icon={Bell} rightBadge={badge} />
               <NavItem href="/admin/bb-funds" label="Saldo BB" icon={Landmark} />
               <NavItem href="/admin/home-banners" label="Banners Home" icon={Images} />
+              <NavItem href="/admin/security" label="Segurança" icon={ShieldCheck} />
+              <NavItem href="/admin/training-videos" label="Vídeos" icon={Clapperboard} />
             </nav>
 
             <div className="mt-6">

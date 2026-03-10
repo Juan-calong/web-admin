@@ -62,6 +62,9 @@ type Product = {
 
   categoryId?: string | null;
   categoryIds?: string[] | null;
+  categories?: { id: string; name: string; active: boolean }[] | null;
+  categoryLinks?: { category: { id: string; name: string; active: boolean } }[] | null;
+
   audience?: ProductAudience | null;
 
   highlights?: string[] | null;
@@ -294,16 +297,35 @@ useEffect(() => {
   setStock(Math.max(0, Number(product.stock ?? 0)));
 
   const main = product.categoryId ?? "";
-  const ids =
-    Array.isArray(product.categoryIds) && product.categoryIds.length > 0
-      ? product.categoryIds
-      : main
-      ? [main]
-      : [];
 
-  setCategoryId(main);
-  setCategoryIds(ids.filter((x: string) => x !== main));
+const idsFromCategoryIds =
+  Array.isArray(product.categoryIds) && product.categoryIds.length > 0
+    ? product.categoryIds
+    : [];
 
+const idsFromCategories =
+  Array.isArray(product.categories) && product.categories.length > 0
+    ? product.categories.map((c) => c.id)
+    : [];
+
+const idsFromCategoryLinks =
+  Array.isArray(product.categoryLinks) && product.categoryLinks.length > 0
+    ? product.categoryLinks
+        .map((link) => link?.category?.id)
+        .filter(Boolean)
+    : [];
+
+const ids = Array.from(
+  new Set([
+    ...idsFromCategoryIds,
+    ...idsFromCategories,
+    ...idsFromCategoryLinks,
+    ...(main ? [main] : []),
+  ])
+);
+
+setCategoryId(main);
+setCategoryIds(ids.filter((x: string) => x !== main));
   if (product.audience) setAudience(product.audience);
 }, [productQ.dataUpdatedAt]);
 
