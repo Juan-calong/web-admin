@@ -13,6 +13,7 @@ if (!baseURL && process.env.NODE_ENV !== "production") {
 export const api = axios.create({
     baseURL,
     withCredentials: true,
+    timeout: 30000,
 });
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean };
@@ -20,6 +21,7 @@ type RetryableRequestConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 const authApi = axios.create({
     baseURL,
     withCredentials: true,
+    timeout: 30000,
 });
 
 let refreshing: Promise<string> | null = null;
@@ -55,10 +57,17 @@ async function refreshAccessToken(): Promise<string> {
 
 api.interceptors.request.use((config) => {
     const token = authStore.getAccessToken();
-    if (token) {
+    const reqUrl = config.url ?? "";
+
+    const isAuthRoute =
+        reqUrl.includes(endpoints.auth.login) ||
+        reqUrl.includes(endpoints.auth.refresh);
+
+    if (token && !isAuthRoute) {
         config.headers = config.headers ?? {};
         config.headers.Authorization = `Bearer ${token}`;
     }
+
     return config;
 });
 

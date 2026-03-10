@@ -16,13 +16,20 @@ function isEmail(v: string) {
 function humanLoginError(e: unknown) {
   const err = e as AxiosError<{ error?: string; message?: string }>;
   const status = err.response?.status;
-
   const code = err.code;
+
+  console.log("[login] erro bruto:", e);
+  console.log("[login] status:", status);
+  console.log("[login] code:", code);
+  console.log("[login] response data:", err.response?.data);
+
   if (code === "ECONNABORTED") return "Tempo esgotado. Tente novamente.";
-  if (!status) return "Sem conexão com o servidor. Verifique sua internet.";
+  if (code === "ERR_NETWORK") return "Falha de rede ou CORS ao conectar com o servidor.";
+  if (!status) return "Sem resposta do servidor. Pode ser CORS, rede ou backend indisponível.";
 
   if (status === 401) return "E-mail ou senha incorretos.";
   if (status === 403) return "Acesso negado. Sua conta pode estar bloqueada.";
+  if (status === 404) return "Rota de login não encontrada no servidor.";
   if (status === 429) return "Muitas tentativas. Aguarde um pouco e tente novamente.";
   if (status >= 500) return "Servidor indisponível no momento. Tente novamente em instantes.";
 
@@ -87,12 +94,14 @@ export default function LoginClient() {
     }
 
     setLoading(true);
-    try {
-      const res = await api.post(
-        endpoints.auth.login,
-        { email: emailN, password: passN },
-        { timeout: 15_000 }
-      );
+try {
+  authStore.clearAll();
+
+  const res = await api.post(
+    endpoints.auth.login,
+    { email: emailN, password: passN },
+    { timeout: 15000 }
+  );
 
       const token = res.data?.accessToken ?? res.data?.token;
       const user = res.data?.user ?? res.data?.me ?? null;
