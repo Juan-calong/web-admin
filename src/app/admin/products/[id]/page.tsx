@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -13,6 +13,9 @@ import {
   RefreshCw,
   Tag,
   Image as ImageIcon,
+  Clapperboard,
+  Eye,
+  Loader2,
 } from "lucide-react";
 import { ProductStatusPanel } from "@/components/admin/ProductStatusPanel";
 
@@ -47,6 +50,22 @@ type ProductImage = {
   sort?: number | null;
   mime?: string | null;
   size?: number | null;
+};
+
+type TrainingVideoItem = {
+  id: string;
+  title: string;
+  description?: string | null;
+  publicUrl: string;
+  originalName?: string | null;
+  mimeType?: string | null;
+  sizeBytes?: number | null;
+  active: boolean;
+  sortOrder: number;
+  showInGallery?: boolean;
+  thumbnailUrl?: string | null;
+  createdAt: string;
+  updatedAt?: string;
 };
 
 type Product = {
@@ -96,6 +115,50 @@ type ProductPromotion = {
   isActiveNow?: boolean;
   [k: string]: unknown;
 };
+
+type EditDraft = {
+  sku: string;
+  name: string;
+  price: string;
+  description: string;
+  customerPrice: string;
+  highlightsText: string;
+  active: boolean;
+  stock: number;
+  categoryId: string;
+  categoryIds: string[];
+  audience: ProductAudience;
+  brand: string;
+  line: string;
+  volume: string;
+  effect: string;
+  videoTitle: string;
+  videoDescription: string;
+  videoSortOrder: string;
+  videoActive: boolean;
+  videoShowInGallery: boolean;
+  videoThumbnailUrl: string;
+};
+
+function getDraftKey(productId: string) {
+  return `admin-product-edit-draft:${productId}`;
+}
+
+function readDraft(productId: string): EditDraft | null {
+  try {
+    const raw = sessionStorage.getItem(getDraftKey(productId));
+    if (!raw) return null;
+    return JSON.parse(raw) as EditDraft;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft(productId: string) {
+  try {
+    sessionStorage.removeItem(getDraftKey(productId));
+  } catch {}
+}
 
 function normalizeMoney(s: string) {
   return s.trim().replace(",", ".");
@@ -151,7 +214,7 @@ async function idemKey(prefix: string, payload: unknown) {
     .replace(/\//g, "_")
     .replace(/=+$/, "");
 
-  return `${prefix}:${b64}`; 
+  return `${prefix}:${b64}`;
 }
 
 function sanitizeMoneyInput(v: string) {
@@ -176,6 +239,22 @@ function statusPill(active: boolean) {
     : "bg-zinc-200 text-zinc-900 border-transparent";
 }
 
+function formatBytes(value?: number | null) {
+  const bytes = Number(value ?? 0);
+  if (!bytes || bytes <= 0) return "—";
+
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unit = 0;
+
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit++;
+  }
+
+  return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
 function parseHighlights(text: string) {
   return String(text ?? "")
     .split("\n")
@@ -187,10 +266,6 @@ function parseHighlights(text: string) {
 
 function toggleCategoryId(id: string, prev: string[]) {
   return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
-}
-function normalizeCategoryIds(mainId: string, ids: string[]) {
-  if (!mainId) return ids;
-  return ids.includes(mainId) ? ids : [mainId, ...ids];
 }
 
 const promoEndpoints = {
@@ -204,9 +279,13 @@ const promoEndpoints = {
 
 export default function EditProductPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const qc = useQueryClient();
   const params = useParams<{ id: string }>();
   const id = params.id;
+
+  const returnTo = searchParams.get("returnTo") || "/admin/products";
+  const didHydrateDraftRef = useRef(false);
 
   function appliesToLabel(v: string) {
     if (v === "SELLER") return "Vendedor";
@@ -217,127 +296,216 @@ export default function EditProductPage() {
   }
 
   function promoConflictMsg(appliesTo: string) {
-if (appliesTo === "BOTH")
-  return "Conflito: já existe promo ativa (Cliente final/Salão/Vendedor) nesse período.";
-    return `Conflito: já existe promo ativa para ${appliesToLabel(
-      appliesTo
-    )} nesse período.`;
+    if (appliesTo === "BOTH") {
+      return "Conflito: já existe promo ativa (Cliente final/Salão/Vendedor) nesse período.";
+    }
+    return `Conflito: já existe promo ativa para ${appliesToLabel(appliesTo)} nesse período.`;
   }
 
   useEffect(() => {
     if (id === "new") router.replace("/admin/products/new");
   }, [id, router]);
 
-const productQ = useQuery({
-  queryKey: ["product", id],
-  queryFn: async () => {
-    const res = await api.get(endpoints.products.byId(id));
-    const raw = res.data;
-    return (raw?.item ?? raw) as Product; 
-  },
-  enabled: id !== "new",
-  retry: false,
-  refetchOnWindowFocus: false,
-});
+  const productQ = useQuery({
+    queryKey: ["product", id],
+    queryFn: async () => {
+      const res = await api.get(endpoints.products.byId(id));
+      const raw = res.data;
+      return (raw?.item ?? raw) as Product;
+    },
+    enabled: id !== "new",
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
 
-const categoriesQ = useQuery({
-  queryKey: ["categories", "all"],
-  queryFn: async () => {
-    const res = await api.get(endpoints.categories.list);
-    return (res.data?.items ?? []) as Category[];
-  },
-  retry: false,
-});
+  const categoriesQ = useQuery({
+    queryKey: ["categories", "all"],
+    queryFn: async () => {
+      const res = await api.get(endpoints.categories.list);
+      return (res.data?.items ?? []) as Category[];
+    },
+    retry: false,
+  });
 
-const categories = useMemo(() => {
-  const items = categoriesQ.data ?? [];
-  return [...items].sort((a, b) => a.name.localeCompare(b.name));
-}, [categoriesQ.data]);
+  const categories = useMemo(() => {
+    const items = categoriesQ.data ?? [];
+    return [...items].sort((a, b) => a.name.localeCompare(b.name));
+  }, [categoriesQ.data]);
 
-const [sku, setSku] = useState("");
-const [name, setName] = useState("");
-const [price, setPrice] = useState("");
-const [description, setDescription] = useState("");
-const [customerPrice, setCustomerPrice] = useState("");
-const [highlightsText, setHighlightsText] = useState("");
-const [active, setActive] = useState(true);
-const [stock, setStock] = useState<number>(0);
+  const [sku, setSku] = useState("");
+  const [name, setName] = useState("");
+  const [price, setPrice] = useState("");
+  const [description, setDescription] = useState("");
+  const [customerPrice, setCustomerPrice] = useState("");
+  const [highlightsText, setHighlightsText] = useState("");
+  const [active, setActive] = useState(true);
+  const [stock, setStock] = useState<number>(0);
 
-const [categoryId, setCategoryId] = useState<string>("");
+  const [categoryId, setCategoryId] = useState<string>("");
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
+  const [audience, setAudience] = useState<ProductAudience>("ALL");
+  const availableToCustomer = audience === "ALL";
 
-const [categoryIds, setCategoryIds] = useState<string[]>([]);
-const [audience, setAudience] = useState<ProductAudience>("ALL");
-const availableToCustomer = audience === "ALL";
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
 
-const [file, setFile] = useState<File | null>(null);
-const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoTitle, setVideoTitle] = useState("");
+  const [videoDescription, setVideoDescription] = useState("");
+  const [videoSortOrder, setVideoSortOrder] = useState("0");
+  const [videoActive, setVideoActive] = useState(true);
+  const [videoShowInGallery, setVideoShowInGallery] = useState(true);
+  const [videoThumbnailUrl, setVideoThumbnailUrl] = useState("");
 
-const [brand, setBrand] = useState("");
-const [line, setLine] = useState("");
+  const [brand, setBrand] = useState("");
+  const [line, setLine] = useState("");
 
-const [volume, setVolume]  = useState ("");
-const [effect, setEffect]  = useState ("");
+  const [volume, setVolume] = useState("");
+  const [effect, setEffect] = useState("");
 
-const product = productQ.data ?? null;
+  const product = productQ.data ?? null;
 
-useEffect(() => {
-  if (!product) return;
+  useEffect(() => {
+    if (!product) return;
+    if (didHydrateDraftRef.current) return;
 
-  setSku(product.sku ?? "");
-  setName(product.name ?? "");
-  setPrice(String(product.price ?? ""));
-  setCustomerPrice(product.customerPrice != null ? String(product.customerPrice) : "");
-  setDescription(product.description ?? "");
-  setBrand(product.brand ?? "");
-  setLine(product.line ?? "");
-  setVolume(product.volume ?? "");
-  setEffect(product.effect ?? "");
-  setHighlightsText((product.highlights ?? []).join("\n"));
-  setActive(!!product.active);
-  setStock(Math.max(0, Number(product.stock ?? 0)));
+    const draft = readDraft(id);
 
-  const main = product.categoryId ?? "";
+    if (draft) {
+      setSku(draft.sku ?? "");
+      setName(draft.name ?? "");
+      setPrice(draft.price ?? "");
+      setDescription(draft.description ?? "");
+      setCustomerPrice(draft.customerPrice ?? "");
+      setHighlightsText(draft.highlightsText ?? "");
+      setActive(!!draft.active);
+      setStock(Math.max(0, Number(draft.stock ?? 0)));
+      setCategoryId(draft.categoryId ?? "");
+      setCategoryIds(Array.isArray(draft.categoryIds) ? draft.categoryIds : []);
+      setAudience(draft.audience ?? "ALL");
+      setBrand(draft.brand ?? "");
+      setLine(draft.line ?? "");
+      setVolume(draft.volume ?? "");
+      setEffect(draft.effect ?? "");
+      setVideoTitle(draft.videoTitle ?? "");
+      setVideoDescription(draft.videoDescription ?? "");
+      setVideoSortOrder(draft.videoSortOrder ?? "0");
+      setVideoActive(!!draft.videoActive);
+      setVideoShowInGallery(!!draft.videoShowInGallery);
+      setVideoThumbnailUrl(draft.videoThumbnailUrl ?? "");
+      didHydrateDraftRef.current = true;
+      return;
+    }
 
-const idsFromCategoryIds =
-  Array.isArray(product.categoryIds) && product.categoryIds.length > 0
-    ? product.categoryIds
-    : [];
+    setSku(product.sku ?? "");
+    setName(product.name ?? "");
+    setPrice(String(product.price ?? ""));
+    setCustomerPrice(product.customerPrice != null ? String(product.customerPrice) : "");
+    setDescription(product.description ?? "");
+    setBrand(product.brand ?? "");
+    setLine(product.line ?? "");
+    setVolume(product.volume ?? "");
+    setEffect(product.effect ?? "");
+    setHighlightsText((product.highlights ?? []).join("\n"));
+    setActive(!!product.active);
+    setStock(Math.max(0, Number(product.stock ?? 0)));
 
-const idsFromCategories =
-  Array.isArray(product.categories) && product.categories.length > 0
-    ? product.categories.map((c) => c.id)
-    : [];
+    const main = product.categoryId ?? "";
 
-const idsFromCategoryLinks =
-  Array.isArray(product.categoryLinks) && product.categoryLinks.length > 0
-    ? product.categoryLinks
-        .map((link) => link?.category?.id)
-        .filter(Boolean)
-    : [];
+    const idsFromCategoryIds =
+      Array.isArray(product.categoryIds) && product.categoryIds.length > 0
+        ? product.categoryIds
+        : [];
 
-const ids = Array.from(
-  new Set([
-    ...idsFromCategoryIds,
-    ...idsFromCategories,
-    ...idsFromCategoryLinks,
-    ...(main ? [main] : []),
-  ])
-);
+    const idsFromCategories =
+      Array.isArray(product.categories) && product.categories.length > 0
+        ? product.categories.map((c) => c.id)
+        : [];
 
-setCategoryId(main);
-setCategoryIds(ids.filter((x: string) => x !== main));
-  if (product.audience) setAudience(product.audience);
-}, [productQ.dataUpdatedAt]);
+    const idsFromCategoryLinks =
+      Array.isArray(product.categoryLinks) && product.categoryLinks.length > 0
+        ? product.categoryLinks
+            .map((link) => link?.category?.id)
+            .filter(Boolean)
+        : [];
+
+    const ids = Array.from(
+      new Set([
+        ...idsFromCategoryIds,
+        ...idsFromCategories,
+        ...idsFromCategoryLinks,
+        ...(main ? [main] : []),
+      ])
+    );
+
+    setCategoryId(main);
+    setCategoryIds(ids.filter((x: string) => x !== main));
+    if (product.audience) setAudience(product.audience);
+
+    didHydrateDraftRef.current = true;
+  }, [product, id]);
+
+  useEffect(() => {
+    if (!didHydrateDraftRef.current) return;
+
+    try {
+      sessionStorage.setItem(
+        getDraftKey(id),
+        JSON.stringify({
+          sku,
+          name,
+          price,
+          description,
+          customerPrice,
+          highlightsText,
+          active,
+          stock,
+          categoryId,
+          categoryIds,
+          audience,
+          brand,
+          line,
+          volume,
+          effect,
+          videoTitle,
+          videoDescription,
+          videoSortOrder,
+          videoActive,
+          videoShowInGallery,
+          videoThumbnailUrl,
+        } satisfies EditDraft)
+      );
+    } catch {}
+  }, [
+    id,
+    sku,
+    name,
+    price,
+    description,
+    customerPrice,
+    highlightsText,
+    active,
+    stock,
+    categoryId,
+    categoryIds,
+    audience,
+    brand,
+    line,
+    volume,
+    effect,
+    videoTitle,
+    videoDescription,
+    videoSortOrder,
+    videoActive,
+    videoShowInGallery,
+    videoThumbnailUrl,
+  ]);
 
   const images = product?.images ?? [];
   const primaryUrl =
     images.find((x) => x.isPrimary)?.url ??
     [...images].sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))[0]?.url ??
     null;
-
-  const selectedCategoryName = categoryId
-    ? categories.find((c) => c.id === categoryId)?.name
-    : null;
 
   const saveM = useMutation({
     mutationFn: async () => {
@@ -355,40 +523,38 @@ setCategoryIds(ids.filter((x: string) => x !== main));
       }
 
       const stockSafe = Number.isFinite(stock) ? Math.max(0, Math.trunc(stock)) : 0;
-
       const highlights = parseHighlights(highlightsText);
 
       const payload = {
-  sku: skuN,
-  name: nameN,
-  description: description.trim() ? description.trim() : null,
-  price: priceSan,
-  customerPrice: customerPrice.trim() ? normalizeMoney(customerPrice) : null,
-  active: Boolean(active),
-  stock: stockSafe,
+        sku: skuN,
+        name: nameN,
+        description: description.trim() ? description.trim() : null,
+        price: priceSan,
+        customerPrice: customerPrice.trim() ? normalizeMoney(customerPrice) : null,
+        active: Boolean(active),
+        stock: stockSafe,
+        categoryId: categoryId ? categoryId : null,
+        categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
+        audience,
+        highlights,
+        brand: brand.trim() ? brand.trim() : null,
+        line: line.trim() ? line.trim() : null,
+        volume: volume.trim() ? volume.trim() : null,
+        effect: effect.trim() ? effect.trim() : null,
+      };
 
-  categoryId: categoryId ? categoryId : null,
-  categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
-  audience,
-  highlights,
-  brand: brand.trim() ? brand.trim() : null,
-  line: line.trim() ? line.trim() : null,
-  volume: volume.trim() ? volume.trim() : null,
-  effect: effect.trim() ? effect.trim() : null,
+      const idem = await idemKey(`product-update:${id}`, payload);
 
-};
-
-const idem = await idemKey(`product-update:${id}`, payload);
-
-await api.patch(endpoints.products.update(id), payload, {
-  headers: { "Idempotency-Key": idem },
-});
+      await api.patch(endpoints.products.update(id), payload, {
+        headers: { "Idempotency-Key": idem },
+      });
     },
     onSuccess: async () => {
+      clearDraft(id);
       toast.success("Produto salvo.");
       await qc.invalidateQueries({ queryKey: ["products"] });
       await qc.invalidateQueries({ queryKey: ["product", id] });
-      router.replace("/admin/products");
+      router.replace(returnTo);
     },
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Falha ao salvar.")),
   });
@@ -396,55 +562,71 @@ await api.patch(endpoints.products.update(id), payload, {
   const uploadM = useMutation({
     mutationFn: async () => {
       setUploadErr(null);
-      if (!file) throw new Error("Selecione um arquivo.");
+      if (!files.length) throw new Error("Selecione ao menos uma imagem.");
 
-      const contentType =
-        file.type === "image/jpg" ? "image/jpeg" : file.type || "application/octet-stream";
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
 
-      const presignRes = await api.post(
-        endpoints.products.images.presign(id),
-        {
-          contentType,
-          size: file.size,
-          filename: file.name,
-          mime: contentType,
-        },
-        { headers: { "Idempotency-Key": `prod-img-presign:${id}:${file.name}:${file.size}` } }
-      );
+        const contentType =
+          file.type === "image/jpg"
+            ? "image/jpeg"
+            : file.type || "application/octet-stream";
 
-      const { uploadUrl, publicUrl, key } = presignRes.data ?? {};
-      if (!uploadUrl || !key) throw new Error("Presign inválido: faltou uploadUrl/key.");
+        const presignRes = await api.post(
+          endpoints.products.images.presign(id),
+          {
+            contentType,
+            size: file.size,
+            filename: file.name,
+            mime: contentType,
+          },
+          {
+            headers: {
+              "Idempotency-Key": `prod-img-presign:${id}:${index}:${file.name}:${file.size}`,
+            },
+          }
+        );
 
-      const putRes = await fetch(uploadUrl, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": contentType },
-      });
+        const { uploadUrl, publicUrl, key } = presignRes.data ?? {};
+        if (!uploadUrl || !key) {
+          throw new Error("Presign inválido: faltou uploadUrl/key.");
+        }
 
-      if (!putRes.ok) {
-        const t = await putRes.text().catch(() => "");
-        throw new Error(`Falha no upload (PUT): ${putRes.status} ${t}`.slice(0, 200));
+        const putRes = await fetch(uploadUrl, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": contentType },
+        });
+
+        if (!putRes.ok) {
+          const t = await putRes.text().catch(() => "");
+          throw new Error(`Falha no upload (PUT): ${putRes.status} ${t}`.slice(0, 200));
+        }
+
+        await api.post(
+          endpoints.products.images.confirm(id),
+          {
+            key,
+            url: publicUrl,
+            mime: contentType,
+            size: file.size,
+            sort: (images?.length ?? 0) + index,
+            isPrimary: (images?.length ?? 0) === 0 && index === 0,
+          },
+          {
+            headers: {
+              "Idempotency-Key": `prod-img-confirm:${id}:${index}:${key}`,
+            },
+          }
+        );
       }
-
-      await api.post(
-        endpoints.products.images.confirm(id),
-        {
-          key,
-          url: publicUrl,
-          mime: contentType,
-          size: file.size,
-          isPrimary: (images?.length ?? 0) === 0,
-        },
-        { headers: { "Idempotency-Key": `prod-img-confirm:${id}:${key}` } }
-      );
     },
     onSuccess: async () => {
-      toast.success("Imagem enviada.");
-      setFile(null);
+      toast.success(files.length > 1 ? "Imagens enviadas." : "Imagem enviada.");
+      setFiles([]);
       await qc.invalidateQueries({ queryKey: ["product", id] });
       await qc.invalidateQueries({ queryKey: ["products"] });
       await productQ.refetch();
-      
     },
     onError: (err: unknown) => {
       const msg = apiErrorMessage(err, "Falha no upload.");
@@ -483,6 +665,124 @@ await api.patch(endpoints.products.update(id), payload, {
     onError: (err: unknown) => toast.error(apiErrorMessage(err, "Falha ao definir primária.")),
   });
 
+  const videosQ = useQuery({
+    queryKey: ["admin-product-videos", id],
+    enabled: id !== "new",
+    queryFn: async () => {
+      const { data } = await api.get(endpoints.adminTrainingVideos.adminList(id));
+      return (data?.items ?? []) as TrainingVideoItem[];
+    },
+    retry: false,
+  });
+
+  const videos = videosQ.data ?? [];
+
+  const uploadVideoM = useMutation({
+    mutationFn: async () => {
+      if (!videoFile) throw new Error("Selecione um vídeo.");
+      if (!videoFile.type.startsWith("video/")) {
+        throw new Error("Arquivo inválido. Envie um vídeo.");
+      }
+
+      const initResponse = await api.post(
+        endpoints.adminTrainingVideos.initUpload(id),
+        {
+          fileName: videoFile.name,
+          contentType: videoFile.type,
+          scope: "PRODUCT",
+          productId: id,
+        }
+      );
+
+      const { uploadUrl, objectKey } = initResponse.data ?? {};
+      if (!uploadUrl || !objectKey) {
+        throw new Error("Init do vídeo inválido.");
+      }
+
+      const putResponse = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: {
+          "Content-Type": videoFile.type,
+        },
+        body: videoFile,
+      });
+
+      if (!putResponse.ok) {
+        throw new Error("Falha ao enviar vídeo para o storage.");
+      }
+
+      await api.post(
+        endpoints.adminTrainingVideos.finalize(id),
+        {
+          productId: id,
+          scope: "PRODUCT",
+          objectKey,
+          title:
+            videoTitle.trim() ||
+            name.trim() ||
+            videoFile.name.replace(/\.[^/.]+$/, ""),
+          description: videoDescription.trim() || null,
+          mimeType: videoFile.type,
+          sizeBytes: videoFile.size,
+          sortOrder: Number(videoSortOrder || 0),
+          active: videoActive,
+          showInGallery: videoShowInGallery,
+          thumbnailUrl: videoThumbnailUrl.trim() || null,
+          originalName: videoFile.name,
+        }
+      );
+    },
+    onSuccess: async () => {
+      toast.success("Vídeo enviado.");
+      setVideoFile(null);
+      setVideoTitle("");
+      setVideoDescription("");
+      setVideoSortOrder("0");
+      setVideoActive(true);
+      setVideoShowInGallery(true);
+      setVideoThumbnailUrl("");
+
+      await qc.invalidateQueries({ queryKey: ["admin-product-videos", id] });
+    },
+    onError: (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Falha ao enviar vídeo."));
+    },
+  });
+
+  const patchVideoM = useMutation({
+    mutationFn: async ({
+      videoId,
+      payload,
+    }: {
+      videoId: string;
+      payload: {
+        active?: boolean;
+        showInGallery?: boolean;
+      };
+    }) => {
+      await api.patch(endpoints.adminTrainingVideos.update(videoId), payload);
+    },
+    onSuccess: async () => {
+      toast.success("Vídeo atualizado.");
+      await qc.invalidateQueries({ queryKey: ["admin-product-videos", id] });
+    },
+    onError: (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Falha ao atualizar vídeo."));
+    },
+  });
+
+  const deleteVideoM = useMutation({
+    mutationFn: async (videoId: string) => {
+      await api.delete(endpoints.adminTrainingVideos.remove(videoId));
+    },
+    onSuccess: async () => {
+      toast.success("Vídeo removido.");
+      await qc.invalidateQueries({ queryKey: ["admin-product-videos", id] });
+    },
+    onError: (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Falha ao remover vídeo."));
+    },
+  });
 
   const promosQ = useQuery({
     queryKey: ["admin-product-promos", id],
@@ -516,7 +816,7 @@ await api.patch(endpoints.products.update(id), payload, {
 
   useEffect(() => {
     if (!pStartsAt) setPStartsAt(toDatetimeLocalValue(new Date()));
-  }, []);
+  }, [pStartsAt]);
 
   function validatePromo(type: DiscountType, valueNum: number) {
     if (type === "PCT" && (valueNum <= 0 || valueNum > 100))
@@ -718,7 +1018,7 @@ await api.patch(endpoints.products.update(id), payload, {
         <Button
           variant="outline"
           className="w-full rounded-xl sm:w-auto"
-          onClick={() => router.replace("/admin/products")}
+          onClick={() => router.replace(returnTo)}
         >
           Voltar
         </Button>
@@ -729,7 +1029,6 @@ await api.patch(endpoints.products.update(id), payload, {
   return (
     <>
       <div className="mx-auto w-full max-w-5xl space-y-4 px-3 sm:px-6 pb-24 sm:pb-0">
-        {/* ===== Topbar ===== */}
         <div className="rounded-3xl border bg-gradient-to-b from-zinc-50 to-white p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
@@ -742,17 +1041,16 @@ await api.patch(endpoints.products.update(id), payload, {
                   {active ? "ATIVO" : "INATIVO"}
                 </Badge>
 
-                {/* ✅ Audience badge */}
                 <Badge
-  className={cn(
-    "rounded-full border",
-    audience === "STAFF_ONLY"
-      ? "bg-zinc-50 text-zinc-700 border-zinc-200"
-      : "bg-emerald-50 text-emerald-700 border-emerald-200"
-  )}
->
-  {audience === "STAFF_ONLY" ? "Salão/Vendedor" : "Cliente vê"}
-</Badge>
+                  className={cn(
+                    "rounded-full border",
+                    audience === "STAFF_ONLY"
+                      ? "bg-zinc-50 text-zinc-700 border-zinc-200"
+                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  )}
+                >
+                  {audience === "STAFF_ONLY" ? "Salão/Vendedor" : "Cliente vê"}
+                </Badge>
 
                 <Badge variant="secondary" className="rounded-full">
                   Admin
@@ -772,7 +1070,7 @@ await api.patch(endpoints.products.update(id), payload, {
                 type="button"
                 variant="outline"
                 className="w-full rounded-xl sm:w-auto"
-                onClick={() => router.replace("/admin/products")}
+                onClick={() => router.replace(returnTo)}
                 disabled={saveM.isPending}
               >
                 <ArrowLeft className="mr-2 h-4 w-4" />
@@ -792,11 +1090,8 @@ await api.patch(endpoints.products.update(id), payload, {
           </div>
         </div>
 
-        {/* ===== Layout em 2 colunas ===== */}
         <div className="grid gap-4 lg:grid-cols-5">
-          {/* COL DIREITA: Dados + Promo (primeiro no mobile) */}
           <div className="order-1 space-y-4 lg:order-2 lg:col-span-3">
-            {/* DADOS */}
             <Card className="rounded-2xl border-slate-200/70 bg-white shadow-sm border-t-4 border-t-sky-500/70">
               <CardHeader>
                 <CardTitle>Dados do produto</CardTitle>
@@ -841,56 +1136,56 @@ await api.patch(endpoints.products.update(id), payload, {
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
-  <div className="grid gap-2">
-    <Label>Marca</Label>
-    <Input
-      className="w-full rounded-xl"
-      value={brand}
-      onChange={(e) => setBrand(e.target.value)}
-      placeholder="Ex.: Wella"
-    />
-  </div>
+                  <div className="grid gap-2">
+                    <Label>Marca</Label>
+                    <Input
+                      className="w-full rounded-xl"
+                      value={brand}
+                      onChange={(e) => setBrand(e.target.value)}
+                      placeholder="Ex.: Wella"
+                    />
+                  </div>
 
-  <div className="grid gap-2">
-    <Label>Linha / Família</Label>
-    <Input
-      className="w-full rounded-xl"
-      value={line}
-      onChange={(e) => setLine(e.target.value)}
-      placeholder="Ex.: Fusion"
-    />
-  </div>
-</div>
+                  <div className="grid gap-2">
+                    <Label>Linha / Família</Label>
+                    <Input
+                      className="w-full rounded-xl"
+                      value={line}
+                      onChange={(e) => setLine(e.target.value)}
+                      placeholder="Ex.: Fusion"
+                    />
+                  </div>
+                </div>
 
-<div className="grid gap-3 sm:grid-cols-2">
-  <div className="grid gap-2">
-    <Label>Volume</Label>
-    <Input
-      className="w-full rounded-xl"
-      value={volume}
-      onChange={(e) => setVolume(e.target.value)}
-      placeholder="Ex.: 500ml"
-      maxLength={20}
-    />
-    <div className="text-xs text-black/50">
-      Máx. 20 caracteres.
-    </div>
-  </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label>Volume</Label>
+                    <Input
+                      className="w-full rounded-xl"
+                      value={volume}
+                      onChange={(e) => setVolume(e.target.value)}
+                      placeholder="Ex.: 500ml"
+                      maxLength={20}
+                    />
+                    <div className="text-xs text-black/50">
+                      Máx. 20 caracteres.
+                    </div>
+                  </div>
 
-  <div className="grid gap-2">
-    <Label>Efeito</Label>
-    <Input
-      className="w-full rounded-xl"
-      value={effect}
-      onChange={(e) => setEffect(e.target.value)}
-      placeholder="Ex.: Brilho intenso"
-      maxLength={20}
-    />
-    <div className="text-xs text-black/50">
-      Texto curto. Máx. 20 caracteres.
-    </div>
-  </div>
-</div>
+                  <div className="grid gap-2">
+                    <Label>Efeito</Label>
+                    <Input
+                      className="w-full rounded-xl"
+                      value={effect}
+                      onChange={(e) => setEffect(e.target.value)}
+                      placeholder="Ex.: Brilho intenso"
+                      maxLength={20}
+                    />
+                    <div className="text-xs text-black/50">
+                      Texto curto. Máx. 20 caracteres.
+                    </div>
+                  </div>
+                </div>
 
                 <div className="grid gap-2">
                   <Label>Preço</Label>
@@ -907,19 +1202,18 @@ await api.patch(endpoints.products.update(id), payload, {
                 </div>
 
                 <div className="grid gap-2">
-  <Label>Preço cliente final (opcional)</Label>
-  <Input
-    className="w-full rounded-xl"
-    value={customerPrice}
-    onChange={(e) => setCustomerPrice(sanitizeMoneyInput(e.target.value))}
-    placeholder="Ex.: 49,90"
-    inputMode="decimal"
-  />
-  <div className="text-xs text-black/50">
-    Se vazio, cliente final usa o preço padrão.
-  </div>
-</div>
-
+                  <Label>Preço cliente final (opcional)</Label>
+                  <Input
+                    className="w-full rounded-xl"
+                    value={customerPrice}
+                    onChange={(e) => setCustomerPrice(sanitizeMoneyInput(e.target.value))}
+                    placeholder="Ex.: 49,90"
+                    inputMode="decimal"
+                  />
+                  <div className="text-xs text-black/50">
+                    Se vazio, cliente final usa o preço padrão.
+                  </div>
+                </div>
 
                 <div className="grid gap-2">
                   <Label>Descrição</Label>
@@ -944,57 +1238,55 @@ await api.patch(endpoints.products.update(id), payload, {
                   </div>
                 </div>
 
-                {/* CATEGORIA + STATUS */}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-2xl border bg-white p-4 shadow-sm">
-  <Label>Categoria principal (opcional)</Label>
+                    <Label>Categoria principal (opcional)</Label>
 
-  <div className="mt-2">
-    <select
-      className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
-      value={categoryId}
-      onChange={(e) => {
-        const v = e.target.value;
-        setCategoryId(v);
-        setCategoryIds((prev) => prev.filter((x) => x !== v));
-      }}
-      disabled={categoriesQ.isLoading}
-    >
-      <option value="">Sem categoria principal</option>
-      {categories.map((c) => (
-        <option key={c.id} value={c.id}>
-          {c.name}
-        </option>
-      ))}
-    </select>
-  </div>
+                    <div className="mt-2">
+                      <select
+                        className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
+                        value={categoryId}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          setCategoryId(v);
+                          setCategoryIds((prev) => prev.filter((x) => x !== v));
+                        }}
+                        disabled={categoriesQ.isLoading}
+                      >
+                        <option value="">Sem categoria principal</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-  <div className="mt-2 min-h-[18px] text-xs text-black/50">
-    {categoriesQ.isLoading ? "Carregando categorias…" : null}
-    {categoriesQ.isError ? (
-      <span className="text-red-600">Erro ao carregar categorias.</span>
-    ) : null}
-    {!categoriesQ.isLoading && !categoriesQ.isError ? (
-      categoryId ? "Categoria principal definida." : "Nenhuma categoria principal."
-    ) : null}
-  </div>
-</div>
+                    <div className="mt-2 min-h-[18px] text-xs text-black/50">
+                      {categoriesQ.isLoading ? "Carregando categorias…" : null}
+                      {categoriesQ.isError ? (
+                        <span className="text-red-600">Erro ao carregar categorias.</span>
+                      ) : null}
+                      {!categoriesQ.isLoading && !categoriesQ.isError ? (
+                        categoryId ? "Categoria principal definida." : "Nenhuma categoria principal."
+                      ) : null}
+                    </div>
+                  </div>
 
-<div className="rounded-2xl border bg-white p-4 shadow-sm">
-  <Label>Status</Label>
+                  <div className="rounded-2xl border bg-white p-4 shadow-sm">
+                    <Label>Status</Label>
 
-  <div className="mt-2">
-    <ProductStatusPanel
-  active={active}
-  onActiveChange={setActive}
-  availableToCustomer={availableToCustomer}
-  onAvailableToCustomerChange={(v) => setAudience(v ? "ALL" : "STAFF_ONLY")}
-/>
-  </div>
-</div>
+                    <div className="mt-2">
+                      <ProductStatusPanel
+                        active={active}
+                        onActiveChange={setActive}
+                        availableToCustomer={availableToCustomer}
+                        onAvailableToCustomerChange={(v) => setAudience(v ? "ALL" : "STAFF_ONLY")}
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                {/* ✅ multi categorias */}
                 <div className="grid gap-2">
                   <Label>Categorias (multi)</Label>
 
@@ -1036,13 +1328,12 @@ await api.patch(endpoints.products.update(id), payload, {
 
                 <Separator />
 
-                {/* Botões (desktop/tablet) */}
                 <div className="hidden sm:flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     className="rounded-xl"
-                    onClick={() => router.replace("/admin/products")}
+                    onClick={() => router.replace(returnTo)}
                     disabled={saveM.isPending}
                   >
                     <ArrowLeft className="mr-2 h-4 w-4" />
@@ -1062,7 +1353,6 @@ await api.patch(endpoints.products.update(id), payload, {
               </CardContent>
             </Card>
 
-            {/* PROMOÇÕES */}
             <Card className="rounded-3xl border-slate-200/70 bg-white shadow-sm border-t-4 border-t-sky-500/70">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1080,7 +1370,6 @@ await api.patch(endpoints.products.update(id), payload, {
                   <div className="text-sm font-semibold">Criar promoção</div>
 
                   <div className="grid gap-3 md:grid-cols-12">
-                    {/* Linha 1 */}
                     <div className="grid gap-2 md:col-span-4">
                       <Label>Aplica para</Label>
                       <select
@@ -1126,7 +1415,6 @@ await api.patch(endpoints.products.update(id), payload, {
                       </div>
                     </div>
 
-                    {/* Linha 2 */}
                     <div className="grid gap-2 md:col-span-6">
                       <Label>Início (data + hora)</Label>
                       <Input
@@ -1151,7 +1439,6 @@ await api.patch(endpoints.products.update(id), payload, {
                       </div>
                     </div>
 
-                    {/* Linha 3 */}
                     <div className="grid gap-2 md:col-span-4">
                       <Label>Prioridade</Label>
                       <Input
@@ -1181,7 +1468,6 @@ await api.patch(endpoints.products.update(id), payload, {
                       </div>
                     </div>
 
-                    {/* Botão */}
                     <div className="md:col-span-4 flex flex-col md:items-end">
                       <div className="hidden md:block h-5" />
                       <div className="hidden md:block min-h-[32px]" />
@@ -1196,7 +1482,6 @@ await api.patch(endpoints.products.update(id), payload, {
                   </div>
                 </div>
 
-                {/* LIST PROMOS */}
                 <div className="space-y-2">
                   <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                     <div className="text-sm font-semibold">Promoções cadastradas</div>
@@ -1419,7 +1704,6 @@ await api.patch(endpoints.products.update(id), payload, {
             </Card>
           </div>
 
-          {/* COL ESQUERDA: Imagens (depois no mobile) */}
           <Card className="order-2 rounded-3xl lg:order-1 lg:col-span-2">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1465,14 +1749,19 @@ await api.patch(endpoints.products.update(id), payload, {
                     className="text-sm w-full"
                     type="file"
                     accept="image/*"
+                    multiple
                     onChange={(e) => {
                       setUploadErr(null);
-                      setFile(e.target.files?.[0] ?? null);
+                      setFiles(Array.from(e.target.files ?? []));
                     }}
                   />
 
                   <div className="text-xs text-black/50 break-words">
-                    {file ? `Selecionado: ${file.name} (${Math.round(file.size / 1024)} KB)` : "Escolha um arquivo JPG/PNG/WEBP."}
+                    {files.length
+                      ? files.length === 1
+                        ? `Selecionado: ${files[0].name} (${Math.round(files[0].size / 1024)} KB)`
+                        : `${files.length} imagens selecionadas`
+                      : "Escolha uma ou mais imagens JPG/PNG/WEBP."}
                   </div>
 
                   {uploadErr ? <div className="text-sm text-red-600">{uploadErr}</div> : null}
@@ -1482,7 +1771,7 @@ await api.patch(endpoints.products.update(id), payload, {
                       type="button"
                       className="w-full rounded-xl sm:w-auto"
                       onClick={() => uploadM.mutate()}
-                      disabled={!file || uploadM.isPending}
+                      disabled={!files.length || uploadM.isPending}
                     >
                       <Upload className="mr-2 h-4 w-4" />
                       {uploadM.isPending ? "Enviando…" : "Upload"}
@@ -1492,13 +1781,223 @@ await api.patch(endpoints.products.update(id), payload, {
                       type="button"
                       variant="outline"
                       className="w-full rounded-xl sm:w-auto"
-                      onClick={() => setFile(null)}
-                      disabled={!file || uploadM.isPending}
+                      onClick={() => setFiles([])}
+                      disabled={!files.length || uploadM.isPending}
                     >
                       Limpar
                     </Button>
                   </div>
                 </div>
+              </div>
+
+              <div className="rounded-2xl border bg-white p-4 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <Clapperboard className="h-4 w-4" />
+                    Vídeos do produto
+                  </div>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full rounded-xl sm:w-auto"
+                    onClick={() => videosQ.refetch()}
+                    disabled={videosQ.isFetching}
+                  >
+                    <RefreshCw className={cn("mr-2 h-4 w-4", videosQ.isFetching ? "animate-spin" : "")} />
+                    Atualizar
+                  </Button>
+                </div>
+
+                <div className="grid gap-3">
+                  <Input
+                    className="rounded-xl"
+                    value={videoTitle}
+                    onChange={(e) => setVideoTitle(e.target.value)}
+                    placeholder="Título do vídeo"
+                  />
+
+                  <Input
+                    className="rounded-xl"
+                    type="number"
+                    value={videoSortOrder}
+                    onChange={(e) => setVideoSortOrder(e.target.value)}
+                    placeholder="Ordem"
+                  />
+
+                  <Textarea
+                    className="rounded-xl min-h-[90px]"
+                    value={videoDescription}
+                    onChange={(e) => setVideoDescription(e.target.value)}
+                    placeholder="Descrição do vídeo"
+                  />
+
+                  <Input
+                    className="rounded-xl"
+                    value={videoThumbnailUrl}
+                    onChange={(e) => setVideoThumbnailUrl(e.target.value)}
+                    placeholder="Thumbnail URL (opcional)"
+                  />
+
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={videoActive}
+                        onChange={(e) => setVideoActive(e.target.checked)}
+                      />
+                      Vídeo ativo
+                    </label>
+
+                    <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={videoShowInGallery}
+                        onChange={(e) => setVideoShowInGallery(e.target.checked)}
+                      />
+                      Mostrar na galeria
+                    </label>
+                  </div>
+
+                  <Input
+                    type="file"
+                    accept="video/*"
+                    className="rounded-xl"
+                    onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
+                  />
+
+                  {videoFile ? (
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-black/70">
+                      {videoFile.name} • {formatBytes(videoFile.size)}
+                    </div>
+                  ) : null}
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      type="button"
+                      className="w-full rounded-xl sm:w-auto"
+                      onClick={() => uploadVideoM.mutate()}
+                      disabled={!videoFile || uploadVideoM.isPending}
+                    >
+                      {uploadVideoM.isPending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Enviando...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="mr-2 h-4 w-4" />
+                          Enviar vídeo
+                        </>
+                      )}
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full rounded-xl sm:w-auto"
+                      onClick={() => {
+                        setVideoFile(null);
+                        setVideoTitle("");
+                        setVideoDescription("");
+                        setVideoSortOrder("0");
+                        setVideoActive(true);
+                        setVideoShowInGallery(true);
+                        setVideoThumbnailUrl("");
+                      }}
+                    >
+                      Limpar
+                    </Button>
+                  </div>
+                </div>
+
+                {videosQ.isLoading ? (
+                  <div className="text-sm text-black/50">Carregando vídeos...</div>
+                ) : videos.length > 0 ? (
+                  <div className="space-y-2 pt-2">
+                    <div className="text-sm font-semibold">Vídeos cadastrados</div>
+
+                    {videos.map((video) => (
+                      <div key={video.id} className="rounded-xl border bg-slate-50 p-3">
+                        <div className="flex flex-col gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">
+                              {video.title}
+                            </div>
+                            <div className="mt-1 text-xs text-black/50">
+                              Ordem {video.sortOrder} • {video.active ? "Ativo" : "Inativo"} •{" "}
+                              {video.showInGallery ? "Na galeria" : "Fora da galeria"}
+                            </div>
+                            <div className="mt-1 text-xs text-black/50 break-all">
+                              {video.originalName || video.publicUrl}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 w-full sm:w-auto rounded-xl px-2 text-xs"
+                              onClick={() => window.open(video.publicUrl, "_blank", "noopener,noreferrer")}
+                            >
+                              <Eye className="mr-1 h-3.5 w-3.5" />
+                              Abrir
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 w-full sm:w-auto rounded-xl px-2 text-xs"
+                              disabled={patchVideoM.isPending}
+                              onClick={() =>
+                                patchVideoM.mutate({
+                                  videoId: video.id,
+                                  payload: { showInGallery: !video.showInGallery },
+                                })
+                              }
+                            >
+                              {video.showInGallery ? "Tirar da galeria" : "Mostrar na galeria"}
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 w-full sm:w-auto rounded-xl px-2 text-xs"
+                              disabled={patchVideoM.isPending}
+                              onClick={() =>
+                                patchVideoM.mutate({
+                                  videoId: video.id,
+                                  payload: { active: !video.active },
+                                })
+                              }
+                            >
+                              {video.active ? "Desativar" : "Ativar"}
+                            </Button>
+
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-8 w-full sm:w-auto rounded-xl px-2 text-xs"
+                              disabled={deleteVideoM.isPending}
+                              onClick={() => {
+                                if (confirm(`Remover o vídeo "${video.title}"?`)) {
+                                  deleteVideoM.mutate(video.id);
+                                }
+                              }}
+                            >
+                              <Trash2 className="mr-1 h-3.5 w-3.5" />
+                              Remover
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-black/50">
+                    Nenhum vídeo cadastrado para este produto.
+                  </div>
+                )}
               </div>
 
               {images.length ? (
@@ -1559,13 +2058,12 @@ await api.patch(endpoints.products.update(id), payload, {
         </div>
       </div>
 
-      {/* Sticky actions (mobile) */}
       <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/90 backdrop-blur sm:hidden">
         <div className="mx-auto flex max-w-5xl gap-2 px-3 py-3">
           <Button
             variant="outline"
             className="w-1/2 rounded-xl"
-            onClick={() => router.replace("/admin/products")}
+            onClick={() => router.replace(returnTo)}
             disabled={saveM.isPending}
           >
             <ArrowLeft className="mr-2 h-4 w-4" />

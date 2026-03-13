@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams, type ReadonlyURLSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
@@ -45,6 +46,16 @@ type Product = {
   promoScheduled?: boolean;
 };
 
+type ListState = {
+  q: string;
+  activeFilter: "all" | "active" | "inactive";
+  promoFilter: "all" | "now" | "scheduled" | "none";
+  page: number;
+  scrollY: number;
+};
+
+const STORAGE_KEY = "admin-products-list-state";
+
 function pickPrimaryImage(images?: ProductImage[] | null) {
   if (!images?.length) return null;
 
@@ -67,12 +78,53 @@ function statusBadgeClass(active: boolean) {
   return active ? "bg-emerald-600 text-white border-transparent" : "bg-zinc-300 text-zinc-900 border-transparent";
 }
 
+function readSearchParamsState(searchParams: ReadonlyURLSearchParams): Omit<ListState, "scrollY"> {
+  return {
+    q: searchParams.get("q") ?? "",
+    activeFilter: ((searchParams.get("status") as "all" | "active" | "inactive") ?? "active"),
+    promoFilter: ((searchParams.get("promo") as "all" | "now" | "scheduled" | "none") ?? "all"),
+    page: Math.max(1, Number(searchParams.get("page") ?? 1) || 1),
+  };
+}
+
+function readStoredState(): ListState | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+
+    const saved = JSON.parse(raw) as Partial<ListState>;
+
+    return {
+      q: saved.q ?? "",
+      activeFilter: saved.activeFilter ?? "active",
+      promoFilter: saved.promoFilter ?? "all",
+      page: Math.max(1, Number(saved.page ?? 1) || 1),
+      scrollY: Math.max(0, Number(saved.scrollY ?? 0) || 0),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredState(state: ListState) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {}
+}
+
 export default function AdminProductsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
   const [q, setQ] = useState("");
   const [activeFilter, setActiveFilter] = useState<"all" | "active" | "inactive">("active");
   const [promoFilter, setPromoFilter] = useState<"all" | "now" | "scheduled" | "none">("all");
-
   const [page, setPage] = useState(1);
+  const [hydrated, setHydrated] = useState(false);
+
+  const didInitRef = useRef(false);
+  const didRestoreScrollRef = useRef(false);
+
   const pageSize = 10;
 
   const productsQ = useQuery({
@@ -91,8 +143,34 @@ export default function AdminProductsPage() {
   }, [productsQ.isError]);
 
   useEffect(() => {
+    const stored = readStoredState();
+    const paramsState = readSearchParamsState(searchParams);
+
+    if (stored) {
+      setQ(stored.q);
+      setActiveFilter(stored.activeFilter);
+      setPromoFilter(stored.promoFilter);
+      setPage(stored.page);
+    } else {
+      setQ(paramsState.q);
+      setActiveFilter(paramsState.activeFilter);
+      setPromoFilter(paramsState.promoFilter);
+      setPage(paramsState.page);
+    }
+
+    setHydrated(true);
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    if (!didInitRef.current) {
+      didInitRef.current = true;
+      return;
+    }
+
     setPage(1);
-  }, [q, activeFilter, promoFilter]);
+  }, [q, activeFilter, promoFilter, hydrated]);
 
   const filtered = useMemo(() => {
     const items = productsQ.data ?? [];
@@ -112,7 +190,11 @@ export default function AdminProductsPage() {
       })
       .filter((p) => {
         if (!qq) return true;
-        return p.name?.toLowerCase().includes(qq) || p.sku?.toLowerCase().includes(qq) || p.id?.toLowerCase().includes(qq);
+        return (
+          p.name?.toLowerCase().includes(qq) ||
+          p.sku?.toLowerCase().includes(qq) ||
+          p.id?.toLowerCase().includes(qq)
+        );
       });
   }, [productsQ.data, q, activeFilter, promoFilter]);
 
@@ -123,6 +205,68 @@ export default function AdminProductsPage() {
   const start = (safePage - 1) * pageSize;
   const end = start + pageSize;
   const pageItems = filtered.slice(start, end);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (page !== safePage) setPage(safePage);
+  }, [page, safePage, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const params = new URLSearchParams();
+
+    if (q.trim()) params.set("q", q);
+    params.set("status", activeFilter);
+    params.set("promo", promoFilter);
+    params.set("page", String(safePage));
+
+    router.replace(`/admin/products?${params.toString()}`, { scroll: false });
+  }, [q, activeFilter, promoFilter, safePage, router, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    saveStoredState({
+      q,
+      activeFilter,
+      promoFilter,
+      page: safePage,
+      scrollY: typeof window !== "undefined" ? window.scrollY : 0,
+    });
+  }, [q, activeFilter, promoFilter, safePage, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const onScroll = () => {
+      saveStoredState({
+        q,
+        activeFilter,
+        promoFilter,
+        page: safePage,
+        scrollY: window.scrollY,
+      });
+    };
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [q, activeFilter, promoFilter, safePage, hydrated]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    if (productsQ.isLoading) return;
+    if (didRestoreScrollRef.current) return;
+
+    const stored = readStoredState();
+    const scrollY = stored?.scrollY ?? 0;
+
+    didRestoreScrollRef.current = true;
+
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollY, behavior: "auto" });
+    });
+  }, [hydrated, productsQ.isLoading, productsQ.dataUpdatedAt]);
 
   const summary = useMemo(() => {
     const items = productsQ.data ?? [];
@@ -150,27 +294,64 @@ export default function AdminProductsPage() {
       if (!now && !sch) promoNone++;
     }
 
-    return { total: items.length, active, inactive, out, low, promoNow, promoScheduled, promoNone };
+    return {
+      total: items.length,
+      active,
+      inactive,
+      out,
+      low,
+      promoNow,
+      promoScheduled,
+      promoNone,
+    };
   }, [productsQ.data]);
+
+  const currentListHref = useMemo(() => {
+    const params = new URLSearchParams();
+
+    if (q.trim()) params.set("q", q);
+    params.set("status", activeFilter);
+    params.set("promo", promoFilter);
+    params.set("page", String(safePage));
+
+    return `/admin/products?${params.toString()}`;
+  }, [q, activeFilter, promoFilter, safePage]);
+
+  const newProductHref = `/admin/products/new?returnTo=${encodeURIComponent(currentListHref)}`;
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-4 rounded-3xl border bg-slate-50/60 p-4 md:p-6">
-      {/* Header */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="space-y-1">
           <div className="text-2xl font-black">Produtos</div>
           <div className="text-sm text-black/60">Catálogo</div>
 
           <div className="flex flex-wrap items-center gap-2 pt-1">
-            <Badge className="rounded-full bg-slate-200/70 text-slate-900 border-transparent">Total: {summary.total}</Badge>
-            <Badge className="rounded-full bg-emerald-600 text-white border-transparent">Ativos: {summary.active}</Badge>
-            <Badge className="rounded-full bg-zinc-300 text-zinc-900 border-transparent">Inativos: {summary.inactive}</Badge>
-            <Badge className="rounded-full bg-rose-600 text-white border-transparent">Sem estoque: {summary.out}</Badge>
-            <Badge className="rounded-full bg-amber-500 text-white border-transparent">Pouco: {summary.low}</Badge>
+            <Badge className="rounded-full bg-slate-200/70 text-slate-900 border-transparent">
+              Total: {summary.total}
+            </Badge>
+            <Badge className="rounded-full bg-emerald-600 text-white border-transparent">
+              Ativos: {summary.active}
+            </Badge>
+            <Badge className="rounded-full bg-zinc-300 text-zinc-900 border-transparent">
+              Inativos: {summary.inactive}
+            </Badge>
+            <Badge className="rounded-full bg-rose-600 text-white border-transparent">
+              Sem estoque: {summary.out}
+            </Badge>
+            <Badge className="rounded-full bg-amber-500 text-white border-transparent">
+              Pouco: {summary.low}
+            </Badge>
 
-            <Badge className="rounded-full bg-indigo-600 text-white border-transparent">Promo ativa: {summary.promoNow}</Badge>
-            <Badge className="rounded-full bg-sky-600 text-white border-transparent">Agendada: {summary.promoScheduled}</Badge>
-            <Badge className="rounded-full bg-slate-300 text-slate-900 border-transparent">Sem promo: {summary.promoNone}</Badge>
+            <Badge className="rounded-full bg-indigo-600 text-white border-transparent">
+              Promo ativa: {summary.promoNow}
+            </Badge>
+            <Badge className="rounded-full bg-sky-600 text-white border-transparent">
+              Agendada: {summary.promoScheduled}
+            </Badge>
+            <Badge className="rounded-full bg-slate-300 text-slate-900 border-transparent">
+              Sem promo: {summary.promoNone}
+            </Badge>
           </div>
         </div>
 
@@ -186,7 +367,7 @@ export default function AdminProductsPage() {
           </Button>
 
           <Button asChild className="rounded-xl">
-            <Link href="/admin/products/new">
+            <Link href={newProductHref}>
               <Plus className="mr-2 h-4 w-4" />
               Novo produto
             </Link>
@@ -194,7 +375,6 @@ export default function AdminProductsPage() {
         </div>
       </div>
 
-      {/* Controls */}
       <Card className="rounded-2xl border-slate-200/70 bg-white shadow-sm border-t-4 border-t-sky-500/70">
         <CardHeader className="rounded-t-2xl border-b border-slate-200/60 bg-slate-50/50">
           <CardTitle>Filtros</CardTitle>
@@ -209,7 +389,12 @@ export default function AdminProductsPage() {
               <Label>Buscar</Label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-black/50" />
-                <Input className="h-10 rounded-xl pl-9 pr-9" placeholder="Nome ou SKU…" value={q} onChange={(e) => setQ(e.target.value)} />
+                <Input
+                  className="h-10 rounded-xl pl-9 pr-9"
+                  placeholder="Nome ou SKU…"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
                 {q.trim() ? (
                   <button
                     type="button"
@@ -253,11 +438,12 @@ export default function AdminProductsPage() {
 
           <Separator />
 
-          <div className="text-xs text-black/50">“Promo ativa” aparece mesmo se o produto estiver INATIVO</div>
+          <div className="text-xs text-black/50">
+            “Promo ativa” aparece mesmo se o produto estiver INATIVO
+          </div>
         </CardContent>
       </Card>
 
-      {/* Table */}
       <Card className="rounded-2xl border-slate-200/70 bg-white shadow-sm border-t-4 border-t-indigo-500/70">
         <CardHeader className="rounded-t-2xl border-b border-slate-200/60 bg-slate-50/50">
           <CardTitle>Lista</CardTitle>
@@ -268,18 +454,17 @@ export default function AdminProductsPage() {
           {productsQ.isLoading ? (
             <div className="text-sm">Carregando…</div>
           ) : productsQ.isError ? (
-            <div className="text-sm text-red-600">{apiErrorMessage(productsQ.error, "Erro ao carregar produtos.")}</div>
+            <div className="text-sm text-red-600">
+              {apiErrorMessage(productsQ.error, "Erro ao carregar produtos.")}
+            </div>
           ) : (
             <>
-              {/* 👇 min-w aqui é importante: garante uma largura mínima e evita “amassar” tudo */}
               <div className="rounded-2xl border border-slate-200/70 overflow-x-auto">
                 <Table className="w-full min-w-[980px] table-fixed">
                   <TableHeader className="bg-slate-50/70">
                     <TableRow>
                       <TableHead className="w-[84px]">Foto</TableHead>
-                      {/* some em telas menores */}
                       <TableHead className="w-[160px] hidden lg:table-cell">SKU</TableHead>
-                      {/* coluna flexível */}
                       <TableHead className="w-auto">Produto</TableHead>
                       <TableHead className="w-[140px]">Preço</TableHead>
                       <TableHead className="w-[120px] hidden md:table-cell">Promo</TableHead>
@@ -297,7 +482,16 @@ export default function AdminProductsPage() {
                         </TableCell>
                       </TableRow>
                     ) : (
-                      pageItems.map((p) => <ProductRow key={p.id} p={p} />)
+                      pageItems.map((p) => (
+                        <ProductRow
+                          key={p.id}
+                          p={p}
+                          page={safePage}
+                          q={q}
+                          activeFilter={activeFilter}
+                          promoFilter={promoFilter}
+                        />
+                      ))
                     )}
                   </TableBody>
                 </Table>
@@ -305,7 +499,8 @@ export default function AdminProductsPage() {
 
               <div className="flex items-center justify-between">
                 <div className="text-xs text-black/60">
-                  Página {safePage} de {pageCount} • mostrando {start + 1}-{Math.min(end, filtered.length)} de {filtered.length}
+                  Página {safePage} de {pageCount} • mostrando {filtered.length === 0 ? 0 : start + 1}-
+                  {Math.min(end, filtered.length)} de {filtered.length}
                 </div>
 
                 <div className="flex gap-2">
@@ -338,14 +533,25 @@ export default function AdminProductsPage() {
   );
 }
 
-function ProductRow({ p }: { p: Product }) {
+function ProductRow({
+  p,
+  page,
+  q,
+  activeFilter,
+  promoFilter,
+}: {
+  p: Product;
+  page: number;
+  q: string;
+  activeFilter: "all" | "active" | "inactive";
+  promoFilter: "all" | "now" | "scheduled" | "none";
+}) {
   const img = pickPrimaryImage(p.images);
   const stock = Number(p.stock ?? 0);
 
   const [broken, setBroken] = useState(false);
   const showImg = !!img && !broken;
 
-  // limita o que aparece (sem “empurrar” altura de outras linhas)
   const desc = (p.description ?? "").trim();
   const statusCls = statusBadgeClass(p.active);
 
@@ -360,9 +566,18 @@ function ProductRow({ p }: { p: Product }) {
     <Badge className="rounded-full bg-slate-200 text-slate-900 border-transparent">SEM</Badge>
   );
 
+  const params = new URLSearchParams();
+
+  if (q.trim()) params.set("q", q);
+  params.set("status", activeFilter);
+  params.set("promo", promoFilter);
+  params.set("page", String(page));
+
+  const returnTo = `/admin/products?${params.toString()}`;
+  const editHref = `/admin/products/${p.id}?returnTo=${encodeURIComponent(returnTo)}`;
+
   return (
     <TableRow className="hover:bg-slate-50/70 [&>td]:border-b [&>td]:border-slate-100">
-      {/* FOTO */}
       <TableCell className="align-middle">
         <div className="relative h-16 w-16 overflow-hidden rounded-xl border border-slate-200/70 bg-white">
           {showImg ? (
@@ -373,21 +588,18 @@ function ProductRow({ p }: { p: Product }) {
         </div>
       </TableCell>
 
-      {/* SKU (desktop grande) */}
       <TableCell className="align-middle hidden lg:table-cell">
         <div className="font-mono text-xs text-black/70 truncate max-w-[150px]" title={p.sku}>
           {p.sku}
         </div>
       </TableCell>
 
-      {/* PRODUTO */}
       <TableCell className="align-middle min-w-0">
         <div className="min-w-0">
           <div className="font-semibold text-[14px] leading-5 truncate" title={p.name}>
             {p.name}
           </div>
 
-          {/* SKU no mobile/tablet (uma linha só) */}
           <div className="mt-1 font-mono text-[10px] text-black/45 lg:hidden truncate max-w-[260px]" title={p.sku}>
             {p.sku}
           </div>
@@ -402,7 +614,6 @@ function ProductRow({ p }: { p: Product }) {
         </div>
       </TableCell>
 
-      {/* PREÇO */}
       <TableCell className="align-middle whitespace-nowrap">
         <div className="font-semibold leading-5">{brl((p.effectivePrice ?? p.price) as string)}</div>
         {p.customerPrice ? (
@@ -412,23 +623,19 @@ function ProductRow({ p }: { p: Product }) {
         )}
       </TableCell>
 
-      {/* PROMO (some no mobile pequeno) */}
       <TableCell className="align-middle hidden md:table-cell">{promoBadge}</TableCell>
 
-      {/* ESTOQUE */}
       <TableCell className="align-middle">
         <div className="font-semibold leading-5">{stock}</div>
       </TableCell>
 
-      {/* STATUS */}
       <TableCell className="align-middle">
         <Badge className={`rounded-full ${statusCls}`}>{p.active ? "ATIVO" : "INATIVO"}</Badge>
       </TableCell>
 
-      {/* AÇÕES */}
       <TableCell className="align-middle text-right">
         <Button asChild variant="outline" className="rounded-xl bg-white hover:bg-slate-50">
-          <Link href={`/admin/products/${p.id}`}>
+          <Link href={editHref}>
             <Pencil className="mr-2 h-4 w-4" />
             Editar
           </Link>

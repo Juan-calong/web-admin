@@ -15,8 +15,8 @@ import {
   Loader2,
   ImagePlus,
   LayoutPanelTop,
-  ExternalLink,
   CalendarClock,
+  Users,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -59,6 +59,8 @@ type TargetType =
   | "CATEGORY"
   | "URL";
 
+type BannerAudience = "ALL" | "CUSTOMER" | "SELLER" | "SALON_OWNER";
+
 type HomeBanner = {
   id: string;
   title: string | null;
@@ -67,6 +69,7 @@ type HomeBanner = {
   imageUrl: string;
   active: boolean;
   sortOrder: number;
+  audience: BannerAudience;
   targetType: TargetType;
   targetId: string | null;
   targetUrl: string | null;
@@ -108,6 +111,7 @@ type FormState = {
   imageUrl: string;
   active: boolean;
   sortOrder: string;
+  audience: BannerAudience;
   targetType: TargetType;
   targetId: string;
   targetUrl: string;
@@ -133,6 +137,7 @@ function createEmptyForm(): FormState {
     imageUrl: "",
     active: true,
     sortOrder: "0",
+    audience: "ALL",
     targetType: "NONE",
     targetId: "",
     targetUrl: "",
@@ -219,6 +224,7 @@ function formFromBanner(item: HomeBanner): FormState {
     imageUrl: item.imageUrl ?? "",
     active: item.active,
     sortOrder: String(item.sortOrder ?? 0),
+    audience: item.audience ?? "ALL",
     targetType: item.targetType ?? "NONE",
     targetId: item.targetId ?? "",
     targetUrl: item.targetUrl ?? "",
@@ -235,6 +241,7 @@ function buildPayload(form: FormState) {
     imageUrl: form.imageUrl.trim(),
     active: form.active,
     sortOrder: Number(form.sortOrder || 0),
+    audience: form.audience,
 
     targetType: form.targetType,
     targetId:
@@ -266,6 +273,23 @@ function targetTypeLabel(type: TargetType) {
     default:
       return "Sem ação";
   }
+}
+
+function audienceLabel(audience: BannerAudience) {
+  switch (audience) {
+    case "ALL":
+      return "Todos";
+    case "CUSTOMER":
+      return "Customer";
+    case "SALON_OWNER":
+      return "Salão";
+    default:
+      return "";
+  }
+}
+
+function isAdminVisibleAudience(audience: BannerAudience) {
+  return audience === "ALL" || audience === "CUSTOMER" || audience === "SALON_OWNER";
 }
 
 function formatDateTime(value?: string | null) {
@@ -300,12 +324,36 @@ export default function AdminHomeBannersPage() {
 
   const activeCount = useMemo(() => items.filter((item) => item.active).length, [items]);
 
+  const allAudienceCount = useMemo(
+    () => items.filter((item) => item.audience === "ALL").length,
+    [items]
+  );
+
+  const customerAudienceCount = useMemo(
+    () => items.filter((item) => item.audience === "CUSTOMER").length,
+    [items]
+  );
+
+  const salonAudienceCount = useMemo(
+    () => items.filter((item) => item.audience === "SALON_OWNER").length,
+    [items]
+  );
+
   const saveM = useMutation({
     mutationFn: async () => {
       const payload = buildPayload(form);
 
       if (!payload.imageUrl) {
         throw new Error("Selecione uma imagem para o banner.");
+      }
+
+      if (payload.endsAt && payload.startsAt) {
+        const start = new Date(payload.startsAt).getTime();
+        const end = new Date(payload.endsAt).getTime();
+
+        if (end < start) {
+          throw new Error("A data final não pode ser menor que a data inicial.");
+        }
       }
 
       if (editingId) {
@@ -431,7 +479,7 @@ export default function AdminHomeBannersPage() {
                 </CardTitle>
                 <CardDescription className="mt-1 text-sm leading-6 text-slate-600">
                   Gerencie os banners que aparecem no topo do app, com controle de
-                  imagem, ordem, status e destino do clique.
+                  imagem, ordem, status, público e destino do clique.
                 </CardDescription>
               </div>
             </div>
@@ -440,8 +488,8 @@ export default function AdminHomeBannersPage() {
           <CardContent className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
               Use esta tela para manter a home organizada. Você pode ativar ou
-              desativar banners, definir a ordem de exibição e controlar para onde o
-              usuário será enviado ao tocar.
+              desativar banners, definir a ordem de exibição e controlar para quem o
+              banner aparece.
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -479,7 +527,7 @@ export default function AdminHomeBannersPage() {
             </CardDescription>
           </CardHeader>
 
-          <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm text-slate-500">Total de banners</p>
               <p className="mt-1 text-3xl font-semibold text-slate-900">{items.length}</p>
@@ -488,6 +536,27 @@ export default function AdminHomeBannersPage() {
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <p className="text-sm text-slate-500">Banners ativos</p>
               <p className="mt-1 text-3xl font-semibold text-slate-900">{activeCount}</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm text-slate-500">Todos</p>
+              <p className="mt-1 text-3xl font-semibold text-slate-900">
+                {allAudienceCount}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <p className="text-sm text-slate-500">Customer</p>
+              <p className="mt-1 text-3xl font-semibold text-slate-900">
+                {customerAudienceCount}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:col-span-2 xl:col-span-2">
+              <p className="text-sm text-slate-500">Salão</p>
+              <p className="mt-1 text-3xl font-semibold text-slate-900">
+                {salonAudienceCount}
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -500,7 +569,7 @@ export default function AdminHomeBannersPage() {
               {editingId ? "Editar banner" : "Novo banner"}
             </CardTitle>
             <CardDescription className="text-slate-600">
-              Configure imagem, ordem, janela de exibição e destino do banner.
+              Configure imagem, ordem, público, janela de exibição e destino do banner.
             </CardDescription>
           </CardHeader>
 
@@ -625,6 +694,36 @@ export default function AdminHomeBannersPage() {
                 >
                   {form.active ? "Ativo" : "Inativo"}
                 </Button>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label className="text-slate-700">Público do banner</Label>
+              <select
+                value={form.audience}
+                onChange={(e) =>
+                  setForm((s) => ({
+                    ...s,
+                    audience: e.target.value as BannerAudience,
+                  }))
+                }
+                className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+              >
+                <option value="ALL">Todos</option>
+                <option value="CUSTOMER">Customer</option>
+                <option value="SALON_OWNER">Salão</option>
+              </select>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs leading-6 text-slate-600">
+                <p>
+                  <strong>Todos:</strong> aparece para customer e salão.
+                </p>
+                <p>
+                  <strong>Customer:</strong> aparece só para customer.
+                </p>
+                <p>
+                  <strong>Salão:</strong> aparece só para salão.
+                </p>
               </div>
             </div>
 
@@ -829,6 +928,12 @@ export default function AdminHomeBannersPage() {
                               <Badge className="rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-white">
                                 {targetTypeLabel(item.targetType)}
                               </Badge>
+
+                              {isAdminVisibleAudience(item.audience) ? (
+                                <Badge className="rounded-full border border-slate-300 bg-white text-slate-700 hover:bg-white">
+                                  {audienceLabel(item.audience)}
+                                </Badge>
+                              ) : null}
                             </div>
 
                             {item.subtitle ? (
@@ -842,6 +947,13 @@ export default function AdminHomeBannersPage() {
                                 {item.buttonLabel ? `Botão: ${item.buttonLabel} • ` : ""}
                                 Atualizado em {formatDateTime(item.updatedAt)}
                               </div>
+
+                              {isAdminVisibleAudience(item.audience) ? (
+                                <div className="flex items-center gap-2">
+                                  <Users className="h-3.5 w-3.5 shrink-0" />
+                                  <span>Público: {audienceLabel(item.audience)}</span>
+                                </div>
+                              ) : null}
 
                               {(item.targetId || item.targetUrl) && (
                                 <div className="break-all">
@@ -950,14 +1062,20 @@ export default function AdminHomeBannersPage() {
             Como isso funciona no app
           </CardTitle>
           <CardDescription className="text-slate-600">
-            O mobile consome só os banners ativos e dentro da janela de data.
+            O mobile consome só os banners ativos, dentro da janela de data e do
+            público correto.
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-3 text-sm leading-6 text-slate-600">
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            Se existir apenas 1 banner ativo, o app mostra somente esse banner.
-            Se existirem 2 ou mais, a área vira um carrossel.
+            Se existir apenas 1 banner ativo para aquele público, o app mostra
+            somente esse banner. Se existirem 2 ou mais, a área vira um carrossel.
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            Para banners gerais, use <strong>Todos</strong>. Para casos específicos,
+            use <strong>Customer</strong> ou <strong>Salão</strong>.
           </div>
 
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">

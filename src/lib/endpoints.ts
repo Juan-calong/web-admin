@@ -124,21 +124,43 @@ export const endpoints = {
 
   mobileHome: {
     banners: "/home/banners",
+    meBanners: "/home/me/banners",
   },
 
   adminTrainingVideos: {
-  initUpload: (productId: string) => `/admin/products/${productId}/training-videos/init-upload`,
-  finalize: (productId: string) => `/admin/products/${productId}/training-videos/finalize`,
-  adminList: (productId: string) => `/admin/products/${productId}/training-videos`,
-  update: (id: string) => `/admin/training-videos/${id}`,
-  remove: (id: string) => `/admin/training-videos/${id}`,
-},
-trainingVideos: {
-  listByProduct: (productId: string) => `/products/${productId}/training-videos`,
-},
+    initUpload: (productId: string) =>
+      `/admin/products/${productId}/training-videos/init-upload`,
+    finalize: (productId: string) =>
+      `/admin/products/${productId}/training-videos/finalize`,
+    adminList: (productId: string) =>
+      `/admin/products/${productId}/training-videos`,
+    update: (id: string) => `/admin/training-videos/${id}`,
+    remove: (id: string) => `/admin/training-videos/${id}`,
+  },
+
+  trainingVideos: {
+    listByProduct: (productId: string) => `/products/${productId}/training-videos`,
+  },
 
   admin: {
     productQuantityDiscounts: (productId: string) =>
       `/admin/products/${productId}/quantity-discounts`,
+  },
+
+  sellerBeneficiary: {
+    me: "/seller-beneficiary/me",
+  },
+
+  adminProductComments: {
+    list: "/admin/product-comments",
+    moderate: (id: string) => `/admin/product-comments/${id}/moderate`,
+  },
+
+  adminQuantityDiscountGroups: {
+    list: "/admin/quantity-discount-groups",
+    byId: (id: string) => `/admin/quantity-discount-groups/${id}`,
+    create: "/admin/quantity-discount-groups",
+    update: (id: string) => `/admin/quantity-discount-groups/${id}`,
+    disable: (id: string) => `/admin/quantity-discount-groups/${id}/disable`,
   },
 } as const;

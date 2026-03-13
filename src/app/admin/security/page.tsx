@@ -384,14 +384,17 @@ function AccessActionButtons({
     <>
       {accessStatus === "ACTIVE" ? (
         <>
-          <Button variant="destructive" className={buttonClass} onClick={onBlock}>
-            <Ban className="mr-2 h-4 w-4" />
-            {blockLabel}
-          </Button>
+<Button
+  className={`${buttonClass} bg-rose-600 text-white hover:bg-rose-700`}
+  onClick={onBlock}
+>
+  <Ban className="mr-2 h-4 w-4" />
+  {blockLabel}
+</Button>
 
           <Button
             variant="outline"
-            className={`${buttonClass} border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100`}
+            className={`${buttonClass} border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200`}
             onClick={onUnderReview}
           >
             <Clock3 className="mr-2 h-4 w-4" />
@@ -402,7 +405,10 @@ function AccessActionButtons({
 
       {accessStatus === "UNDER_REVIEW" ? (
         <>
-          <Button variant="secondary" className={buttonClass} onClick={onActivate}>
+          <Button
+            className={`${buttonClass} bg-emerald-600 text-white hover:bg-emerald-700`}
+            onClick={onActivate}
+          >
             <Unlock className="mr-2 h-4 w-4" />
             {activateLabel}
           </Button>
@@ -420,14 +426,17 @@ function AccessActionButtons({
 
       {accessStatus === "BLOCKED" ? (
         <>
-          <Button variant="secondary" className={buttonClass} onClick={onActivate}>
+          <Button
+            className={`${buttonClass} bg-emerald-600 text-white hover:bg-emerald-700`}
+            onClick={onActivate}
+          >
             <Unlock className="mr-2 h-4 w-4" />
             {activateLabel}
           </Button>
 
           <Button
             variant="outline"
-            className={`${buttonClass} border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100`}
+            className={`${buttonClass} border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200`}
             onClick={onUnderReview}
           >
             <Clock3 className="mr-2 h-4 w-4" />
