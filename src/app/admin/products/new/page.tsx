@@ -15,7 +15,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
@@ -24,9 +23,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { X, Upload } from "lucide-react";
-
-import { ProductStatusPanel } from "@/components/admin/ProductStatusPanel";
+import {
+  X,
+  Upload,
+  Search,
+  CheckCircle2,
+  Package2,
+  Video,
+  Plus,
+} from "lucide-react";
 
 type Category = {
   id: string;
@@ -104,6 +109,37 @@ function clearDraft() {
   } catch {}
 }
 
+function FieldHint({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs leading-5 text-slate-500">{children}</p>;
+}
+
+function SectionHeader({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="mb-6 flex items-start gap-3">
+      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-teal-50 text-teal-700 ring-1 ring-teal-100">
+        {icon}
+      </div>
+
+      <div className="min-w-0">
+        <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-900">
+          {title}
+        </h2>
+        {subtitle ? (
+          <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export default function NewProductPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -154,7 +190,9 @@ export default function NewProductPage() {
       setCustomerPrice(draft.customerPrice ?? "");
       setDescription(draft.description ?? "");
       setHighlightsText(draft.highlightsText ?? "");
-      setStock(Number.isFinite(Number(draft.stock)) ? Math.max(0, Number(draft.stock)) : 0);
+      setStock(
+        Number.isFinite(Number(draft.stock)) ? Math.max(0, Number(draft.stock)) : 0
+      );
       setActive(!!draft.active);
       setCategoryId(draft.categoryId ?? "");
       setCategoryIds(Array.isArray(draft.categoryIds) ? draft.categoryIds : []);
@@ -337,26 +375,23 @@ export default function NewProductPage() {
       throw new Error("Falha ao enviar vídeo para o storage.");
     }
 
-    await api.post(
-      endpoints.adminTrainingVideos.finalize(productId),
-      {
-        productId,
-        scope: "PRODUCT",
-        objectKey,
-        title:
-          videoTitle.trim() ||
-          name.trim() ||
-          file.name.replace(/\.[^/.]+$/, ""),
-        description: videoDescription.trim() || null,
-        mimeType: file.type,
-        sizeBytes: file.size,
-        sortOrder: Number(videoSortOrder || 0),
-        active: videoActive,
-        showInGallery: videoShowInGallery,
-        thumbnailUrl: videoThumbnailUrl.trim() || null,
-        originalName: file.name,
-      }
-    );
+    await api.post(endpoints.adminTrainingVideos.finalize(productId), {
+      productId,
+      scope: "PRODUCT",
+      objectKey,
+      title:
+        videoTitle.trim() ||
+        name.trim() ||
+        file.name.replace(/\.[^/.]+$/, ""),
+      description: videoDescription.trim() || null,
+      mimeType: file.type,
+      sizeBytes: file.size,
+      sortOrder: Number(videoSortOrder || 0),
+      active: videoActive,
+      showInGallery: videoShowInGallery,
+      thumbnailUrl: videoThumbnailUrl.trim() || null,
+      originalName: file.name,
+    });
   }
 
   const categoriesQ = useQuery({
@@ -386,6 +421,29 @@ export default function NewProductPage() {
     if (!categoryId) return null;
     return categories.find((c) => c.id === categoryId)?.name ?? null;
   }, [categories, categoryId]);
+
+  const categoriesById = useMemo(() => {
+    const m = new Map<string, Category>();
+    for (const c of categories) m.set(c.id, c);
+    return m;
+  }, [categories]);
+
+  const selectedExtraCategories = useMemo(() => {
+    return categoryIds
+      .map((id) => categoriesById.get(id))
+      .filter(Boolean) as Category[];
+  }, [categoryIds, categoriesById]);
+
+  const filteredExtraCategories = useMemo(() => {
+    const q = catSearch.trim().toLowerCase();
+
+    return categories
+      .filter((c) => c.id !== categoryId)
+      .filter((c) => (q ? c.name.toLowerCase().includes(q) : true))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [categories, categoryId, catSearch]);
+
+  const highlightItems = useMemo(() => parseHighlights(highlightsText), [highlightsText]);
 
   const createM = useMutation({
     mutationFn: async () => {
@@ -474,558 +532,673 @@ export default function NewProductPage() {
     onError: (e) => toast.error(apiErrorMessage(e, "Falha ao criar produto.")),
   });
 
-  const categoriesById = useMemo(() => {
-    const m = new Map<string, Category>();
-    for (const c of categories) m.set(c.id, c);
-    return m;
-  }, [categories]);
-
-  const selectedExtraCategories = useMemo(() => {
-    return categoryIds
-      .map((id) => categoriesById.get(id))
-      .filter(Boolean) as Category[];
-  }, [categoryIds, categoriesById]);
-
-  const filteredExtraCategories = useMemo(() => {
-    const q = catSearch.trim().toLowerCase();
-
-    return categories
-      .filter((c) => c.id !== categoryId)
-      .filter((c) => (q ? c.name.toLowerCase().includes(q) : true))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [categories, categoryId, catSearch]);
-
   return (
-    <div className="min-h-[calc(100vh-64px)] bg-slate-50">
-      <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:py-8">
-        <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
+    <div className="min-h-[calc(100vh-64px)] bg-[#f5f7fb]">
+      <div className="mx-auto w-full max-w-[1480px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="text-3xl font-semibold tracking-tight text-slate-900">
+            <div className="text-[34px] font-bold tracking-[-0.03em] text-slate-950 sm:text-[40px]">
               Novo Produto
             </div>
-            <div className="text-sm text-black/60">Crie um item no catálogo</div>
+            <div className="mt-1 text-sm text-slate-600 sm:text-base">
+              Preencha as informações para criar o produto no catálogo
+            </div>
           </div>
 
-          <Badge variant="secondary" className="w-fit rounded-full px-3 py-1">
-            Admin
-          </Badge>
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="h-12 rounded-2xl border-slate-200 bg-white px-6 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+              onClick={() => router.replace(returnTo)}
+              disabled={createM.isPending}
+            >
+              Cancelar
+            </Button>
+
+            <Button
+              type="submit"
+              form="new-product-form"
+              disabled={createM.isPending}
+              className="h-12 rounded-2xl bg-[#18a999] px-6 text-sm font-semibold text-white shadow-sm hover:bg-[#159989]"
+            >
+              {createM.isPending ? "Criando..." : "Criar Produto"}
+            </Button>
+          </div>
         </div>
 
-        <Card className="rounded-2xl border-slate-200/70 bg-[#F7F8FA] shadow-sm">
-          <CardContent className="p-4 sm:p-6">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                createM.mutate();
-              }}
-              className="grid gap-6 lg:grid-cols-12"
-            >
-              <div className="lg:col-span-8">
-                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                  <div className="p-4 sm:p-6">
-                    <div className="mb-5">
-                      <div className="text-base font-semibold">Dados do Produto</div>
-                      <p className="text-xs text-black/60">
-                        Preencha e clique em &quot;Criar&quot;.
-                      </p>
-                    </div>
+        <form
+          id="new-product-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            createM.mutate();
+          }}
+          className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_390px]"
+        >
+          <div className="space-y-6">
+            <Card className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+              <CardContent className="p-5 sm:p-7">
+                <SectionHeader
+                  icon={<Package2 className="h-5 w-5" />}
+                  title="Dados do Produto"
+                  subtitle='Preencha e clique em "Criar".'
+                />
 
-                    <div className="space-y-6">
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="grid gap-2">
-                          <Label>SKU</Label>
-                          <Input
-                            className="rounded-xl"
-                            value={sku}
-                            onChange={(e) => setSku(e.target.value)}
-                            placeholder="Ex: SHAMPOO-001"
-                          />
-                        </div>
+                <div className="grid gap-5 xl:grid-cols-4">
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">SKU</Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={sku}
+                      onChange={(e) => setSku(e.target.value)}
+                      placeholder="Ex: SHAMPOO-001"
+                    />
+                  </div>
 
-                        <div className="grid gap-2">
-                          <Label>Nome</Label>
-                          <Input
-                            className="rounded-xl"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            placeholder="Ex: Shampoo Premium"
-                          />
-                        </div>
-                      </div>
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">Nome</Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Ex: Shampoo Premium"
+                    />
+                  </div>
 
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="grid gap-2">
-                          <Label>Marca</Label>
-                          <Input
-                            className="rounded-xl"
-                            value={brand}
-                            onChange={(e) => setBrand(e.target.value)}
-                            placeholder="Ex: Wella"
-                          />
-                        </div>
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">Marca</Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={brand}
+                      onChange={(e) => setBrand(e.target.value)}
+                      placeholder="Ex: Wella"
+                    />
+                  </div>
 
-                        <div className="grid gap-2">
-                          <Label>Linha / Família</Label>
-                          <Input
-                            className="rounded-xl"
-                            value={line}
-                            onChange={(e) => setLine(e.target.value)}
-                            placeholder="Ex: Fusion"
-                          />
-                        </div>
-                      </div>
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">Linha / Família</Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={line}
+                      onChange={(e) => setLine(e.target.value)}
+                      placeholder="Ex: Fusion"
+                    />
+                  </div>
 
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="grid gap-2">
-                          <Label>Volume</Label>
-                          <Input
-                            className="rounded-xl"
-                            value={volume}
-                            onChange={(e) => setVolume(e.target.value)}
-                            placeholder="Ex.: 500ml"
-                            maxLength={20}
-                          />
-                          <div className="text-xs text-black/50">
-                            Máx. 20 caracteres.
-                          </div>
-                        </div>
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">Volume</Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={volume}
+                      onChange={(e) => setVolume(e.target.value)}
+                      placeholder="Ex: 500ml"
+                      maxLength={20}
+                    />
+                    <FieldHint>Máx. 20 caracteres.</FieldHint>
+                  </div>
 
-                        <div className="grid gap-2">
-                          <Label>Efeito</Label>
-                          <Input
-                            className="rounded-xl"
-                            value={effect}
-                            onChange={(e) => setEffect(e.target.value)}
-                            placeholder="Ex.: Brilho intenso"
-                            maxLength={20}
-                          />
-                          <div className="text-xs text-black/50">
-                            Texto curto. Máx. 20 caracteres.
-                          </div>
-                        </div>
-                      </div>
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">Efeito</Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={effect}
+                      onChange={(e) => setEffect(e.target.value)}
+                      placeholder="Ex: Brilho intenso"
+                      maxLength={20}
+                    />
+                    <FieldHint>Texto curto. Máx. 20 caracteres.</FieldHint>
+                  </div>
 
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        <div className="grid gap-2">
-                          <Label>
-                            Preço <span className="text-red-500">*</span>
-                          </Label>
-                          <Input
-                            className="rounded-xl"
-                            value={price}
-                            onChange={(e) => setPrice(e.target.value)}
-                            placeholder="R$ 59,90"
-                            inputMode="decimal"
-                          />
-                          <div className="text-xs text-black/50">
-                            Use o formato que seu backend espera (ex.: 59.90).
-                          </div>
-                        </div>
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Preço <span className="text-rose-500">*</span>
+                    </Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      placeholder="R$ 59,90"
+                      inputMode="decimal"
+                    />
+                    <FieldHint>Use o formato que seu backend espera (ex.: 59.90).</FieldHint>
+                  </div>
 
-                        <div className="grid gap-2">
-                          <Label>Preço cliente final (opcional)</Label>
-                          <Input
-                            className="rounded-xl"
-                            value={customerPrice}
-                            onChange={(e) => setCustomerPrice(e.target.value)}
-                            placeholder="R$ 49,90"
-                            inputMode="decimal"
-                          />
-                          <div className="text-xs text-black/50">
-                            Se vazio, cliente final usa o preço padrão.
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="grid gap-2">
-                        <Label>Descrição</Label>
-                        <Textarea
-                          className="rounded-xl min-h-[110px]"
-                          value={description}
-                          onChange={(e) => setDescription(e.target.value)}
-                          placeholder="Ex: Shampoo enriquecido com queratina"
-                        />
-                      </div>
-
-                      <Separator />
-
-                      <div className="grid gap-2">
-                        <Label>Imagem do produto (opcional)</Label>
-
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex items-center gap-2">
-                            <input
-                              id="product-image-input"
-                              type="file"
-                              accept="image/*"
-                              multiple
-                              className="hidden"
-                              onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-                            />
-
-                            <Button
-                              type="button"
-                              className="h-10 rounded-xl bg-blue-600 text-white shadow-sm hover:bg-blue-700"
-                              onClick={() =>
-                                document.getElementById("product-image-input")?.click()
-                              }
-                            >
-                              <Upload className="mr-2 h-4 w-4" />
-                              Enviar imagem
-                            </Button>
-
-                            {files.length > 0 && (
-                              <span className="max-w-[260px] truncate text-xs text-black/60">
-                                {files.length === 1
-                                  ? files[0].name
-                                  : `${files.length} imagens selecionadas`}
-                              </span>
-                            )}
-                          </div>
-
-                          {previewUrls.length > 0 && (
-                            <div className="flex items-center justify-end">
-                              <div className="rounded-2xl border border-slate-200 bg-slate-50/60 px-3 py-3">
-                                <div className="mb-2 text-xs font-medium text-black/80">
-                                  Preview ({previewUrls.length})
-                                </div>
-
-                                <div className="grid grid-cols-3 gap-2">
-                                  {previewUrls.slice(0, 6).map((url, index) => (
-                                    <div
-                                      key={`${url}-${index}`}
-                                      className="h-14 w-14 overflow-hidden rounded-xl border border-slate-200 bg-white"
-                                    >
-                                      <img
-                                        src={url}
-                                        alt={`Preview ${index + 1}`}
-                                        className="h-full w-full object-cover"
-                                      />
-                                    </div>
-                                  ))}
-                                </div>
-
-                                <div className="mt-2 text-[11px] text-black/50">
-                                  As imagens serão enviadas após criar. A primeira vira primária.
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="text-xs text-black/50">
-                          JPG, PNG ou WEBP. Tamanho máximo: 5MB por arquivo. Você pode selecionar
-                          várias imagens. A primeira será definida como primária.
-                        </div>
-                      </div>
-
-                      <div className="grid gap-3">
-                        <Label>Vídeo do produto (opcional)</Label>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <div className="grid gap-2">
-                            <Label className="text-xs">Título do vídeo</Label>
-                            <Input
-                              className="rounded-xl"
-                              value={videoTitle}
-                              onChange={(e) => setVideoTitle(e.target.value)}
-                              placeholder="Ex.: Como aplicar corretamente"
-                            />
-                          </div>
-
-                          <div className="grid gap-2">
-                            <Label className="text-xs">Ordem</Label>
-                            <Input
-                              className="rounded-xl"
-                              type="number"
-                              value={videoSortOrder}
-                              onChange={(e) => setVideoSortOrder(e.target.value)}
-                              placeholder="0"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid gap-2">
-                          <Label className="text-xs">Descrição do vídeo</Label>
-                          <Textarea
-                            className="rounded-xl min-h-[90px]"
-                            value={videoDescription}
-                            onChange={(e) => setVideoDescription(e.target.value)}
-                            placeholder="Ex.: Passo a passo de aplicação, modo de uso, cuidados..."
-                          />
-                        </div>
-
-                        <div className="grid gap-2">
-                          <Label className="text-xs">Thumbnail URL (opcional)</Label>
-                          <Input
-                            className="rounded-xl"
-                            value={videoThumbnailUrl}
-                            onChange={(e) => setVideoThumbnailUrl(e.target.value)}
-                            placeholder="https://..."
-                          />
-                          <div className="text-xs text-black/50">
-                            Se vazio, depois você pode ajustar no editar.
-                          </div>
-                        </div>
-
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={videoActive}
-                              onChange={(e) => setVideoActive(e.target.checked)}
-                            />
-                            Vídeo ativo
-                          </label>
-
-                          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                            <input
-                              type="checkbox"
-                              checked={videoShowInGallery}
-                              onChange={(e) => setVideoShowInGallery(e.target.checked)}
-                            />
-                            Mostrar na galeria do produto
-                          </label>
-                        </div>
-
-                        <div className="grid gap-2">
-                          <Label className="text-xs">Arquivo do vídeo</Label>
-                          <Input
-                            type="file"
-                            accept="video/*"
-                            className="rounded-xl"
-                            onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
-                          />
-
-                          <div className="text-xs text-black/50">
-                            O vídeo será enviado após criar o produto.
-                          </div>
-
-                          {videoFile ? (
-                            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-black/70">
-                              {videoFile.name} • {Math.round(videoFile.size / 1024)} KB
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
-
-                      <Separator />
-
-                      <div className="grid gap-2">
-                        <Label>Destaques (1 por linha)</Label>
-                        <Textarea
-                          className="rounded-xl min-h-[110px]"
-                          value={highlightsText}
-                          onChange={(e) => setHighlightsText(e.target.value)}
-                          placeholder={`Ex:\nBrilho\nHidratação\nReconstrução`}
-                        />
-                        <div className="text-xs text-black/50">
-                          Máx: 10 itens • 60 caracteres por linha.
-                        </div>
-                      </div>
-
-                      <div className="grid gap-2 max-w-xs">
-                        <Label>Estoque</Label>
-                        <Input
-                          type="number"
-                          min={0}
-                          className="rounded-xl"
-                          value={stock}
-                          onChange={(e) => {
-                            const n = Number(e.target.value);
-                            setStock(Number.isFinite(n) ? Math.max(0, n) : 0);
-                          }}
-                        />
-                      </div>
-                    </div>
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Preço cliente final <span className="text-slate-400">(opcional)</span>
+                    </Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={customerPrice}
+                      onChange={(e) => setCustomerPrice(e.target.value)}
+                      placeholder="R$ 49,90"
+                      inputMode="decimal"
+                    />
+                    <FieldHint>Se vazio, cliente final usa o preço padrão.</FieldHint>
                   </div>
                 </div>
-              </div>
 
-              <div className="lg:col-span-4">
-                <div className="space-y-4 lg:sticky lg:top-6">
-                  <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
-                    <div className="mb-3 text-sm font-semibold">Status</div>
+                <div className="mt-5 space-y-2">
+                  <Label className="text-sm font-medium text-slate-800">Descrição</Label>
+                  <Textarea
+                    className="min-h-[108px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="Ex: Shampoo enriquecido com queratina"
+                  />
+                </div>
 
-                    <ProductStatusPanel
-                      active={active}
-                      onActiveChange={setActive}
-                      availableToCustomer={availableToCustomer}
-                      onAvailableToCustomerChange={(v: boolean) =>
-                        setAudience(v ? "ALL" : "STAFF_ONLY")
-                      }
-                    />
+                <div className="mt-6">
+                  <Label className="mb-3 block text-sm font-medium text-slate-800">
+                    Imagem do produto <span className="text-slate-400">(opcional)</span>
+                  </Label>
 
-                    <div className="mt-2 text-xs text-black/50">
-                      Produto ativo aparece no catálogo.
-                    </div>
-                  </div>
+                  <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 p-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <input
+                          id="product-image-input"
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+                        />
 
-                  <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4 space-y-4">
-                    <div className="text-sm font-semibold">Categorias</div>
+                        <Button
+                          type="button"
+                          className="h-11 rounded-2xl bg-[#e8f8f5] px-4 text-sm font-semibold text-[#16897d] hover:bg-[#d9f3ee]"
+                          variant="ghost"
+                          onClick={() =>
+                            document.getElementById("product-image-input")?.click()
+                          }
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          Enviar imagem
+                        </Button>
 
-                    <div className="grid gap-2">
-                      <Label className="text-xs">Categoria principal (opcional)</Label>
-
-                      <Select
-                        value={categoryId || "none"}
-                        onValueChange={(v: string) => {
-                          const next = v === "none" ? "" : v;
-                          setCategoryId(next);
-                          setCatSearch("");
-                          if (next) setCategoryIds((prev) => prev.filter((x) => x !== next));
-                        }}
-                      >
-                        <SelectTrigger className="h-10 rounded-xl">
-                          <SelectValue placeholder="Selecione uma categoria" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">Sem categoria principal</SelectItem>
-                          {categories.map((c) => (
-                            <SelectItem key={c.id} value={c.id}>
-                              {c.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-
-                      {categoriesQ.isLoading ? (
-                        <div className="text-xs text-black/50">Carregando categorias…</div>
-                      ) : null}
-                      {categoriesQ.isError ? (
-                        <div className="text-xs text-red-600">Erro ao carregar categorias.</div>
-                      ) : null}
-
-                      <div className="text-xs text-black/50">
-                        {selectedCategoryName ? (
-                          <>
-                            Selecionada:{" "}
-                            <span className="font-semibold">{selectedCategoryName}</span>
-                          </>
-                        ) : (
-                          "Nenhuma categoria principal"
-                        )}
+                        <span className="text-sm text-slate-500">
+                          Tamanho máximo: 5MB | Aceita JPG, PNG ou WEBP
+                        </span>
                       </div>
                     </div>
 
-                    <Separator />
+                    {files.length > 0 ? (
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
+                        <div className="mb-2 text-xs font-medium text-slate-700">
+                          {files.length === 1
+                            ? files[0].name
+                            : `${files.length} imagens selecionadas`}
+                        </div>
 
-                    <div className="grid gap-2">
-                      <Label className="text-xs">Categorias Extras (multi)</Label>
+                        {previewUrls.length > 0 ? (
+                          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                            {previewUrls.slice(0, 6).map((url, index) => (
+                              <div
+                                key={`${url}-${index}`}
+                                className="aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
+                              >
+                                <img
+                                  src={url}
+                                  alt={`Preview ${index + 1}`}
+                                  className="h-full w-full object-cover"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
 
+                        <p className="mt-2 text-[11px] text-slate-500">
+                          As imagens serão enviadas após criar. A primeira vira primária.
+                        </p>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+              <CardContent className="p-5 sm:p-7">
+                <SectionHeader
+                  icon={<Video className="h-5 w-5" />}
+                  title="Vídeo do produto"
+                  subtitle="Opcional"
+                />
+
+                <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_220px]">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Título do vídeo
+                    </Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={videoTitle}
+                      onChange={(e) => setVideoTitle(e.target.value)}
+                      placeholder="Ex: Como aplicar corretamente"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-800">Ordem</Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      type="number"
+                      value={videoSortOrder}
+                      onChange={(e) => setVideoSortOrder(e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-5 space-y-2">
+                  <Label className="text-sm font-medium text-slate-800">
+                    Descrição do vídeo
+                  </Label>
+                  <Textarea
+                    className="min-h-[92px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
+                    value={videoDescription}
+                    onChange={(e) => setVideoDescription(e.target.value)}
+                    placeholder="Ex: Passo a passo de aplicação, modo de uso, cuidados..."
+                  />
+                </div>
+
+                <div className="mt-5 grid gap-4 xl:grid-cols-[1fr_auto_auto] xl:items-end">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Thumbnail URL <span className="text-slate-400">(opcional)</span>
+                    </Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={videoThumbnailUrl}
+                      onChange={(e) => setVideoThumbnailUrl(e.target.value)}
+                      placeholder="https://..."
+                    />
+                    <FieldHint>Se vazio, depois você pode ajustar no editar.</FieldHint>
+                  </div>
+
+                  <label className="flex h-12 min-w-[150px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800">
+                    <Checkbox
+                      checked={videoActive}
+                      onCheckedChange={(checked) => setVideoActive(checked === true)}
+                    />
+                    Vídeo ativo
+                  </label>
+
+                  <label className="flex h-12 min-w-[230px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800">
+                    <Checkbox
+                      checked={videoShowInGallery}
+                      onCheckedChange={(checked) =>
+                        setVideoShowInGallery(checked === true)
+                      }
+                    />
+                    Mostrar na galeria
+                  </label>
+                </div>
+
+                <div className="mt-5 space-y-2">
+                  <Label className="text-sm font-medium text-slate-800">
+                    Arquivo do vídeo
+                  </Label>
+
+                  <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 p-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <input
+                          id="product-video-input"
+                          type="file"
+                          accept="video/*"
+                          className="hidden"
+                          onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
+                        />
+
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          className="h-11 rounded-2xl bg-[#e8f8f5] px-4 text-sm font-semibold text-[#16897d] hover:bg-[#d9f3ee]"
+                          onClick={() => document.getElementById("product-video-input")?.click()}
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          Enviar vídeo
+                        </Button>
+
+                        <span className="text-sm text-slate-500">MP4, MOV ou WEBM</span>
+                      </div>
+                    </div>
+
+                    {videoFile ? (
+                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
+                        <span className="font-medium text-slate-700">{videoFile.name}</span>
+                        <span className="ml-2 text-slate-400">
+                          • {Math.round(videoFile.size / 1024)} KB
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <FieldHint>O vídeo será enviado após criar o produto.</FieldHint>
+                </div>
+
+                <Separator className="my-7" />
+
+                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_220px]">
+                  <div>
+                    <div className="mb-2 flex items-center gap-3">
+                      <Label className="text-sm font-medium text-slate-800">
+                        Destaques (1 por linha)
+                      </Label>
+                      <span className="text-sm text-slate-400">Máx. 10 itens</span>
+                    </div>
+
+                    <Textarea
+                      className="min-h-[110px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
+                      value={highlightsText}
+                      onChange={(e) => setHighlightsText(e.target.value)}
+                      placeholder={`Ex:\nBrilho\nHidratação\nReconstrução`}
+                    />
+
+                    <p className="mt-2 text-xs text-slate-500">
+                      Máx: 10 itens • 60 caracteres por linha.
+                    </p>
+
+                    {highlightItems.length > 0 ? (
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {highlightItems.map((item, index) => (
+                          <div
+                            key={`${item}-${index}`}
+                            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700"
+                          >
+                            {item}
+                          </div>
+                        ))}
+                        <div className="inline-flex items-center gap-2 rounded-2xl border border-dashed border-teal-200 bg-white px-4 py-2 text-sm font-medium text-teal-700">
+                          <Plus className="h-4 w-4" />
+                          Preview
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="xl:border-l xl:border-slate-200 xl:pl-6">
+                    <Label className="mb-2 block text-sm font-medium text-slate-800">
+                      Estoque
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none"
+                      value={stock}
+                      onChange={(e) => {
+                        const n = Number(e.target.value);
+                        setStock(Number.isFinite(n) ? Math.max(0, n) : 0);
+                      }}
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-6 xl:sticky xl:top-6 self-start">
+            <Card className="rounded-[30px] border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+              <CardContent className="p-5">
+                <div className="mb-5 text-[18px] font-semibold text-slate-900">Status</div>
+
+                <div className="space-y-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setActive((v) => !v)}
+                      className="flex flex-1 items-start gap-3 rounded-2xl text-left transition hover:bg-slate-50/80"
+                    >
+                      <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-[15px] font-semibold text-slate-900">Produto</p>
+                        <p className="text-sm leading-5 text-slate-500">
+                          Aparece como ativo no catálogo.
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setActive((v) => !v)}
+                      className={[
+                        "shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.03em] transition",
+                        active
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-slate-200 bg-slate-100 text-slate-600",
+                      ].join(" ")}
+                    >
+                      {active ? "ATIVO" : "INATIVO"}
+                    </button>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setAudience((v) => (v === "ALL" ? "STAFF_ONLY" : "ALL"))}
+                      className="flex flex-1 items-start gap-3 rounded-2xl text-left transition hover:bg-slate-50/80"
+                    >
+                      <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      </div>
+
+                      <div className="space-y-1">
+                        <p className="text-[15px] font-semibold text-slate-900">Cliente final</p>
+                        <p className="text-sm leading-5 text-slate-500">
+                          Clientes conseguem ver este produto.
+                        </p>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAudience((v) => (v === "ALL" ? "STAFF_ONLY" : "ALL"))}
+                      className={[
+                        "shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.03em] transition",
+                        availableToCustomer
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-slate-200 bg-slate-100 text-slate-600",
+                      ].join(" ")}
+                    >
+                      {availableToCustomer ? "CLIENTE VÊ" : "INTERNO"}
+                    </button>
+                  </div>
+
+                  <div className="pt-1">
+                    <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.03em] text-emerald-700">
+                      {audience}
+                    </span>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Produto ativo aparece no catálogo.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-[30px] border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+              <CardContent className="p-5">
+                <div className="mb-5 text-[18px] font-semibold text-slate-900">Categorias</div>
+
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Categoria principal <span className="text-slate-400">(opcional)</span>
+                    </Label>
+
+                    <Select
+                      value={categoryId || "none"}
+                      onValueChange={(v: string) => {
+                        const next = v === "none" ? "" : v;
+                        setCategoryId(next);
+                        setCatSearch("");
+                        if (next) setCategoryIds((prev) => prev.filter((x) => x !== next));
+                      }}
+                    >
+                      <SelectTrigger className="h-12 rounded-2xl border-slate-200 text-[15px] text-slate-700">
+                        <SelectValue placeholder="Selecione uma categoria" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Sem categoria principal</SelectItem>
+                        {categories.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+
+                    {categoriesQ.isLoading ? (
+                      <div className="text-xs text-slate-500">Carregando categorias...</div>
+                    ) : null}
+
+                    {categoriesQ.isError ? (
+                      <div className="text-xs text-red-600">
+                        Erro ao carregar categorias.
+                      </div>
+                    ) : null}
+
+                    <div className="text-xs text-slate-500">
+                      {selectedCategoryName ? (
+                        <>
+                          Selecionada:{" "}
+                          <span className="font-semibold text-slate-700">
+                            {selectedCategoryName}
+                          </span>
+                        </>
+                      ) : (
+                        "Nenhuma categoria principal"
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Categorias Extras <span className="text-slate-400">(multi)</span>
+                    </Label>
+
+                    <div className="relative">
+                      <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <Input
-                        className="h-10 rounded-xl bg-white"
+                        className="h-12 rounded-2xl border-slate-200 bg-white pl-11 text-[15px] shadow-none placeholder:text-slate-400"
                         value={catSearch}
                         onChange={(e) => setCatSearch(e.target.value)}
                         placeholder="Buscar categoria..."
                       />
+                    </div>
 
-                      {selectedExtraCategories.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {selectedExtraCategories.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => setCategoryIds((prev) => prev.filter((x) => x !== c.id))}
-                              className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-800 ring-1 ring-slate-200 hover:bg-slate-200"
-                              title="Remover categoria"
-                            >
-                              <span className="max-w-[180px] truncate">{c.name}</span>
-                              <X className="h-3.5 w-3.5 text-slate-500" />
-                            </button>
-                          ))}
-
+                    {selectedExtraCategories.length > 0 ? (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {selectedExtraCategories.map((c) => (
                           <button
+                            key={c.id}
                             type="button"
-                            onClick={() => setCategoryIds([])}
-                            className="inline-flex items-center rounded-full bg-white px-3 py-1 text-xs text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50"
-                            title="Limpar todas"
+                            onClick={() =>
+                              setCategoryIds((prev) => prev.filter((x) => x !== c.id))
+                            }
+                            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-800 hover:bg-slate-100"
+                            title="Remover categoria"
                           >
-                            Limpar
+                            <span className="max-w-[180px] truncate">{c.name}</span>
+                            <X className="h-3.5 w-3.5 text-slate-500" />
                           </button>
-                        </div>
-                      )}
+                        ))}
 
-                      <div className="rounded-2xl border border-slate-200 bg-white p-3">
-                        <div className="mb-2 flex items-center justify-between">
-                          <div className="text-xs text-black/60">
-                            Mostrando: <b>{filteredExtraCategories.length}</b> • Selecionadas:{" "}
-                            <b>{categoryIds.length}</b>
-                          </div>
+                        <button
+                          type="button"
+                          onClick={() => setCategoryIds([])}
+                          className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                        >
+                          Limpar
+                        </button>
+                      </div>
+                    ) : null}
 
-                          {!!catSearch && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              className="h-8 rounded-xl px-2 text-xs"
-                              onClick={() => setCatSearch("")}
-                            >
-                              Limpar busca
-                            </Button>
-                          )}
+                    <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <div className="text-xs text-slate-500">
+                          Mostrando <b>{filteredExtraCategories.length}</b> • Selecionadas:{" "}
+                          <b>{categoryIds.length}</b>
                         </div>
 
-                        <div className="max-h-56 overflow-auto pr-1">
-                          <div className="grid gap-2">
-                            {filteredExtraCategories.map((c) => {
-                              const checked = categoryIds.includes(c.id);
-                              return (
-                                <label
-                                  key={c.id}
-                                  className={[
-                                    "flex items-center gap-3 rounded-xl border px-3 py-2 text-sm cursor-pointer select-none",
-                                    "transition-colors",
-                                    checked
-                                      ? "bg-slate-50 border-slate-200"
-                                      : "bg-white border-slate-200 hover:bg-slate-50/50",
-                                  ].join(" ")}
-                                >
-                                  <Checkbox
-                                    checked={checked}
-                                    onCheckedChange={() =>
-                                      setCategoryIds((prev) => toggleCategoryId(c.id, prev))
-                                    }
-                                  />
-                                  <span className="truncate">{c.name}</span>
-                                </label>
-                              );
-                            })}
+                        {!!catSearch ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="h-8 rounded-xl px-2 text-xs"
+                            onClick={() => setCatSearch("")}
+                          >
+                            Limpar busca
+                          </Button>
+                        ) : null}
+                      </div>
 
-                            {filteredExtraCategories.length === 0 && (
-                              <div className="rounded-xl border border-dashed border-slate-200 p-3 text-xs text-black/60">
-                                Nenhuma categoria encontrada.
-                              </div>
-                            )}
-                          </div>
+                      <div className="max-h-56 overflow-auto pr-1">
+                        <div className="grid gap-2">
+                          {filteredExtraCategories.map((c) => {
+                            const checked = categoryIds.includes(c.id);
+
+                            return (
+                              <label
+                                key={c.id}
+                                className={[
+                                  "flex cursor-pointer items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm transition-colors",
+                                  checked
+                                    ? "border-slate-200 bg-white"
+                                    : "border-slate-200 bg-white hover:bg-slate-50",
+                                ].join(" ")}
+                              >
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={() =>
+                                    setCategoryIds((prev) => toggleCategoryId(c.id, prev))
+                                  }
+                                />
+                                <span className="truncate text-slate-700">{c.name}</span>
+                              </label>
+                            );
+                          })}
+
+                          {filteredExtraCategories.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-400">
+                              Nenhuma categoria encontrada.
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </div>
                   </div>
-
-                  <div className="flex justify-end gap-3 pt-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-11 rounded-2xl px-6 text-sm font-medium"
-                      onClick={() => router.replace(returnTo)}
-                      disabled={createM.isPending}
-                    >
-                      Cancelar
-                    </Button>
-
-                    <Button
-                      type="submit"
-                      disabled={createM.isPending}
-                      className="h-11 rounded-2xl px-7 text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-sm"
-                    >
-                      {createM.isPending ? "Criando…" : "Criar"}
-                    </Button>
-                  </div>
                 </div>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
+
+            <div className="flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-12 rounded-2xl border-slate-200 bg-white px-6 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+                onClick={() => router.replace(returnTo)}
+                disabled={createM.isPending}
+              >
+                Cancelar
+              </Button>
+
+              <Button
+                type="submit"
+                form="new-product-form"
+                disabled={createM.isPending}
+                className="h-12 rounded-2xl bg-[#18a999] px-7 text-sm font-semibold text-white shadow-sm hover:bg-[#159989]"
+              >
+                {createM.isPending ? "Criando..." : "Criar"}
+              </Button>
+            </div>
+          </div>
+        </form>
       </div>
     </div>
   );

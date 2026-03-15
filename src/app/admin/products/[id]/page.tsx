@@ -268,6 +268,57 @@ function toggleCategoryId(id: string, prev: string[]) {
   return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
 }
 
+function SectionCard({
+  title,
+  description,
+  icon,
+  defaultOpen = true,
+  children,
+  right,
+}: {
+  title: string;
+  description?: string;
+  icon?: React.ReactNode;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+  right?: React.ReactNode;
+}) {
+  return (
+    <Card className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+      <details open={defaultOpen} className="group">
+        <summary className="list-none cursor-pointer">
+          <div className="flex items-start justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white px-5 py-4">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                {icon ? (
+                  <div className="grid h-9 w-9 place-items-center rounded-2xl bg-sky-100 text-sky-700">
+                    {icon}
+                  </div>
+                ) : null}
+                <div className="min-w-0">
+                  <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+                  {description ? (
+                    <p className="text-sm text-slate-500">{description}</p>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              {right}
+              <div className="rounded-full border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-500 transition group-open:bg-slate-900 group-open:text-white">
+                {defaultOpen ? "Seção" : "Abrir"}
+              </div>
+            </div>
+          </div>
+        </summary>
+
+        <CardContent className="space-y-4 p-5">{children}</CardContent>
+      </details>
+    </Card>
+  );
+}
+
 const promoEndpoints = {
   list: (productId: string) => `/admin/products/${productId}/promotions`,
   create: (productId: string) => `/admin/products/${productId}/promotions`,
@@ -1001,23 +1052,41 @@ export default function EditProductPage() {
     },
   });
 
+  const selectedCategoryNames = useMemo(() => {
+    const map = new Map(categories.map((c) => [c.id, c.name]));
+    return categoryIds.map((cid) => map.get(cid)).filter(Boolean) as string[];
+  }, [categories, categoryIds]);
+
+  const pricePreview = price ? `R$ ${price}` : "—";
+  const customerPricePreview = customerPrice ? `R$ ${customerPrice}` : "Preço padrão";
+
   if (id === "new") return null;
 
-  if (productQ.isLoading) return <div className="rounded-2xl border p-4">Carregando…</div>;
-  if (productQ.isError)
+  if (productQ.isLoading) {
     return (
-      <div className="rounded-2xl border p-4 text-red-600">
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        Carregando…
+      </div>
+    );
+  }
+
+  if (productQ.isError) {
+    return (
+      <div className="rounded-3xl border border-red-200 bg-red-50 p-6 text-red-600">
         {apiErrorMessage(productQ.error, "Erro ao carregar produto.")}
       </div>
     );
+  }
 
   if (!product) {
     return (
-      <div className="space-y-3 px-3 sm:px-6">
-        <div className="rounded-2xl border p-4">Produto não encontrado.</div>
+      <div className="space-y-3 px-3 pb-24 sm:px-6">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          Produto não encontrado.
+        </div>
         <Button
           variant="outline"
-          className="w-full rounded-xl sm:w-auto"
+          className="w-full rounded-2xl sm:w-auto"
           onClick={() => router.replace(returnTo)}
         >
           Voltar
@@ -1028,241 +1097,1080 @@ export default function EditProductPage() {
 
   return (
     <>
-      <div className="mx-auto w-full max-w-5xl space-y-4 px-3 sm:px-6 pb-24 sm:pb-0">
-        <div className="rounded-3xl border bg-gradient-to-b from-zinc-50 to-white p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-xl sm:text-2xl font-black leading-tight break-words">
-                  {name || "Editar produto"}
-                </h1>
+      <div className="mx-auto w-full max-w-7xl space-y-5 px-3 pb-24 sm:px-6 lg:space-y-6 lg:pb-10">
+        <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
+          <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-800 px-5 py-5 text-white sm:px-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge className={cn("rounded-full px-3 py-1", statusPill(active))}>
+                    {active ? "ATIVO" : "INATIVO"}
+                  </Badge>
 
-                <Badge className={cn("rounded-full", statusPill(active))}>
-                  {active ? "ATIVO" : "INATIVO"}
-                </Badge>
+                  <Badge
+                    className={cn(
+                      "rounded-full border px-3 py-1",
+                      audience === "STAFF_ONLY"
+                        ? "border-slate-600 bg-slate-800 text-slate-200"
+                        : "border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
+                    )}
+                  >
+                    {audience === "STAFF_ONLY" ? "Salão / Vendedor" : "Cliente vê"}
+                  </Badge>
 
-                <Badge
-                  className={cn(
-                    "rounded-full border",
-                    audience === "STAFF_ONLY"
-                      ? "bg-zinc-50 text-zinc-700 border-zinc-200"
-                      : "bg-emerald-50 text-emerald-700 border-emerald-200"
-                  )}
-                >
-                  {audience === "STAFF_ONLY" ? "Salão/Vendedor" : "Cliente vê"}
-                </Badge>
+                  <Badge className="rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-sky-200">
+                    Editar produto
+                  </Badge>
+                </div>
 
-                <Badge variant="secondary" className="rounded-full">
-                  Admin
-                </Badge>
+                <div className="space-y-1">
+                  <h1 className="break-words text-2xl font-black leading-tight sm:text-3xl">
+                    {name || "Editar produto"}
+                  </h1>
+                  <p className="text-sm text-white/70">
+                    Gerencie dados, categorias, mídia e promoções em um layout mais compacto.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2 text-xs text-white/70">
+                  <span className="rounded-full bg-white/10 px-3 py-1">
+                    SKU: <span className="font-mono text-white">{sku || "-"}</span>
+                  </span>
+                  <span className="rounded-full bg-white/10 px-3 py-1">
+                    ID: <span className="font-mono text-white">{id}</span>
+                  </span>
+                  <span className="rounded-full bg-white/10 px-3 py-1">
+                    Estoque: <span className="font-semibold text-white">{stock}</span>
+                  </span>
+                  <span className="rounded-full bg-white/10 px-3 py-1">
+                    Imagens: <span className="font-semibold text-white">{images.length}</span>
+                  </span>
+                  <span className="rounded-full bg-white/10 px-3 py-1">
+                    Vídeos: <span className="font-semibold text-white">{videos.length}</span>
+                  </span>
+                </div>
               </div>
 
-              <div className="text-sm text-black/60 break-words">
-                SKU:{" "}
-                <span className="font-mono text-black/70 break-all">{sku || "-"}</span>{" "}
-                <span className="text-black/30">•</span>{" "}
-                ID: <span className="font-mono text-black/60 break-all">{id}</span>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-2xl border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                  onClick={() => router.replace(returnTo)}
+                  disabled={saveM.isPending}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Voltar
+                </Button>
+
+                <Button
+                  type="button"
+                  className="rounded-2xl bg-sky-500 text-white hover:bg-sky-600 hover:text-white"
+                  onClick={() => saveM.mutate()}
+                  disabled={saveM.isPending}
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {saveM.isPending ? "Salvando…" : "Salvar produto"}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Preço padrão
+              </div>
+              <div className="mt-1 text-lg font-bold text-slate-900">{pricePreview}</div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Preço cliente final
+              </div>
+              <div className="mt-1 text-lg font-bold text-slate-900">
+                {customerPricePreview}
               </div>
             </div>
 
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full rounded-xl sm:w-auto"
-                onClick={() => router.replace(returnTo)}
-                disabled={saveM.isPending}
-              >
-                <ArrowLeft className="mr-2 h-4 w-4" />
-                Voltar
-              </Button>
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Categoria principal
+              </div>
+              <div className="mt-1 truncate text-sm font-semibold text-slate-900">
+                {categories.find((c) => c.id === categoryId)?.name || "Não definida"}
+              </div>
+            </div>
 
-              <Button
-                type="button"
-                className="w-full rounded-xl sm:w-auto"
-                onClick={() => saveM.mutate()}
-                disabled={saveM.isPending}
-              >
-                <Save className="mr-2 h-4 w-4" />
-                {saveM.isPending ? "Salvando…" : "Salvar"}
-              </Button>
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Promoções
+              </div>
+              <div className="mt-1 text-lg font-bold text-slate-900">{promos.length}</div>
             </div>
           </div>
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-5">
-          <div className="order-1 space-y-4 lg:order-2 lg:col-span-3">
-            <Card className="rounded-2xl border-slate-200/70 bg-white shadow-sm border-t-4 border-t-sky-500/70">
-              <CardHeader>
-                <CardTitle>Dados do produto</CardTitle>
-                <CardDescription>Campos principais e validações anti-negativo.</CardDescription>
-              </CardHeader>
-
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label>SKU</Label>
-                    <Input
-                      className="w-full rounded-xl"
-                      value={sku}
-                      onChange={(e) => setSku(e.target.value)}
-                    />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label>Estoque</Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      className="w-full rounded-xl"
-                      value={stock}
-                      onChange={(e) => {
-                        const raw = e.target.value;
-                        const clean = sanitizeIntInput(raw);
-                        const n = clean ? Number(clean) : 0;
-                        setStock(Number.isFinite(n) ? Math.max(0, n) : 0);
-                      }}
-                    />
-                  </div>
-                </div>
-
+        <div className="grid gap-5 xl:grid-cols-12">
+          <div className="space-y-5 xl:col-span-8">
+            <SectionCard
+              title="Dados do produto"
+              description="Informações principais, preços e descrição"
+              defaultOpen
+            >
+              <div className="grid gap-4 md:grid-cols-2">
                 <div className="grid gap-2">
-                  <Label>Nome</Label>
+                  <Label>SKU</Label>
                   <Input
-                    className="w-full rounded-xl"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
+                    className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+                    value={sku}
+                    onChange={(e) => setSku(e.target.value)}
                   />
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="grid gap-2">
-                    <Label>Marca</Label>
-                    <Input
-                      className="w-full rounded-xl"
-                      value={brand}
-                      onChange={(e) => setBrand(e.target.value)}
-                      placeholder="Ex.: Wella"
-                    />
-                  </div>
+                <div className="grid gap-2">
+                  <Label>Estoque</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+                    value={stock}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const clean = sanitizeIntInput(raw);
+                      const n = clean ? Number(clean) : 0;
+                      setStock(Number.isFinite(n) ? Math.max(0, n) : 0);
+                    }}
+                  />
+                </div>
+              </div>
 
+              <div className="grid gap-2">
+                <Label>Nome</Label>
+                <Input
+                  className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label>Marca</Label>
+                  <Input
+                    className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+                    value={brand}
+                    onChange={(e) => setBrand(e.target.value)}
+                    placeholder="Ex.: Wella"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Linha / Família</Label>
+                  <Input
+                    className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+                    value={line}
+                    onChange={(e) => setLine(e.target.value)}
+                    placeholder="Ex.: Fusion"
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label>Volume</Label>
+                  <Input
+                    className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+                    value={volume}
+                    onChange={(e) => setVolume(e.target.value)}
+                    placeholder="Ex.: 500ml"
+                    maxLength={20}
+                  />
+                  <div className="text-xs text-slate-500">Máx. 20 caracteres.</div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Efeito</Label>
+                  <Input
+                    className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+                    value={effect}
+                    onChange={(e) => setEffect(e.target.value)}
+                    placeholder="Ex.: Brilho intenso"
+                    maxLength={20}
+                  />
+                  <div className="text-xs text-slate-500">
+                    Texto curto. Máx. 20 caracteres.
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
                   <div className="grid gap-2">
-                    <Label>Linha / Família</Label>
+                    <Label>Preço</Label>
                     <Input
-                      className="w-full rounded-xl"
-                      value={line}
-                      onChange={(e) => setLine(e.target.value)}
-                      placeholder="Ex.: Fusion"
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={price}
+                      onChange={(e) => setPrice(sanitizeMoneyInput(e.target.value))}
+                      placeholder="Ex.: 59,90"
+                      inputMode="decimal"
                     />
+                    <div className="text-xs text-slate-500">
+                      Somente números. Valor deve ser maior que 0.
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
                   <div className="grid gap-2">
-                    <Label>Volume</Label>
+                    <Label>Preço cliente final (opcional)</Label>
                     <Input
-                      className="w-full rounded-xl"
-                      value={volume}
-                      onChange={(e) => setVolume(e.target.value)}
-                      placeholder="Ex.: 500ml"
-                      maxLength={20}
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={customerPrice}
+                      onChange={(e) => setCustomerPrice(sanitizeMoneyInput(e.target.value))}
+                      placeholder="Ex.: 49,90"
+                      inputMode="decimal"
                     />
-                    <div className="text-xs text-black/50">
-                      Máx. 20 caracteres.
+                    <div className="text-xs text-slate-500">
+                      Se vazio, cliente final usa o preço padrão.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Descrição</Label>
+                <Textarea
+                  className="min-h-[120px] rounded-2xl border-slate-200 bg-slate-50/60"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Opcional..."
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Destaques (1 por linha)</Label>
+                <Textarea
+                  className="min-h-[110px] rounded-2xl border-slate-200 bg-slate-50/60"
+                  value={highlightsText}
+                  onChange={(e) => setHighlightsText(e.target.value)}
+                  placeholder={`Ex.:\nBrilho\nHidratação\nReconstrução`}
+                />
+                <div className="text-xs text-slate-500">
+                  Máx: 10 itens • 60 caracteres por linha.
+                </div>
+              </div>
+
+              <Separator />
+
+              <div className="hidden sm:flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-2xl"
+                  onClick={() => router.replace(returnTo)}
+                  disabled={saveM.isPending}
+                >
+                  <ArrowLeft className="mr-2 h-4 w-4" />
+                  Voltar
+                </Button>
+
+                <Button
+                  type="button"
+                  className="rounded-2xl bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
+                  onClick={() => saveM.mutate()}
+                  disabled={saveM.isPending}
+                >
+                  <Save className="mr-2 h-4 w-4" />
+                  {saveM.isPending ? "Salvando…" : "Salvar"}
+                </Button>
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Promoções do produto"
+              description="Crie, acompanhe e edite promoções sem ocupar a tela toda"
+              icon={<Tag className="h-4 w-4" />}
+              defaultOpen={false}
+              right={
+                <Button
+                  variant="outline"
+                  className="hidden rounded-2xl sm:flex"
+                  onClick={() => promosQ.refetch()}
+                  disabled={promosQ.isFetching}
+                >
+                  <RefreshCw
+                    className={cn("mr-2 h-4 w-4", promosQ.isFetching ? "animate-spin" : "")}
+                  />
+                  {promosQ.isFetching ? "Atualizando…" : "Atualizar"}
+                </Button>
+              }
+            >
+              <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="mb-4 text-sm font-semibold text-slate-900">Criar promoção</div>
+
+                <div className="grid gap-4 md:grid-cols-12">
+                  <div className="grid gap-2 md:col-span-4">
+                    <Label>Aplica para</Label>
+                    <select
+                      className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm"
+                      value={pAppliesTo}
+                      onChange={(e) => setPAppliesTo(e.target.value as PromoAppliesTo)}
+                    >
+                      <option value="BOTH">Ambos</option>
+                      <option value="SALON">Somente Salão</option>
+                      <option value="SELLER">Somente Vendedor</option>
+                      <option value="CUSTOMER">Somente Cliente final</option>
+                    </select>
+                    <div className="text-xs text-slate-500">Quem vê o desconto nessa promoção.</div>
+                  </div>
+
+                  <div className="grid gap-2 md:col-span-4">
+                    <Label>Tipo</Label>
+                    <select
+                      className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm"
+                      value={pType}
+                      onChange={(e) => setPType(e.target.value as DiscountType)}
+                    >
+                      <option value="PCT">Percentual (%)</option>
+                      <option value="FIXED">Desconto (R$)</option>
+                      <option value="PRICE">Preço promocional (R$)</option>
+                    </select>
+                    <div className="text-xs text-slate-500">Defina como o desconto será aplicado.</div>
+                  </div>
+
+                  <div className="grid gap-2 md:col-span-4">
+                    <Label>Valor</Label>
+                    <Input
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={pValue}
+                      onChange={(e) => setPValue(sanitizeMoneyInput(e.target.value))}
+                      placeholder={pType === "PCT" ? "Ex.: 20" : "Ex.: 15,90"}
+                      inputMode={pType === "PCT" ? "numeric" : "decimal"}
+                    />
+                    <div className="text-xs text-slate-500">
+                      {pType === "PCT" ? "0 < valor ≤ 100" : "Valor > 0"}
                     </div>
                   </div>
 
-                  <div className="grid gap-2">
-                    <Label>Efeito</Label>
+                  <div className="grid gap-2 md:col-span-6">
+                    <Label>Início (data + hora)</Label>
                     <Input
-                      className="w-full rounded-xl"
-                      value={effect}
-                      onChange={(e) => setEffect(e.target.value)}
-                      placeholder="Ex.: Brilho intenso"
-                      maxLength={20}
+                      type="datetime-local"
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={pStartsAt}
+                      onChange={(e) => setPStartsAt(e.target.value)}
                     />
-                    <div className="text-xs text-black/50">
-                      Texto curto. Máx. 20 caracteres.
+                  </div>
+
+                  <div className="grid gap-2 md:col-span-6">
+                    <Label>Fim (opcional)</Label>
+                    <Input
+                      type="datetime-local"
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={pEndsAt}
+                      onChange={(e) => setPEndsAt(e.target.value)}
+                    />
+                    <div className="text-xs text-slate-500">Se vazio, fica sem expiração.</div>
+                  </div>
+
+                  <div className="grid gap-2 md:col-span-4">
+                    <Label>Prioridade</Label>
+                    <Input
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={pPriority}
+                      onChange={(e) => setPPriority(sanitizeIntInput(e.target.value))}
+                      placeholder="Ex.: 10"
+                      inputMode="numeric"
+                    />
+                    <div className="text-xs text-slate-500">Inteiro ≥ 0. Maior vence.</div>
+                  </div>
+
+                  <div className="grid gap-2 md:col-span-4">
+                    <Label>Status</Label>
+                    <label className="flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={pActive}
+                        onChange={(e) => setPActive(e.target.checked)}
+                      />
+                      Ativa
+                    </label>
+                    <div className="text-xs text-slate-500">Pode criar inativa e ativar depois.</div>
+                  </div>
+
+                  <div className="flex items-end md:col-span-4">
+                    <Button
+                      className="h-11 w-full rounded-2xl bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
+                      onClick={() => createPromoM.mutate()}
+                      disabled={createPromoM.isPending}
+                    >
+                      {createPromoM.isPending ? "Criando…" : "Criar promoção"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="text-sm font-semibold text-slate-900">Promoções cadastradas</div>
+
+                {promosQ.isLoading ? (
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm">
+                    Carregando promoções…
+                  </div>
+                ) : promosQ.isError ? (
+                  <div className="rounded-3xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+                    {apiErrorMessage(promosQ.error, "Erro ao carregar promoções.")}
+                  </div>
+                ) : promos.length === 0 ? (
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
+                    Nenhuma promoção para este produto.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {promos.map((p) => {
+                      const isEditing = editPromoId === p.id;
+
+                      const statusLabel =
+                        p.active === false
+                          ? "INATIVA"
+                          : p.isActiveNow
+                            ? "ATIVA AGORA"
+                            : "PROGRAMADA/EXPIRADA";
+
+                      return (
+                        <div
+                          key={p.id}
+                          className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="min-w-0 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge
+                                  className={cn(
+                                    "rounded-full",
+                                    p.active
+                                      ? "bg-emerald-600 text-white border-transparent"
+                                      : "bg-zinc-200 text-zinc-900 border-transparent"
+                                  )}
+                                >
+                                  {statusLabel}
+                                </Badge>
+
+                                <Badge variant="secondary" className="rounded-full">
+                                  {p.type}
+                                </Badge>
+
+                                <Badge variant="secondary" className="rounded-full">
+                                  {appliesToLabel(p.appliesTo)}
+                                </Badge>
+
+                                <Badge variant="secondary" className="rounded-full">
+                                  prioridade {p.priority ?? 0}
+                                </Badge>
+                              </div>
+
+                              <div className="text-sm font-semibold text-slate-900">
+                                Valor: <span className="font-mono">{String(p.value)}</span>
+                              </div>
+
+                              <div className="text-xs text-slate-500">
+                                Início: {fmtDateTime(p.startsAt)} • Fim:{" "}
+                                {fmtDateTime(p.endsAt ?? null)}
+                              </div>
+
+                              <div className="text-[10px] font-mono text-slate-400 break-all">
+                                ID: {p.id}
+                              </div>
+                            </div>
+
+                            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                              {!isEditing ? (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="rounded-2xl"
+                                  onClick={() => startEdit(p)}
+                                >
+                                  Editar
+                                </Button>
+                              ) : (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="rounded-2xl"
+                                  onClick={cancelEdit}
+                                >
+                                  Cancelar
+                                </Button>
+                              )}
+
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="rounded-2xl"
+                                disabled={disablePromoM.isPending || p.active === false}
+                                onClick={() => {
+                                  if (confirm("Desativar esta promoção?")) disablePromoM.mutate(p.id);
+                                }}
+                              >
+                                Desativar
+                              </Button>
+                            </div>
+                          </div>
+
+                          {isEditing ? (
+                            <div className="mt-4 space-y-3">
+                              <Separator />
+
+                              <div className="grid gap-4 sm:grid-cols-6">
+                                <div className="grid gap-2 sm:col-span-2">
+                                  <Label>Aplica para</Label>
+                                  <select
+                                    className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm"
+                                    value={eAppliesTo}
+                                    onChange={(e) => setEAppliesTo(e.target.value as PromoAppliesTo)}
+                                  >
+                                    <option value="BOTH">Ambos</option>
+                                    <option value="SALON">Somente Salão</option>
+                                    <option value="SELLER">Somente Vendedor</option>
+                                    <option value="CUSTOMER">Somente Cliente final</option>
+                                  </select>
+                                </div>
+
+                                <div className="grid gap-2 sm:col-span-2">
+                                  <Label>Tipo</Label>
+                                  <select
+                                    className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm"
+                                    value={eType}
+                                    onChange={(e) => setEType(e.target.value as DiscountType)}
+                                  >
+                                    <option value="PCT">Percentual (%)</option>
+                                    <option value="FIXED">Desconto (R$)</option>
+                                    <option value="PRICE">Preço promocional (R$)</option>
+                                  </select>
+                                </div>
+
+                                <div className="grid gap-2 sm:col-span-2">
+                                  <Label>Valor</Label>
+                                  <Input
+                                    className="h-11 rounded-2xl border-slate-200 bg-slate-50"
+                                    value={eValue}
+                                    onChange={(e) => setEValue(sanitizeMoneyInput(e.target.value))}
+                                    placeholder={eType === "PCT" ? "Ex.: 20" : "Ex.: 15,90"}
+                                    inputMode={eType === "PCT" ? "numeric" : "decimal"}
+                                  />
+                                </div>
+
+                                <div className="grid gap-2 sm:col-span-3">
+                                  <Label>Início</Label>
+                                  <Input
+                                    type="datetime-local"
+                                    className="h-11 rounded-2xl border-slate-200 bg-slate-50"
+                                    value={eStartsAt}
+                                    onChange={(e) => setEStartsAt(e.target.value)}
+                                  />
+                                </div>
+
+                                <div className="grid gap-2 sm:col-span-3">
+                                  <Label>Fim (opcional)</Label>
+                                  <Input
+                                    type="datetime-local"
+                                    className="h-11 rounded-2xl border-slate-200 bg-slate-50"
+                                    value={eEndsAt}
+                                    onChange={(e) => setEEndsAt(e.target.value)}
+                                  />
+                                </div>
+
+                                <div className="grid gap-2 sm:col-span-2">
+                                  <Label>Prioridade</Label>
+                                  <Input
+                                    className="h-11 rounded-2xl border-slate-200 bg-slate-50"
+                                    value={ePriority}
+                                    onChange={(e) => setEPriority(sanitizeIntInput(e.target.value))}
+                                    inputMode="numeric"
+                                  />
+                                </div>
+
+                                <div className="grid gap-2 sm:col-span-2">
+                                  <Label>Status</Label>
+                                  <label className="flex h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm">
+                                    <input
+                                      type="checkbox"
+                                      checked={eActive}
+                                      onChange={(e) => setEActive(e.target.checked)}
+                                    />
+                                    Ativa
+                                  </label>
+                                </div>
+
+                                <div className="flex items-end sm:col-span-2">
+                                  <Button
+                                    className="h-11 w-full rounded-2xl bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
+                                    onClick={() => patchPromoM.mutate(p.id)}
+                                    disabled={patchPromoM.isPending}
+                                  >
+                                    {patchPromoM.isPending ? "Salvando…" : "Salvar promoção"}
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="text-xs text-slate-500">
+                Dica: regra “cupom não afeta produto com promoção” fica no checkout/pricing.
+              </div>
+            </SectionCard>
+
+            <SectionCard
+              title="Mídia do produto"
+              description="Imagens e vídeos em um bloco só, mais compacto"
+              icon={<ImageIcon className="h-4 w-4" />}
+              defaultOpen={false}
+            >
+              <div className="grid gap-4 xl:grid-cols-2">
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="mb-3 text-sm font-semibold text-slate-900">
+                      Imagem principal
                     </div>
+
+                    {primaryUrl ? (
+                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <div className="aspect-[4/3] w-full bg-muted">
+                          <img
+                            src={primaryUrl}
+                            alt={name}
+                            className="h-full w-full object-cover"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid min-h-[180px] place-items-center rounded-2xl border border-dashed border-slate-300 bg-white text-sm text-slate-500">
+                        Nenhuma imagem ainda.
+                      </div>
+                    )}
                   </div>
-                </div>
 
-                <div className="grid gap-2">
-                  <Label>Preço</Label>
-                  <Input
-                    className="w-full rounded-xl"
-                    value={price}
-                    onChange={(e) => setPrice(sanitizeMoneyInput(e.target.value))}
-                    placeholder="Ex.: 59,90"
-                    inputMode="decimal"
-                  />
-                  <div className="text-xs text-black/50">
-                    Somente números. Valor deve ser maior que 0.
-                  </div>
-                </div>
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4">
+                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="text-sm font-semibold text-slate-900">
+                        Enviar nova imagem
+                      </div>
 
-                <div className="grid gap-2">
-                  <Label>Preço cliente final (opcional)</Label>
-                  <Input
-                    className="w-full rounded-xl"
-                    value={customerPrice}
-                    onChange={(e) => setCustomerPrice(sanitizeMoneyInput(e.target.value))}
-                    placeholder="Ex.: 49,90"
-                    inputMode="decimal"
-                  />
-                  <div className="text-xs text-black/50">
-                    Se vazio, cliente final usa o preço padrão.
-                  </div>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label>Descrição</Label>
-                  <Textarea
-                    className="w-full rounded-xl min-h-[120px]"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Opcional..."
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label>Destaques (1 por linha)</Label>
-                  <Textarea
-                    className="w-full rounded-xl min-h-[110px]"
-                    value={highlightsText}
-                    onChange={(e) => setHighlightsText(e.target.value)}
-                    placeholder={`Ex.:\nBrilho\nHidratação\nReconstrução`}
-                  />
-                  <div className="text-xs text-black/50">
-                    Máx: 10 itens • 60 caracteres por linha.
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border bg-white p-4 shadow-sm">
-                    <Label>Categoria principal (opcional)</Label>
-
-                    <div className="mt-2">
-                      <select
-                        className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
-                        value={categoryId}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          setCategoryId(v);
-                          setCategoryIds((prev) => prev.filter((x) => x !== v));
-                        }}
-                        disabled={categoriesQ.isLoading}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-2xl"
+                        onClick={() => productQ.refetch()}
+                        disabled={productQ.isFetching}
                       >
-                        <option value="">Sem categoria principal</option>
-                        {categories.map((c) => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
+                        <RefreshCw
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            productQ.isFetching ? "animate-spin" : ""
+                          )}
+                        />
+                        Atualizar
+                      </Button>
                     </div>
 
-                    <div className="mt-2 min-h-[18px] text-xs text-black/50">
+                    <div className="space-y-3">
+                      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4">
+                        <input
+                          className="w-full text-sm"
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          onChange={(e) => {
+                            setUploadErr(null);
+                            setFiles(Array.from(e.target.files ?? []));
+                          }}
+                        />
+                      </div>
+
+                      <div className="text-xs text-slate-500 break-words">
+                        {files.length
+                          ? files.length === 1
+                            ? `Selecionado: ${files[0].name} (${Math.round(files[0].size / 1024)} KB)`
+                            : `${files.length} imagens selecionadas`
+                          : "Escolha uma ou mais imagens JPG/PNG/WEBP."}
+                      </div>
+
+                      {uploadErr ? <div className="text-sm text-red-600">{uploadErr}</div> : null}
+
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          type="button"
+                          className="rounded-2xl bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
+                          onClick={() => uploadM.mutate()}
+                          disabled={!files.length || uploadM.isPending}
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          {uploadM.isPending ? "Enviando…" : "Upload"}
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="rounded-2xl"
+                          onClick={() => setFiles([])}
+                          disabled={!files.length || uploadM.isPending}
+                        >
+                          Limpar
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {images.length ? (
+                    <div className="rounded-3xl border border-slate-200 bg-white p-4">
+                      <div className="mb-3 text-sm font-semibold text-slate-900">Galeria</div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        {images.map((im) => {
+                          const isPrimary = Boolean(im.isPrimary);
+                          return (
+                            <div
+                              key={im.id}
+                              className="rounded-2xl border border-slate-200 bg-slate-50 p-2"
+                            >
+                              <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
+                                <div className="aspect-square">
+                                  <img
+                                    src={im.url}
+                                    alt=""
+                                    className="h-full w-full object-cover"
+                                  />
+                                </div>
+
+                                {isPrimary ? (
+                                  <div className="absolute left-2 top-2 rounded-full bg-slate-900 px-2 py-1 text-[10px] text-white">
+                                    primária
+                                  </div>
+                                ) : null}
+                              </div>
+
+                              <div className="mt-2 flex flex-col gap-2">
+                                {!isPrimary ? (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="h-8 rounded-xl px-2 text-xs"
+                                    disabled={setPrimaryM.isPending}
+                                    onClick={() => setPrimaryM.mutate(im.id)}
+                                  >
+                                    <Star className="mr-1 h-3.5 w-3.5" />
+                                    Primária
+                                  </Button>
+                                ) : null}
+
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-8 rounded-xl px-2 text-xs"
+                                  disabled={deleteImgM.isPending || isPrimary}
+                                  onClick={() => {
+                                    if (confirm("Remover esta imagem?")) deleteImgM.mutate(im.id);
+                                  }}
+                                >
+                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                  Remover
+                                </Button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4">
+                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <Clapperboard className="h-4 w-4" />
+                        Vídeos do produto
+                      </div>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-2xl"
+                        onClick={() => videosQ.refetch()}
+                        disabled={videosQ.isFetching}
+                      >
+                        <RefreshCw
+                          className={cn(
+                            "mr-2 h-4 w-4",
+                            videosQ.isFetching ? "animate-spin" : ""
+                          )}
+                        />
+                        Atualizar
+                      </Button>
+                    </div>
+
+                    <div className="grid gap-3">
+                      <Input
+                        className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+                        value={videoTitle}
+                        onChange={(e) => setVideoTitle(e.target.value)}
+                        placeholder="Título do vídeo"
+                      />
+
+                      <Input
+                        className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+                        type="number"
+                        value={videoSortOrder}
+                        onChange={(e) => setVideoSortOrder(e.target.value)}
+                        placeholder="Ordem"
+                      />
+
+                      <Textarea
+                        className="min-h-[90px] rounded-2xl border-slate-200 bg-slate-50/60"
+                        value={videoDescription}
+                        onChange={(e) => setVideoDescription(e.target.value)}
+                        placeholder="Descrição do vídeo"
+                      />
+
+                      <Input
+                        className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+                        value={videoThumbnailUrl}
+                        onChange={(e) => setVideoThumbnailUrl(e.target.value)}
+                        placeholder="Thumbnail URL (opcional)"
+                      />
+
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={videoActive}
+                            onChange={(e) => setVideoActive(e.target.checked)}
+                          />
+                          Vídeo ativo
+                        </label>
+
+                        <label className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={videoShowInGallery}
+                            onChange={(e) => setVideoShowInGallery(e.target.checked)}
+                          />
+                          Mostrar na galeria
+                        </label>
+                      </div>
+
+                      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4">
+                        <Input
+                          type="file"
+                          accept="video/*"
+                          className="rounded-xl border-0 bg-transparent p-0 shadow-none"
+                          onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
+                        />
+                      </div>
+
+                      {videoFile ? (
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                          {videoFile.name} • {formatBytes(videoFile.size)}
+                        </div>
+                      ) : null}
+
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button
+                          type="button"
+                          className="rounded-2xl bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
+                          onClick={() => uploadVideoM.mutate()}
+                          disabled={!videoFile || uploadVideoM.isPending}
+                        >
+                          {uploadVideoM.isPending ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Enviando...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="mr-2 h-4 w-4" />
+                              Enviar vídeo
+                            </>
+                          )}
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="rounded-2xl"
+                          onClick={() => {
+                            setVideoFile(null);
+                            setVideoTitle("");
+                            setVideoDescription("");
+                            setVideoSortOrder("0");
+                            setVideoActive(true);
+                            setVideoShowInGallery(true);
+                            setVideoThumbnailUrl("");
+                          }}
+                        >
+                          Limpar
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 bg-white p-4">
+                    {videosQ.isLoading ? (
+                      <div className="text-sm text-slate-500">Carregando vídeos...</div>
+                    ) : videos.length > 0 ? (
+                      <div className="space-y-3">
+                        <div className="text-sm font-semibold text-slate-900">
+                          Vídeos cadastrados
+                        </div>
+
+                        {videos.map((video) => (
+                          <div
+                            key={video.id}
+                            className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                          >
+                            <div className="flex flex-col gap-3">
+                              <div>
+                                <div className="text-sm font-semibold text-slate-900">
+                                  {video.title}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500">
+                                  Ordem {video.sortOrder} • {video.active ? "Ativo" : "Inativo"} •{" "}
+                                  {video.showInGallery ? "Na galeria" : "Fora da galeria"}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-500 break-all">
+                                  {video.originalName || video.publicUrl}
+                                </div>
+                              </div>
+
+                              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-8 rounded-xl px-2 text-xs"
+                                  onClick={() =>
+                                    window.open(video.publicUrl, "_blank", "noopener,noreferrer")
+                                  }
+                                >
+                                  <Eye className="mr-1 h-3.5 w-3.5" />
+                                  Abrir
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-8 rounded-xl px-2 text-xs"
+                                  disabled={patchVideoM.isPending}
+                                  onClick={() =>
+                                    patchVideoM.mutate({
+                                      videoId: video.id,
+                                      payload: { showInGallery: !video.showInGallery },
+                                    })
+                                  }
+                                >
+                                  {video.showInGallery ? "Tirar da galeria" : "Mostrar na galeria"}
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-8 rounded-xl px-2 text-xs"
+                                  disabled={patchVideoM.isPending}
+                                  onClick={() =>
+                                    patchVideoM.mutate({
+                                      videoId: video.id,
+                                      payload: { active: !video.active },
+                                    })
+                                  }
+                                >
+                                  {video.active ? "Desativar" : "Ativar"}
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  className="h-8 rounded-xl px-2 text-xs"
+                                  disabled={deleteVideoM.isPending}
+                                  onClick={() => {
+                                    if (confirm(`Remover o vídeo "${video.title}"?`)) {
+                                      deleteVideoM.mutate(video.id);
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                  Remover
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-sm text-slate-500">
+                        Nenhum vídeo cadastrado para este produto.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </SectionCard>
+          </div>
+
+          <div className="space-y-5 xl:col-span-4">
+            <div className="xl:sticky xl:top-6 xl:self-start">
+              <Card className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-base">Painel rápido</CardTitle>
+                  <CardDescription>
+                    Status, categorias e resumo fixos enquanto você desce
+                  </CardDescription>
+                </CardHeader>
+
+                <CardContent className="space-y-4">
+                  <div className="rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4">
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Status
+                    </div>
+
+                    <ProductStatusPanel
+                      active={active}
+                      onActiveChange={setActive}
+                      availableToCustomer={availableToCustomer}
+                      onAvailableToCustomerChange={(v) => setAudience(v ? "ALL" : "STAFF_ONLY")}
+                    />
+                  </div>
+
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Categoria principal
+                    </div>
+
+                    <select
+                      className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm"
+                      value={categoryId}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setCategoryId(v);
+                        setCategoryIds((prev) => prev.filter((x) => x !== v));
+                      }}
+                      disabled={categoriesQ.isLoading}
+                    >
+                      <option value="">Sem categoria principal</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="mt-2 min-h-[18px] text-xs text-slate-500">
                       {categoriesQ.isLoading ? "Carregando categorias…" : null}
                       {categoriesQ.isError ? (
                         <span className="text-red-600">Erro ao carregar categorias.</span>
@@ -1273,37 +2181,27 @@ export default function EditProductPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border bg-white p-4 shadow-sm">
-                    <Label>Status</Label>
-
-                    <div className="mt-2">
-                      <ProductStatusPanel
-                        active={active}
-                        onActiveChange={setActive}
-                        availableToCustomer={availableToCustomer}
-                        onAvailableToCustomerChange={(v) => setAudience(v ? "ALL" : "STAFF_ONLY")}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label>Categorias (multi)</Label>
-
-                  <div className="rounded-2xl border p-3 space-y-2">
-                    <div className="text-xs text-black/60">
-                      Selecionadas: <b>{categoryIds.length}</b>
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Categorias adicionais
+                      </div>
+                      <Badge variant="secondary" className="rounded-full">
+                        {categoryIds.length}
+                      </Badge>
                     </div>
 
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="max-h-72 space-y-2 overflow-auto pr-1">
                       {categories.filter((c) => c.id !== categoryId).map((c) => {
                         const checked = categoryIds.includes(c.id);
                         return (
                           <label
                             key={c.id}
                             className={cn(
-                              "flex items-center gap-2 rounded-xl border px-3 py-2 text-sm cursor-pointer select-none",
-                              checked ? "bg-black/5" : "bg-white"
+                              "flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm cursor-pointer select-none transition",
+                              checked
+                                ? "border-sky-200 bg-sky-50 text-sky-900"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                             )}
                           >
                             <input
@@ -1319,750 +2217,104 @@ export default function EditProductPage() {
                       })}
                     </div>
 
-                    <div className="text-xs text-black/50">
-                      Esse bloco preenche <code>categoryIds</code>. A categoria principal (
-                      <code>categoryId</code>) é opcional.
+                    <div className="mt-3 text-xs text-slate-500">
+                      Preenche <code>categoryIds</code>. A principal (<code>categoryId</code>) é opcional.
                     </div>
                   </div>
-                </div>
 
-                <Separator />
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Resumo rápido
+                    </div>
 
-                <div className="hidden sm:flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="rounded-xl"
-                    onClick={() => router.replace(returnTo)}
-                    disabled={saveM.isPending}
-                  >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Voltar
-                  </Button>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Preço</span>
+                        <span className="font-semibold text-slate-900">{pricePreview}</span>
+                      </div>
 
-                  <Button
-                    type="button"
-                    className="rounded-xl"
-                    onClick={() => saveM.mutate()}
-                    disabled={saveM.isPending}
-                  >
-                    <Save className="mr-2 h-4 w-4" />
-                    {saveM.isPending ? "Salvando…" : "Salvar"}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Cliente final</span>
+                        <span className="font-semibold text-slate-900">
+                          {customerPricePreview}
+                        </span>
+                      </div>
 
-            <Card className="rounded-3xl border-slate-200/70 bg-white shadow-sm border-t-4 border-t-sky-500/70">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Tag className="h-5 w-5" />
-                  Promoções do produto
-                </CardTitle>
-                <CardDescription>
-                  Promoção é aplicada no preço do item (antes de cupom). Use <b>Prioridade</b>{" "}
-                  para escolher qual vence.
-                </CardDescription>
-              </CardHeader>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Estoque</span>
+                        <span className="font-semibold text-slate-900">{stock}</span>
+                      </div>
 
-              <CardContent className="space-y-4">
-                <div className="rounded-3xl border bg-white p-4 space-y-3">
-                  <div className="text-sm font-semibold">Criar promoção</div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Imagens</span>
+                        <span className="font-semibold text-slate-900">{images.length}</span>
+                      </div>
 
-                  <div className="grid gap-3 md:grid-cols-12">
-                    <div className="grid gap-2 md:col-span-4">
-                      <Label>Aplica para</Label>
-                      <select
-                        className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
-                        value={pAppliesTo}
-                        onChange={(e) => setPAppliesTo(e.target.value as PromoAppliesTo)}
-                      >
-                        <option value="BOTH">Ambos</option>
-                        <option value="SALON">Somente Salão</option>
-                        <option value="SELLER">Somente Vendedor</option>
-                        <option value="CUSTOMER">Somente Cliente final</option>
-                      </select>
-                      <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                        Quem vê o desconto nessa promoção.
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Vídeos</span>
+                        <span className="font-semibold text-slate-900">{videos.length}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Promoções</span>
+                        <span className="font-semibold text-slate-900">{promos.length}</span>
                       </div>
                     </div>
 
-                    <div className="grid gap-2 md:col-span-4">
-                      <Label>Tipo</Label>
-                      <select
-                        className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
-                        value={pType}
-                        onChange={(e) => setPType(e.target.value as DiscountType)}
-                      >
-                        <option value="PCT">Percentual (%)</option>
-                        <option value="FIXED">Desconto (R$)</option>
-                        <option value="PRICE">Preço promocional (R$)</option>
-                      </select>
-                      <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
-                    </div>
+                    {selectedCategoryNames.length ? (
+                      <>
+                        <Separator className="my-4" />
+                        <div className="space-y-2">
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Selecionadas
+                          </div>
 
-                    <div className="grid gap-2 md:col-span-4">
-                      <Label>Valor</Label>
-                      <Input
-                        className="w-full rounded-xl"
-                        value={pValue}
-                        onChange={(e) => setPValue(sanitizeMoneyInput(e.target.value))}
-                        placeholder={pType === "PCT" ? "Ex.: 20" : "Ex.: 15,90"}
-                        inputMode={pType === "PCT" ? "numeric" : "decimal"}
-                      />
-                      <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                        {pType === "PCT" ? "0 < valor ≤ 100" : "Valor > 0"}
-                      </div>
-                    </div>
-
-                    <div className="grid gap-2 md:col-span-6">
-                      <Label>Início (data + hora)</Label>
-                      <Input
-                        type="datetime-local"
-                        className="w-full rounded-xl"
-                        value={pStartsAt}
-                        onChange={(e) => setPStartsAt(e.target.value)}
-                      />
-                      <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
-                    </div>
-
-                    <div className="grid gap-2 md:col-span-6">
-                      <Label>Fim (opcional)</Label>
-                      <Input
-                        type="datetime-local"
-                        className="w-full rounded-xl"
-                        value={pEndsAt}
-                        onChange={(e) => setPEndsAt(e.target.value)}
-                      />
-                      <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                        Se vazio, fica sem expiração.
-                      </div>
-                    </div>
-
-                    <div className="grid gap-2 md:col-span-4">
-                      <Label>Prioridade</Label>
-                      <Input
-                        className="w-full rounded-xl"
-                        value={pPriority}
-                        onChange={(e) => setPPriority(sanitizeIntInput(e.target.value))}
-                        placeholder="Ex.: 10"
-                        inputMode="numeric"
-                      />
-                      <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                        Inteiro ≥ 0. Maior vence.
-                      </div>
-                    </div>
-
-                    <div className="grid gap-2 md:col-span-4">
-                      <Label>Status</Label>
-                      <label className="flex h-10 items-center gap-2 rounded-xl border bg-white px-3 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={pActive}
-                          onChange={(e) => setPActive(e.target.checked)}
-                        />
-                        Ativa
-                      </label>
-                      <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                        Pode criar inativa e ativar depois.
-                      </div>
-                    </div>
-
-                    <div className="md:col-span-4 flex flex-col md:items-end">
-                      <div className="hidden md:block h-5" />
-                      <div className="hidden md:block min-h-[32px]" />
-                      <Button
-                        className="w-full rounded-xl md:w-auto"
-                        onClick={() => createPromoM.mutate()}
-                        disabled={createPromoM.isPending}
-                      >
-                        {createPromoM.isPending ? "Criando…" : "Criar promoção"}
-                      </Button>
-                    </div>
+                          <div className="flex flex-wrap gap-2">
+                            {selectedCategoryNames.map((cat) => (
+                              <Badge key={cat} variant="secondary" className="rounded-full">
+                                {cat}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      </>
+                    ) : null}
                   </div>
-                </div>
 
-                <div className="space-y-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                    <div className="text-sm font-semibold">Promoções cadastradas</div>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
                     <Button
+                      type="button"
                       variant="outline"
-                      className="w-full rounded-xl sm:w-auto"
-                      onClick={() => promosQ.refetch()}
-                      disabled={promosQ.isFetching}
+                      className="rounded-2xl"
+                      onClick={() => router.replace(returnTo)}
+                      disabled={saveM.isPending}
                     >
-                      <RefreshCw
-                        className={cn("mr-2 h-4 w-4", promosQ.isFetching ? "animate-spin" : "")}
-                      />
-                      {promosQ.isFetching ? "Atualizando…" : "Atualizar"}
+                      <ArrowLeft className="mr-2 h-4 w-4" />
+                      Voltar
+                    </Button>
+
+                    <Button
+                      type="button"
+                      className="rounded-2xl bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
+                      onClick={() => saveM.mutate()}
+                      disabled={saveM.isPending}
+                    >
+                      <Save className="mr-2 h-4 w-4" />
+                      {saveM.isPending ? "Salvando…" : "Salvar produto"}
                     </Button>
                   </div>
-
-                  {promosQ.isLoading ? (
-                    <div className="rounded-2xl border p-4 text-sm">Carregando promoções…</div>
-                  ) : promosQ.isError ? (
-                    <div className="rounded-2xl border p-4 text-sm text-red-600">
-                      {apiErrorMessage(promosQ.error, "Erro ao carregar promoções.")}
-                    </div>
-                  ) : promos.length === 0 ? (
-                    <div className="rounded-2xl border p-4 text-sm text-black/60">
-                      Nenhuma promoção para este produto.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {promos.map((p) => {
-                        const isEditing = editPromoId === p.id;
-
-                        const statusLabel =
-                          p.active === false ? "INATIVA" : p.isActiveNow ? "ATIVA AGORA" : "PROGRAMADA/EXPIRADA";
-
-                        return (
-                          <div key={p.id} className="rounded-3xl border bg-white p-4 space-y-3">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="min-w-0 space-y-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <Badge
-                                    className={cn(
-                                      "rounded-full",
-                                      p.active
-                                        ? "bg-emerald-600 text-white border-transparent"
-                                        : "bg-zinc-200 text-zinc-900 border-transparent"
-                                    )}
-                                  >
-                                    {statusLabel}
-                                  </Badge>
-                                  <div className="text-sm font-semibold break-words">
-                                    {p.type} • {p.appliesTo} • prioridade {p.priority ?? 0}
-                                  </div>
-                                </div>
-
-                                <div className="text-xs text-black/60 break-words">
-                                  Valor: <span className="font-mono">{String(p.value)}</span> • Início:{" "}
-                                  {fmtDateTime(p.startsAt)} • Fim: {fmtDateTime(p.endsAt ?? null)}
-                                </div>
-                                <div className="text-[10px] text-black/50 font-mono break-all">ID: {p.id}</div>
-                              </div>
-
-                              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-                                {!isEditing ? (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="w-full rounded-xl sm:w-auto"
-                                    onClick={() => startEdit(p)}
-                                  >
-                                    Editar
-                                  </Button>
-                                ) : (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="w-full rounded-xl sm:w-auto"
-                                    onClick={cancelEdit}
-                                  >
-                                    Cancelar
-                                  </Button>
-                                )}
-
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  className="w-full rounded-xl sm:w-auto"
-                                  disabled={disablePromoM.isPending || p.active === false}
-                                  onClick={() => {
-                                    if (confirm("Desativar esta promoção?")) disablePromoM.mutate(p.id);
-                                  }}
-                                >
-                                  Desativar
-                                </Button>
-                              </div>
-                            </div>
-
-                            {isEditing ? (
-                              <div className="space-y-3">
-                                <Separator />
-
-                                <div className="grid gap-3 sm:grid-cols-6">
-                                  <div className="grid gap-2 sm:col-span-2">
-                                    <Label>Aplica para</Label>
-                                    <select
-                                      className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
-                                      value={eAppliesTo}
-                                      onChange={(e) => setEAppliesTo(e.target.value as PromoAppliesTo)}
-                                    >
-                                      <option value="BOTH">Ambos</option>
-                                      <option value="SALON">Somente Salão</option>
-                                      <option value="SELLER">Somente Vendedor</option>
-                                      <option value="CUSTOMER">Somente Cliente final</option>
-                                    </select>
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
-                                  </div>
-
-                                  <div className="grid gap-2 sm:col-span-2">
-                                    <Label>Tipo</Label>
-                                    <select
-                                      className="h-10 w-full rounded-xl border bg-white px-3 text-sm"
-                                      value={eType}
-                                      onChange={(e) => setEType(e.target.value as DiscountType)}
-                                    >
-                                      <option value="PCT">Percentual (%)</option>
-                                      <option value="FIXED">Desconto (R$)</option>
-                                      <option value="PRICE">Preço promocional (R$)</option>
-                                    </select>
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
-                                  </div>
-
-                                  <div className="grid gap-2 sm:col-span-2">
-                                    <Label>Valor</Label>
-                                    <Input
-                                      className="w-full rounded-xl"
-                                      value={eValue}
-                                      onChange={(e) => setEValue(sanitizeMoneyInput(e.target.value))}
-                                      placeholder={eType === "PCT" ? "Ex.: 20" : "Ex.: 15,90"}
-                                      inputMode={eType === "PCT" ? "numeric" : "decimal"}
-                                    />
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                                      {eType === "PCT" ? "0 < valor ≤ 100" : "Valor > 0"}
-                                    </div>
-                                  </div>
-
-                                  <div className="grid gap-2 sm:col-span-3">
-                                    <Label>Início</Label>
-                                    <Input
-                                      type="datetime-local"
-                                      className="w-full rounded-xl"
-                                      value={eStartsAt}
-                                      onChange={(e) => setEStartsAt(e.target.value)}
-                                    />
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
-                                  </div>
-
-                                  <div className="grid gap-2 sm:col-span-3">
-                                    <Label>Fim (opcional)</Label>
-                                    <Input
-                                      type="datetime-local"
-                                      className="w-full rounded-xl"
-                                      value={eEndsAt}
-                                      onChange={(e) => setEEndsAt(e.target.value)}
-                                    />
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                                      Se vazio, remove o fim (null).
-                                    </div>
-                                  </div>
-
-                                  <div className="grid gap-2 sm:col-span-2">
-                                    <Label>Prioridade</Label>
-                                    <Input
-                                      className="w-full rounded-xl"
-                                      value={ePriority}
-                                      onChange={(e) => setEPriority(sanitizeIntInput(e.target.value))}
-                                      inputMode="numeric"
-                                    />
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">
-                                      Inteiro ≥ 0. Maior vence.
-                                    </div>
-                                  </div>
-
-                                  <div className="grid gap-2 sm:col-span-2">
-                                    <Label>Status</Label>
-                                    <label className="flex h-10 items-center gap-2 rounded-xl border bg-white px-3 text-sm">
-                                      <input
-                                        type="checkbox"
-                                        checked={eActive}
-                                        onChange={(e) => setEActive(e.target.checked)}
-                                      />
-                                      Ativa
-                                    </label>
-                                    <div className="min-h-[32px] text-xs leading-tight text-black/50">{"\u00A0"}</div>
-                                  </div>
-
-                                  <div className="sm:col-span-2 flex flex-col sm:items-end">
-                                    <div className="hidden sm:block h-5" />
-                                    <div className="hidden sm:block min-h-[32px]" />
-                                    <Button
-                                      className="w-full rounded-xl sm:w-auto"
-                                      onClick={() => patchPromoM.mutate(p.id)}
-                                      disabled={patchPromoM.isPending}
-                                    >
-                                      {patchPromoM.isPending ? "Salvando…" : "Salvar promoção"}
-                                    </Button>
-                                  </div>
-                                </div>
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                <div className="text-xs text-black/50">
-                  Dica: regra “cupom não afeta produto com promoção” é no checkout/pricing.
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </div>
-
-          <Card className="order-2 rounded-3xl lg:order-1 lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ImageIcon className="h-5 w-5" />
-                Imagens
-              </CardTitle>
-              <CardDescription>Upload, galeria e imagem primária</CardDescription>
-            </CardHeader>
-
-            <CardContent className="space-y-4">
-              <div className="rounded-2xl border bg-zinc-50 p-3">
-                <div className="text-xs text-black/60 mb-2">Prévia</div>
-                {primaryUrl ? (
-                  <div className="overflow-hidden rounded-2xl border bg-white">
-                    <div className="aspect-video sm:aspect-square w-full bg-muted">
-                      <img src={primaryUrl} alt={name} className="h-full w-full object-cover" />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="grid place-items-center rounded-2xl border bg-white p-6 text-sm text-black/50">
-                    Nenhuma imagem ainda.
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl border bg-white p-4 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div className="text-sm font-semibold">Enviar nova imagem</div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full rounded-xl sm:w-auto"
-                    onClick={() => productQ.refetch()}
-                    disabled={productQ.isFetching}
-                  >
-                    <RefreshCw className={cn("mr-2 h-4 w-4", productQ.isFetching ? "animate-spin" : "")} />
-                    Atualizar
-                  </Button>
-                </div>
-
-                <div className="grid gap-2">
-                  <input
-                    className="text-sm w-full"
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={(e) => {
-                      setUploadErr(null);
-                      setFiles(Array.from(e.target.files ?? []));
-                    }}
-                  />
-
-                  <div className="text-xs text-black/50 break-words">
-                    {files.length
-                      ? files.length === 1
-                        ? `Selecionado: ${files[0].name} (${Math.round(files[0].size / 1024)} KB)`
-                        : `${files.length} imagens selecionadas`
-                      : "Escolha uma ou mais imagens JPG/PNG/WEBP."}
-                  </div>
-
-                  {uploadErr ? <div className="text-sm text-red-600">{uploadErr}</div> : null}
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Button
-                      type="button"
-                      className="w-full rounded-xl sm:w-auto"
-                      onClick={() => uploadM.mutate()}
-                      disabled={!files.length || uploadM.isPending}
-                    >
-                      <Upload className="mr-2 h-4 w-4" />
-                      {uploadM.isPending ? "Enviando…" : "Upload"}
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full rounded-xl sm:w-auto"
-                      onClick={() => setFiles([])}
-                      disabled={!files.length || uploadM.isPending}
-                    >
-                      Limpar
-                    </Button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border bg-white p-4 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div className="flex items-center gap-2 text-sm font-semibold">
-                    <Clapperboard className="h-4 w-4" />
-                    Vídeos do produto
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full rounded-xl sm:w-auto"
-                    onClick={() => videosQ.refetch()}
-                    disabled={videosQ.isFetching}
-                  >
-                    <RefreshCw className={cn("mr-2 h-4 w-4", videosQ.isFetching ? "animate-spin" : "")} />
-                    Atualizar
-                  </Button>
-                </div>
-
-                <div className="grid gap-3">
-                  <Input
-                    className="rounded-xl"
-                    value={videoTitle}
-                    onChange={(e) => setVideoTitle(e.target.value)}
-                    placeholder="Título do vídeo"
-                  />
-
-                  <Input
-                    className="rounded-xl"
-                    type="number"
-                    value={videoSortOrder}
-                    onChange={(e) => setVideoSortOrder(e.target.value)}
-                    placeholder="Ordem"
-                  />
-
-                  <Textarea
-                    className="rounded-xl min-h-[90px]"
-                    value={videoDescription}
-                    onChange={(e) => setVideoDescription(e.target.value)}
-                    placeholder="Descrição do vídeo"
-                  />
-
-                  <Input
-                    className="rounded-xl"
-                    value={videoThumbnailUrl}
-                    onChange={(e) => setVideoThumbnailUrl(e.target.value)}
-                    placeholder="Thumbnail URL (opcional)"
-                  />
-
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={videoActive}
-                        onChange={(e) => setVideoActive(e.target.checked)}
-                      />
-                      Vídeo ativo
-                    </label>
-
-                    <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={videoShowInGallery}
-                        onChange={(e) => setVideoShowInGallery(e.target.checked)}
-                      />
-                      Mostrar na galeria
-                    </label>
-                  </div>
-
-                  <Input
-                    type="file"
-                    accept="video/*"
-                    className="rounded-xl"
-                    onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
-                  />
-
-                  {videoFile ? (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-black/70">
-                      {videoFile.name} • {formatBytes(videoFile.size)}
-                    </div>
-                  ) : null}
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <Button
-                      type="button"
-                      className="w-full rounded-xl sm:w-auto"
-                      onClick={() => uploadVideoM.mutate()}
-                      disabled={!videoFile || uploadVideoM.isPending}
-                    >
-                      {uploadVideoM.isPending ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Enviando...
-                        </>
-                      ) : (
-                        <>
-                          <Upload className="mr-2 h-4 w-4" />
-                          Enviar vídeo
-                        </>
-                      )}
-                    </Button>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full rounded-xl sm:w-auto"
-                      onClick={() => {
-                        setVideoFile(null);
-                        setVideoTitle("");
-                        setVideoDescription("");
-                        setVideoSortOrder("0");
-                        setVideoActive(true);
-                        setVideoShowInGallery(true);
-                        setVideoThumbnailUrl("");
-                      }}
-                    >
-                      Limpar
-                    </Button>
-                  </div>
-                </div>
-
-                {videosQ.isLoading ? (
-                  <div className="text-sm text-black/50">Carregando vídeos...</div>
-                ) : videos.length > 0 ? (
-                  <div className="space-y-2 pt-2">
-                    <div className="text-sm font-semibold">Vídeos cadastrados</div>
-
-                    {videos.map((video) => (
-                      <div key={video.id} className="rounded-xl border bg-slate-50 p-3">
-                        <div className="flex flex-col gap-3">
-                          <div>
-                            <div className="text-sm font-semibold text-slate-900">
-                              {video.title}
-                            </div>
-                            <div className="mt-1 text-xs text-black/50">
-                              Ordem {video.sortOrder} • {video.active ? "Ativo" : "Inativo"} •{" "}
-                              {video.showInGallery ? "Na galeria" : "Fora da galeria"}
-                            </div>
-                            <div className="mt-1 text-xs text-black/50 break-all">
-                              {video.originalName || video.publicUrl}
-                            </div>
-                          </div>
-
-                          <div className="flex flex-col sm:flex-row flex-wrap gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="h-8 w-full sm:w-auto rounded-xl px-2 text-xs"
-                              onClick={() => window.open(video.publicUrl, "_blank", "noopener,noreferrer")}
-                            >
-                              <Eye className="mr-1 h-3.5 w-3.5" />
-                              Abrir
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="h-8 w-full sm:w-auto rounded-xl px-2 text-xs"
-                              disabled={patchVideoM.isPending}
-                              onClick={() =>
-                                patchVideoM.mutate({
-                                  videoId: video.id,
-                                  payload: { showInGallery: !video.showInGallery },
-                                })
-                              }
-                            >
-                              {video.showInGallery ? "Tirar da galeria" : "Mostrar na galeria"}
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="h-8 w-full sm:w-auto rounded-xl px-2 text-xs"
-                              disabled={patchVideoM.isPending}
-                              onClick={() =>
-                                patchVideoM.mutate({
-                                  videoId: video.id,
-                                  payload: { active: !video.active },
-                                })
-                              }
-                            >
-                              {video.active ? "Desativar" : "Ativar"}
-                            </Button>
-
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="h-8 w-full sm:w-auto rounded-xl px-2 text-xs"
-                              disabled={deleteVideoM.isPending}
-                              onClick={() => {
-                                if (confirm(`Remover o vídeo "${video.title}"?`)) {
-                                  deleteVideoM.mutate(video.id);
-                                }
-                              }}
-                            >
-                              <Trash2 className="mr-1 h-3.5 w-3.5" />
-                              Remover
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-sm text-black/50">
-                    Nenhum vídeo cadastrado para este produto.
-                  </div>
-                )}
-              </div>
-
-              {images.length ? (
-                <div className="space-y-2">
-                  <div className="text-sm font-semibold">Galeria</div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {images.map((im) => {
-                      const isPrimary = Boolean(im.isPrimary);
-                      return (
-                        <div key={im.id} className="rounded-2xl border bg-white p-2">
-                          <div className="relative overflow-hidden rounded-xl border bg-muted">
-                            <div className="aspect-square">
-                              <img src={im.url} alt="" className="h-full w-full object-cover" />
-                            </div>
-
-                            {isPrimary ? (
-                              <div className="absolute left-2 top-2 rounded-full bg-black/80 text-white text-[10px] px-2 py-1">
-                                primária
-                              </div>
-                            ) : null}
-                          </div>
-
-                          <div className="mt-2 flex flex-col sm:flex-row flex-wrap gap-2">
-                            {!isPrimary ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                className="h-8 w-full sm:w-auto rounded-xl px-2 text-xs"
-                                disabled={setPrimaryM.isPending}
-                                onClick={() => setPrimaryM.mutate(im.id)}
-                              >
-                                <Star className="mr-1 h-3.5 w-3.5" />
-                                Primária
-                              </Button>
-                            ) : null}
-
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="h-8 w-full sm:w-auto rounded-xl px-2 text-xs"
-                              disabled={deleteImgM.isPending || isPrimary}
-                              onClick={() => {
-                                if (confirm("Remover esta imagem?")) deleteImgM.mutate(im.id);
-                              }}
-                            >
-                              <Trash2 className="mr-1 h-3.5 w-3.5" />
-                              Remover
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
         </div>
       </div>
 
-      <div className="fixed inset-x-0 bottom-0 z-50 border-t bg-white/90 backdrop-blur sm:hidden">
-        <div className="mx-auto flex max-w-5xl gap-2 px-3 py-3">
+      <div className="fixed inset-x-0 bottom-0 z-50 border-t border-slate-200 bg-white/95 backdrop-blur sm:hidden">
+        <div className="mx-auto flex max-w-7xl gap-2 px-3 py-3">
           <Button
             variant="outline"
-            className="w-1/2 rounded-xl"
+            className="w-1/2 rounded-2xl"
             onClick={() => router.replace(returnTo)}
             disabled={saveM.isPending}
           >
@@ -2070,7 +2322,11 @@ export default function EditProductPage() {
             Voltar
           </Button>
 
-          <Button className="w-1/2 rounded-xl" onClick={() => saveM.mutate()} disabled={saveM.isPending}>
+          <Button
+            className="w-1/2 rounded-2xl bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
+            onClick={() => saveM.mutate()}
+            disabled={saveM.isPending}
+          >
             <Save className="mr-2 h-4 w-4" />
             {saveM.isPending ? "Salvando…" : "Salvar"}
           </Button>

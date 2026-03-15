@@ -163,4 +163,18 @@ export const endpoints = {
     update: (id: string) => `/admin/quantity-discount-groups/${id}`,
     disable: (id: string) => `/admin/quantity-discount-groups/${id}/disable`,
   },
+
+adminBroadcasts: {
+  list: "/admin/broadcasts",
+  byId: (id: string) => `/admin/broadcasts/${id}`,
+  create: "/admin/broadcasts",
+  publish: (id: string) => `/admin/broadcasts/${id}/publish`,
+},
+
+notifications: {
+  me: "/notifications/me",
+  unreadCount: "/notifications/me/unread-count",
+  readOne: (id: string) => `/notifications/me/${id}/read`,
+  readAll: "/notifications/me/read-all",
+},
 } as const;

@@ -17,7 +17,8 @@ import {
   Clapperboard,
   Layers3,
   HeartHandshake,
-  MessageSquareText
+  MessageSquareText,
+  Megaphone,
 } from "lucide-react";
 import { TicketPercent } from "lucide-react";
 
@@ -31,7 +32,6 @@ import { authStore } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 
-
 function NavItem({
   href,
   label,
@@ -44,6 +44,7 @@ function NavItem({
   rightBadge?: React.ReactNode;
 }) {
   const pathname = usePathname();
+
   const active =
     href === "/admin"
       ? pathname === "/admin"
@@ -54,11 +55,18 @@ function NavItem({
       href={href}
       className={cn(
         "group flex items-center justify-between gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition",
-        active ? "bg-black text-white shadow-sm" : "text-black/70 hover:bg-black/5 hover:text-black"
+        active
+          ? "bg-black text-white shadow-sm"
+          : "text-black/70 hover:bg-black/5 hover:text-black"
       )}
     >
-      <div className="flex items-center gap-2 min-w-0">
-        <Icon className={cn("h-4 w-4", active ? "text-white" : "text-black/50 group-hover:text-black")} />
+      <div className="flex min-w-0 items-center gap-2">
+        <Icon
+          className={cn(
+            "h-4 w-4",
+            active ? "text-white" : "text-black/50 group-hover:text-black"
+          )}
+        />
         <span className="truncate">{label}</span>
       </div>
 
@@ -80,7 +88,7 @@ function UnreadBell({ count }: { count: number }) {
       </Button>
 
       {count > 0 ? (
-        <span className="absolute -top-2 -right-2 rounded-full bg-red-600 text-white text-[10px] px-2 py-0.5 leading-none">
+        <span className="absolute -top-2 -right-2 rounded-full bg-red-600 px-2 py-0.5 text-[10px] leading-none text-white">
           {count}
         </span>
       ) : null}
@@ -89,7 +97,13 @@ function UnreadBell({ count }: { count: number }) {
 }
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const me = authStore.getMe();
+
+  const hideSidebar =
+    !!pathname &&
+    pathname.startsWith("/admin/products/") &&
+    pathname !== "/admin/products";
 
   async function logout() {
     try {
@@ -114,7 +128,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const badge =
     unreadCount > 0 ? (
-      <span className="rounded-full bg-red-600 text-white text-[10px] px-2 py-0.5 leading-none">
+      <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] leading-none text-white">
         {unreadCount}
       </span>
     ) : null;
@@ -122,51 +136,67 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   return (
     <AuthGuard>
       <div className="min-h-screen bg-[#F7F8FA]">
-        <div className="grid min-h-screen grid-cols-[280px_1fr]">
-          {/* Sidebar */}
-          <aside className="border-r bg-white p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-lg font-black leading-tight">KeyFi Admin</div>
-                <div className="text-xs text-black/60 truncate">{me?.email ?? "Painel"}</div>
+        {hideSidebar ? (
+          <main className="min-h-screen">{children}</main>
+        ) : (
+          <div className="grid min-h-screen grid-cols-[280px_1fr]">
+            <aside className="border-r bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-lg font-black leading-tight">KeyFi Admin</div>
+                  <div className="truncate text-xs text-black/60">
+                    {me?.email ?? "Painel"}
+                  </div>
+                </div>
+
+                <UnreadBell count={unreadCount} />
               </div>
 
-              {/* Sino com badge */}
-              <UnreadBell count={unreadCount} />
-            </div>
-
-            <Separator className="my-4" />
-
-            <nav className="grid gap-1">
-              <NavItem href="/admin" label="Dashboard" icon={LayoutDashboard} />
-              <NavItem href="/admin/orders" label="Pedidos" icon={ShoppingBag} />
-              <NavItem href="/admin/products" label="Produtos" icon={Boxes} />
-              <NavItem href="/admin/categories" label="Categorias" icon={Tags} />
-              <NavItem href="/admin/coupons" label="Cupons" icon={TicketPercent} />
-              <NavItem href="/admin/inbox" label="Inbox" icon={Bell} rightBadge={badge} />
-              <NavItem href="/admin/bb-funds" label="Saldo BB" icon={Landmark} />
-              <NavItem href="/admin/home-banners" label="Banners Home" icon={Images} />
-              <NavItem href="/admin/security" label="Segurança" icon={ShieldCheck} />
-              <NavItem href="/admin/training-videos" label="Vídeos" icon={Clapperboard} />
-              <NavItem href="/admin/quantity-discounts" label="Promoções por quantidade" icon={Layers3} />
-              <NavItem href="/admin/beneficiaries" label="Beneficiários" icon={HeartHandshake} />
-              <NavItem href="/admin/product-comments" label="Comentários" icon={MessageSquareText} />
-            </nav>
-
-            <div className="mt-6">
               <Separator className="my-4" />
-              <Button variant="outline" className="w-full rounded-xl" onClick={logout}>
-                <LogOut className="mr-2 h-4 w-4" />
-                Sair
-              </Button>
-            </div>
-          </aside>
 
-          {/* Main */}
-          <main className="p-6">
-            <div className="mx-auto w-full max-w-6xl">{children}</div>
-          </main>
-        </div>
+              <nav className="grid gap-1">
+                <NavItem href="/admin" label="Dashboard" icon={LayoutDashboard} />
+                <NavItem href="/admin/orders" label="Pedidos" icon={ShoppingBag} />
+                <NavItem href="/admin/products" label="Produtos" icon={Boxes} />
+                <NavItem href="/admin/categories" label="Categorias" icon={Tags} />
+                <NavItem href="/admin/coupons" label="Cupons" icon={TicketPercent} />
+                <NavItem href="/admin/inbox" label="Inbox" icon={Bell} rightBadge={badge} />
+                <NavItem href="/admin/bb-funds" label="Saldo BB" icon={Landmark} />
+                <NavItem href="/admin/home-banners" label="Banners Home" icon={Images} />
+                <NavItem href="/admin/security" label="Segurança" icon={ShieldCheck} />
+                <NavItem href="/admin/training-videos" label="Vídeos" icon={Clapperboard} />
+                <NavItem href="/admin/broadcasts" label="Broadcasts" icon={Megaphone} />
+                <NavItem
+                  href="/admin/quantity-discounts"
+                  label="Promoções por quantidade"
+                  icon={Layers3}
+                />
+                <NavItem
+                  href="/admin/beneficiaries"
+                  label="Beneficiários"
+                  icon={HeartHandshake}
+                />
+                <NavItem
+                  href="/admin/product-comments"
+                  label="Comentários"
+                  icon={MessageSquareText}
+                />
+              </nav>
+
+              <div className="mt-6">
+                <Separator className="my-4" />
+                <Button variant="outline" className="w-full rounded-xl" onClick={logout}>
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Sair
+                </Button>
+              </div>
+            </aside>
+
+            <main className="p-6">
+              <div className="mx-auto w-full max-w-6xl">{children}</div>
+            </main>
+          </div>
+        )}
       </div>
 
       <Toaster richColors />
