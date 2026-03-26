@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -59,8 +59,11 @@ type PendingSellersResponse = {
 type UnreadCountResponse = {
   count: number;
 };
+type ReadAllNotificationsVars = {
+  silent?: boolean;
+};
 
-async function readAllNotifications() {
+async function readAllNotifications(_vars?: ReadAllNotificationsVars) {
   await api.post(endpoints.adminInbox.readAll);
 }
 
@@ -90,13 +93,16 @@ function restoreUnread(qc: any, snapshot: any) {
 }
 
 function removeSellerFromCache(qc: any, sellerId: string) {
-  qc.setQueryData(["admin-pending-sellers"], (old: PendingSellersResponse | undefined) => {
-    if (!old?.items) return old;
-    return {
-      ...old,
-      items: old.items.filter((item) => item.id !== sellerId),
-    };
-  });
+  qc.setQueryData(
+    ["admin-pending-sellers"],
+    (old: PendingSellersResponse | undefined) => {
+      if (!old?.items) return old;
+      return {
+        ...old,
+        items: old.items.filter((item) => item.id !== sellerId),
+      };
+    }
+  );
 }
 
 function restorePendingSellers(qc: any, snapshot: any) {
@@ -165,6 +171,7 @@ function EmptyState({
 
 export default function AdminInboxPage() {
   const qc = useQueryClient();
+  const autoReadTriggeredRef = useRef(false);
 
   const unread = useQuery({
     queryKey: ["admin-unread-count"],
@@ -194,28 +201,33 @@ export default function AdminInboxPage() {
     await Promise.all([unread.refetch(), sellers.refetch()]);
   };
 
-  const readAllM = useMutation({
-    mutationFn: readAllNotifications,
-    onMutate: async () => {
-      const prevUnread = qc.getQueryData(["admin-unread-count"]);
-      qc.setQueryData(["admin-unread-count"], { count: 0 });
-      return { prevUnread };
-    },
-    onSuccess: async () => {
-      toast.success("Notificações marcadas como lidas.");
+const readAllM = useMutation({
+  mutationFn: (vars?: ReadAllNotificationsVars) => readAllNotifications(vars),
 
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["admin-unread-count"] }),
-        qc.invalidateQueries({ queryKey: ["admin-pending-sellers"] }),
-      ]);
-    },
-    onError: (err, _vars, ctx) => {
-      if (ctx?.prevUnread) {
-        qc.setQueryData(["admin-unread-count"], ctx.prevUnread);
-      }
-      toast.error(apiErrorMessage(err, "Falha ao marcar como lidas."));
-    },
-  });
+  onMutate: async () => {
+    const prevUnread = qc.getQueryData(["admin-unread-count"]);
+    qc.setQueryData(["admin-unread-count"], { count: 0 });
+    return { prevUnread };
+  },
+
+  onSuccess: async (_data, variables) => {
+    if (!variables?.silent) {
+      toast.success("Notificações marcadas como lidas.");
+    }
+
+    await Promise.all([
+      qc.invalidateQueries({ queryKey: ["admin-unread-count"] }),
+      qc.invalidateQueries({ queryKey: ["admin-pending-sellers"] }),
+    ]);
+  },
+
+  onError: (err, _vars, ctx) => {
+    if (ctx?.prevUnread) {
+      qc.setQueryData(["admin-unread-count"], ctx.prevUnread);
+    }
+    toast.error(apiErrorMessage(err, "Falha ao marcar como lidas."));
+  },
+});
 
   const approveSeller = useMutation({
     mutationFn: async (vars: { sellerId: string; notificationId?: string | null }) =>
@@ -299,6 +311,16 @@ export default function AdminInboxPage() {
     },
   });
 
+  useEffect(() => {
+    if (autoReadTriggeredRef.current) return;
+    if (unread.isLoading) return;
+    if (readAllM.isPending) return;
+    if (unreadCount <= 0) return;
+
+    autoReadTriggeredRef.current = true;
+    readAllM.mutate({ silent: true });
+  }, [unread.isLoading, unreadCount, readAllM]);
+
   const actingSellerId =
     (approveSeller.variables as { sellerId?: string } | undefined)?.sellerId ??
     (rejectSeller.variables as { sellerId?: string } | undefined)?.sellerId ??
@@ -330,8 +352,8 @@ export default function AdminInboxPage() {
 
           <CardContent className="space-y-4">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-              Sempre que um vendedor solicitar acesso, a solicitação aparece aqui para
-              análise. Ao aprovar ou recusar, o item já some da lista.
+              Ao entrar nesta tela, as notificações são marcadas como lidas
+              automaticamente. O botão abaixo continua disponível como redundância.
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -350,7 +372,7 @@ export default function AdminInboxPage() {
               <Button
                 variant="outline"
                 className="h-11 rounded-xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                onClick={() => readAllM.mutate()}
+                onClick={() => readAllM.mutate({ silent: false })}
                 disabled={readAllM.isPending || unreadCount === 0}
               >
                 {readAllM.isPending ? (

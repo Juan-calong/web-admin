@@ -87,6 +87,13 @@ export const endpoints = {
     rejectPayout: (id: string) => `/admin/payouts/${id}/reject`,
   },
 
+  adminCommentNotifications: {
+    list: "/admin/product-comments/notifications",
+    unreadCount: "/admin/product-comments/notifications/unread-count",
+    readOne: (id: string) => `/admin/product-comments/notifications/${id}/read`,
+    readAll: "/admin/product-comments/notifications/read-all",
+  },
+
   adminSecurity: {
     sellers: "/admin/users/sellers",
     salons: "/admin/users/salons",
@@ -164,17 +171,17 @@ export const endpoints = {
     disable: (id: string) => `/admin/quantity-discount-groups/${id}/disable`,
   },
 
-adminBroadcasts: {
-  list: "/admin/broadcasts",
-  byId: (id: string) => `/admin/broadcasts/${id}`,
-  create: "/admin/broadcasts",
-  publish: (id: string) => `/admin/broadcasts/${id}/publish`,
-},
+  adminBroadcasts: {
+    list: "/admin/broadcasts",
+    byId: (id: string) => `/admin/broadcasts/${id}`,
+    create: "/admin/broadcasts",
+    publish: (id: string) => `/admin/broadcasts/${id}/publish`,
+  },
 
-notifications: {
-  me: "/notifications/me",
-  unreadCount: "/notifications/me/unread-count",
-  readOne: (id: string) => `/notifications/me/${id}/read`,
-  readAll: "/notifications/me/read-all",
-},
+  notifications: {
+    me: "/notifications/me",
+    unreadCount: "/notifications/me/unread-count",
+    readOne: (id: string) => `/notifications/me/${id}/read`,
+    readAll: "/notifications/me/read-all",
+  },
 } as const;

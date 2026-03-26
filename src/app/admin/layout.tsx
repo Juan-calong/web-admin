@@ -75,9 +75,24 @@ function NavItem({
   );
 }
 
-async function fetchUnreadCount() {
+async function fetchInboxUnreadCount() {
   const { data } = await api.get(endpoints.adminInbox.unreadCount);
   return data as { count: number };
+}
+
+async function fetchCommentUnreadCount() {
+  const { data } = await api.get(endpoints.adminCommentNotifications.unreadCount);
+  return data as { count: number };
+}
+
+function CountBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+
+  return (
+    <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] leading-none text-white">
+      {count}
+    </span>
+  );
 }
 
 function UnreadBell({ count }: { count: number }) {
@@ -117,21 +132,26 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }
 
-  const unread = useQuery({
+  const inboxUnread = useQuery({
     queryKey: ["admin-unread-count"],
-    queryFn: fetchUnreadCount,
+    queryFn: fetchInboxUnreadCount,
     refetchInterval: 10000,
     refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 5000,
   });
 
-  const unreadCount = unread.data?.count ?? 0;
+  const commentUnread = useQuery({
+    queryKey: ["admin-comment-unread-count"],
+    queryFn: fetchCommentUnreadCount,
+    refetchInterval: 10000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 5000,
+  });
 
-  const badge =
-    unreadCount > 0 ? (
-      <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] leading-none text-white">
-        {unreadCount}
-      </span>
-    ) : null;
+  const inboxUnreadCount = inboxUnread.data?.count ?? 0;
+  const commentUnreadCount = commentUnread.data?.count ?? 0;
 
   return (
     <AuthGuard>
@@ -149,7 +169,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   </div>
                 </div>
 
-                <UnreadBell count={unreadCount} />
+                <UnreadBell count={inboxUnreadCount} />
               </div>
 
               <Separator className="my-4" />
@@ -160,7 +180,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 <NavItem href="/admin/products" label="Produtos" icon={Boxes} />
                 <NavItem href="/admin/categories" label="Categorias" icon={Tags} />
                 <NavItem href="/admin/coupons" label="Cupons" icon={TicketPercent} />
-                <NavItem href="/admin/inbox" label="Inbox" icon={Bell} rightBadge={badge} />
+                <NavItem
+                  href="/admin/inbox"
+                  label="Inbox"
+                  icon={Bell}
+                  rightBadge={<CountBadge count={inboxUnreadCount} />}
+                />
                 <NavItem href="/admin/bb-funds" label="Saldo BB" icon={Landmark} />
                 <NavItem href="/admin/home-banners" label="Banners Home" icon={Images} />
                 <NavItem href="/admin/security" label="Segurança" icon={ShieldCheck} />
@@ -180,6 +205,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   href="/admin/product-comments"
                   label="Comentários"
                   icon={MessageSquareText}
+                  rightBadge={<CountBadge count={commentUnreadCount} />}
                 />
               </nav>
 

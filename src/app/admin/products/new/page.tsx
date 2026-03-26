@@ -59,10 +59,15 @@ type NewDraft = {
   categoryIds: string[];
   catSearch: string;
   audience: ProductAudience;
-  brand: string;
+   brand: string;
   line: string;
   volume: string;
   effect: string;
+  weightKg: string;
+  heightCm: string;
+  widthCm: string;
+  lengthCm: string;
+  packageVolumes: string;
   videoTitle: string;
   videoDescription: string;
   videoSortOrder: string;
@@ -87,6 +92,10 @@ function parseHighlights(text: string) {
     .filter(Boolean)
     .slice(0, 10)
     .map((s) => s.slice(0, 60));
+}
+
+function normalizeDecimalInput(value: string) {
+  return String(value ?? "").trim().replace(",", ".");
 }
 
 function toggleCategoryId(id: string, prev: string[]) {
@@ -172,6 +181,12 @@ export default function NewProductPage() {
   const [volume, setVolume] = useState("");
   const [effect, setEffect] = useState("");
 
+  const [weightKg, setWeightKg] = useState("");
+  const [heightCm, setHeightCm] = useState("");
+  const [widthCm, setWidthCm] = useState("");
+  const [lengthCm, setLengthCm] = useState("");
+  const [packageVolumes, setPackageVolumes] = useState("1");
+
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoTitle, setVideoTitle] = useState("");
   const [videoDescription, setVideoDescription] = useState("");
@@ -202,6 +217,11 @@ export default function NewProductPage() {
       setLine(draft.line ?? "");
       setVolume(draft.volume ?? "");
       setEffect(draft.effect ?? "");
+      setWeightKg(draft.weightKg ?? "");
+      setHeightCm(draft.heightCm ?? "");
+      setWidthCm(draft.widthCm ?? "");
+      setLengthCm(draft.lengthCm ?? "");
+      setPackageVolumes(draft.packageVolumes ?? "1");
       setVideoTitle(draft.videoTitle ?? "");
       setVideoDescription(draft.videoDescription ?? "");
       setVideoSortOrder(draft.videoSortOrder ?? "0");
@@ -236,6 +256,11 @@ export default function NewProductPage() {
           line,
           volume,
           effect,
+          weightKg,
+          heightCm,
+          widthCm,
+          lengthCm,
+          packageVolumes,
           videoTitle,
           videoDescription,
           videoSortOrder,
@@ -262,6 +287,11 @@ export default function NewProductPage() {
     line,
     volume,
     effect,
+    weightKg,
+    heightCm,
+    widthCm,
+    lengthCm,
+    packageVolumes,
     videoTitle,
     videoDescription,
     videoSortOrder,
@@ -449,8 +479,18 @@ export default function NewProductPage() {
     mutationFn: async () => {
       const skuN = sku.trim();
       const nameN = name.trim();
-      const priceN = price.trim().replace(",", ".");
-      const customerPriceN = customerPrice.trim().replace(",", ".");
+      const priceN = normalizeDecimalInput(price);
+      const customerPriceN = normalizeDecimalInput(customerPrice);
+
+      const weightKgN = normalizeDecimalInput(weightKg);
+      const heightCmN = normalizeDecimalInput(heightCm);
+      const widthCmN = normalizeDecimalInput(widthCm);
+      const lengthCmN = normalizeDecimalInput(lengthCm);
+
+      const packageVolumesRaw = String(packageVolumes ?? "").trim();
+      const packageVolumesN = packageVolumesRaw
+        ? Math.max(1, Math.trunc(Number(packageVolumesRaw)))
+        : 1;
 
       if (!skuN) throw new Error("SKU é obrigatório.");
       if (!nameN) throw new Error("Nome é obrigatório.");
@@ -458,7 +498,7 @@ export default function NewProductPage() {
 
       const stockSafe = Number.isFinite(stock) ? Math.max(0, Math.trunc(stock)) : 0;
 
-      const payload: {
+        const payload: {
         sku: string;
         name: string;
         price: string;
@@ -474,6 +514,11 @@ export default function NewProductPage() {
         line?: string | null;
         volume?: string | null;
         effect?: string | null;
+        weightKg?: string | null;
+        heightCm?: string | null;
+        widthCm?: string | null;
+        lengthCm?: string | null;
+        packageVolumes: number;
       } = {
         sku: skuN,
         name: nameN,
@@ -490,6 +535,11 @@ export default function NewProductPage() {
         line: line.trim() ? line.trim() : null,
         volume: volume.trim() ? volume.trim() : null,
         effect: effect.trim() ? effect.trim() : null,
+        weightKg: weightKgN ? weightKgN : null,
+        heightCm: heightCmN ? heightCmN : null,
+        widthCm: widthCmN ? widthCmN : null,
+        lengthCm: lengthCmN ? lengthCmN : null,
+        packageVolumes: Number.isFinite(packageVolumesN) ? packageVolumesN : 1,
       };
 
       const desc = description.trim();
@@ -647,6 +697,92 @@ export default function NewProductPage() {
                       maxLength={20}
                     />
                     <FieldHint>Texto curto. Máx. 20 caracteres.</FieldHint>
+                  </div>
+
+                                    <div className="xl:col-span-4 rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="mb-4">
+                      <div className="text-sm font-semibold text-slate-900">
+                        Logística / Embalagem
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Esses dados serão usados para cálculo de frete e volumes.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-slate-800">
+                          Peso (kg)
+                        </Label>
+                        <Input
+                          className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                          value={weightKg}
+                          onChange={(e) => setWeightKg(e.target.value)}
+                          placeholder="Ex: 1.250"
+                          inputMode="decimal"
+                        />
+                        <FieldHint>Até 3 casas decimais.</FieldHint>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-slate-800">
+                          Altura (cm)
+                        </Label>
+                        <Input
+                          className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                          value={heightCm}
+                          onChange={(e) => setHeightCm(e.target.value)}
+                          placeholder="Ex: 20.50"
+                          inputMode="decimal"
+                        />
+                        <FieldHint>Medida da embalagem.</FieldHint>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-slate-800">
+                          Largura (cm)
+                        </Label>
+                        <Input
+                          className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                          value={widthCm}
+                          onChange={(e) => setWidthCm(e.target.value)}
+                          placeholder="Ex: 10.00"
+                          inputMode="decimal"
+                        />
+                        <FieldHint>Medida da embalagem.</FieldHint>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-slate-800">
+                          Comprimento (cm)
+                        </Label>
+                        <Input
+                          className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                          value={lengthCm}
+                          onChange={(e) => setLengthCm(e.target.value)}
+                          placeholder="Ex: 5.25"
+                          inputMode="decimal"
+                        />
+                        <FieldHint>Medida da embalagem.</FieldHint>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-slate-800">
+                          Volumes
+                        </Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          step={1}
+                          className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                          value={packageVolumes}
+                          onChange={(e) => setPackageVolumes(e.target.value)}
+                          placeholder="1"
+                          inputMode="numeric"
+                        />
+                        <FieldHint>Quantidade de volumes físicos.</FieldHint>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="space-y-2 xl:col-span-2">

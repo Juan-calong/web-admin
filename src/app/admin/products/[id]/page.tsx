@@ -91,6 +91,11 @@ type Product = {
   line?: string | null;
   volume?: string | null;
   effect?: string | null;
+  weightKg?: string | null;
+  heightCm?: string | null;
+  widthCm?: string | null;
+  lengthCm?: string | null;
+  packageVolumes?: number | null;
   images?: ProductImage[];
 };
 
@@ -132,6 +137,11 @@ type EditDraft = {
   line: string;
   volume: string;
   effect: string;
+  weightKg: string;
+  heightCm: string;
+  widthCm: string;
+  lengthCm: string;
+  packageVolumes: string;
   videoTitle: string;
   videoDescription: string;
   videoSortOrder: string;
@@ -413,7 +423,11 @@ export default function EditProductPage() {
 
   const [volume, setVolume] = useState("");
   const [effect, setEffect] = useState("");
-
+  const [weightKg, setWeightKg] = useState("");
+  const [heightCm, setHeightCm] = useState("");
+  const [widthCm, setWidthCm] = useState("");
+  const [lengthCm, setLengthCm] = useState("");
+  const [packageVolumes, setPackageVolumes] = useState("1");
   const product = productQ.data ?? null;
 
   useEffect(() => {
@@ -438,6 +452,11 @@ export default function EditProductPage() {
       setLine(draft.line ?? "");
       setVolume(draft.volume ?? "");
       setEffect(draft.effect ?? "");
+      setWeightKg(draft.weightKg ?? "");
+      setHeightCm(draft.heightCm ?? "");
+      setWidthCm(draft.widthCm ?? "");
+      setLengthCm(draft.lengthCm ?? "");
+      setPackageVolumes(draft.packageVolumes ?? "1");
       setVideoTitle(draft.videoTitle ?? "");
       setVideoDescription(draft.videoDescription ?? "");
       setVideoSortOrder(draft.videoSortOrder ?? "0");
@@ -457,6 +476,13 @@ export default function EditProductPage() {
     setLine(product.line ?? "");
     setVolume(product.volume ?? "");
     setEffect(product.effect ?? "");
+    setWeightKg(product.weightKg != null ? String(product.weightKg) : "");
+    setHeightCm(product.heightCm != null ? String(product.heightCm) : "");
+    setWidthCm(product.widthCm != null ? String(product.widthCm) : "");
+    setLengthCm(product.lengthCm != null ? String(product.lengthCm) : "");
+    setPackageVolumes(
+      product.packageVolumes != null ? String(product.packageVolumes) : "1"
+    );
     setHighlightsText((product.highlights ?? []).join("\n"));
     setActive(!!product.active);
     setStock(Math.max(0, Number(product.stock ?? 0)));
@@ -518,6 +544,11 @@ export default function EditProductPage() {
           line,
           volume,
           effect,
+          weightKg,
+          heightCm,
+          widthCm,
+          lengthCm,
+          packageVolumes,
           videoTitle,
           videoDescription,
           videoSortOrder,
@@ -544,6 +575,11 @@ export default function EditProductPage() {
     line,
     volume,
     effect,
+    weightKg,
+    heightCm,
+    widthCm,
+    lengthCm,
+    packageVolumes,
     videoTitle,
     videoDescription,
     videoSortOrder,
@@ -568,6 +604,14 @@ export default function EditProductPage() {
 
       const priceSan = normalizeMoney(price);
       const priceNum = parseNumberBR(priceSan);
+      const weightKgSan = weightKg.trim() ? normalizeMoney(weightKg) : null;
+      const heightCmSan = heightCm.trim() ? normalizeMoney(heightCm) : null;
+      const widthCmSan = widthCm.trim() ? normalizeMoney(widthCm) : null;
+      const lengthCmSan = lengthCm.trim() ? normalizeMoney(lengthCm) : null;
+
+      const packageVolumesNum = packageVolumes.trim()
+        ? Math.max(1, Math.trunc(Number(packageVolumes)))
+        : 1;
 
       if (!Number.isFinite(priceNum) || priceNum <= 0) {
         throw new Error("Preço inválido. Use um valor maior que 0 (ex.: 59,90).");
@@ -592,6 +636,12 @@ export default function EditProductPage() {
         line: line.trim() ? line.trim() : null,
         volume: volume.trim() ? volume.trim() : null,
         effect: effect.trim() ? effect.trim() : null,
+
+        weightKg: weightKgSan,
+        heightCm: heightCmSan,
+        widthCm: widthCmSan,
+        lengthCm: lengthCmSan,
+        packageVolumes: Number.isFinite(packageVolumesNum) ? packageVolumesNum : 1,
       };
 
       const idem = await idemKey(`product-update:${id}`, payload);
@@ -1303,6 +1353,85 @@ export default function EditProductPage() {
                   </div>
                 </div>
               </div>
+
+                            <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+                <div className="mb-3">
+                  <div className="text-sm font-semibold text-slate-900">
+                    Logística / Embalagem
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Usado para frete, volume físico e futuras integrações de transporte.
+                  </div>
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                  <div className="grid gap-2">
+                    <Label>Peso (kg)</Label>
+                    <Input
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={weightKg}
+                      onChange={(e) => setWeightKg(sanitizeMoneyInput(e.target.value))}
+                      placeholder="Ex.: 1,250"
+                      inputMode="decimal"
+                    />
+                    <div className="text-xs text-slate-500">Até 3 casas decimais.</div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Altura (cm)</Label>
+                    <Input
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={heightCm}
+                      onChange={(e) => setHeightCm(sanitizeMoneyInput(e.target.value))}
+                      placeholder="Ex.: 20,50"
+                      inputMode="decimal"
+                    />
+                    <div className="text-xs text-slate-500">Medida da embalagem.</div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Largura (cm)</Label>
+                    <Input
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={widthCm}
+                      onChange={(e) => setWidthCm(sanitizeMoneyInput(e.target.value))}
+                      placeholder="Ex.: 10,00"
+                      inputMode="decimal"
+                    />
+                    <div className="text-xs text-slate-500">Medida da embalagem.</div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Comprimento (cm)</Label>
+                    <Input
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={lengthCm}
+                      onChange={(e) => setLengthCm(sanitizeMoneyInput(e.target.value))}
+                      placeholder="Ex.: 5,25"
+                      inputMode="decimal"
+                    />
+                    <div className="text-xs text-slate-500">Medida da embalagem.</div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label>Volumes</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      className="h-11 rounded-2xl border-slate-200 bg-white"
+                      value={packageVolumes}
+                      onChange={(e) => setPackageVolumes(sanitizeIntInput(e.target.value))}
+                      placeholder="1"
+                      inputMode="numeric"
+                    />
+                    <div className="text-xs text-slate-500">
+                      Quantidade de volumes físicos.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
 
               <div className="grid gap-4 lg:grid-cols-2">
                 <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
@@ -2243,6 +2372,29 @@ export default function EditProductPage() {
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-slate-500">Estoque</span>
                         <span className="font-semibold text-slate-900">{stock}</span>
+                      </div>
+
+                                            <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Peso</span>
+                        <span className="font-semibold text-slate-900">
+                          {weightKg ? `${weightKg} kg` : "—"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Dimensões</span>
+                        <span className="font-semibold text-right text-slate-900">
+                          {heightCm && widthCm && lengthCm
+                            ? `${heightCm} × ${widthCm} × ${lengthCm} cm`
+                            : "—"}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Volumes</span>
+                        <span className="font-semibold text-slate-900">
+                          {packageVolumes || "1"}
+                        </span>
                       </div>
 
                       <div className="flex items-center justify-between gap-3">
