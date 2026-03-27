@@ -30,7 +30,6 @@ import {
   CheckCircle2,
   Package2,
   Video,
-  Plus,
 } from "lucide-react";
 
 type Category = {
@@ -51,23 +50,32 @@ type NewDraft = {
   name: string;
   price: string;
   customerPrice: string;
+
   description: string;
+  fullDescription: string;
+
   highlightsText: string;
+  effectsText: string;
+  benefitsText: string;
+  howToUseText: string;
+
   stock: number;
   active: boolean;
   categoryId: string;
   categoryIds: string[];
   catSearch: string;
   audience: ProductAudience;
-   brand: string;
+
+  brand: string;
   line: string;
   volume: string;
-  effect: string;
+
   weightKg: string;
   heightCm: string;
   widthCm: string;
   lengthCm: string;
   packageVolumes: string;
+
   videoTitle: string;
   videoDescription: string;
   videoSortOrder: string;
@@ -92,6 +100,13 @@ function parseHighlights(text: string) {
     .filter(Boolean)
     .slice(0, 10)
     .map((s) => s.slice(0, 60));
+}
+
+function parseStringList(text: string) {
+  return String(text ?? "")
+    .split(/\r?\n|;/g)
+    .map((s) => s.replace(/^\s*[-•\d.)]+\s*/, "").trim())
+    .filter(Boolean);
 }
 
 function normalizeDecimalInput(value: string) {
@@ -161,8 +176,15 @@ export default function NewProductPage() {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [customerPrice, setCustomerPrice] = useState("");
+
   const [description, setDescription] = useState("");
+  const [fullDescription, setFullDescription] = useState("");
+
   const [highlightsText, setHighlightsText] = useState("");
+  const [effectsText, setEffectsText] = useState("");
+  const [benefitsText, setBenefitsText] = useState("");
+  const [howToUseText, setHowToUseText] = useState("");
+
   const [stock, setStock] = useState<number>(0);
   const [active, setActive] = useState(true);
 
@@ -175,11 +197,10 @@ export default function NewProductPage() {
 
   const [files, setFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+
   const [brand, setBrand] = useState("");
   const [line, setLine] = useState("");
-
   const [volume, setVolume] = useState("");
-  const [effect, setEffect] = useState("");
 
   const [weightKg, setWeightKg] = useState("");
   const [heightCm, setHeightCm] = useState("");
@@ -203,8 +224,15 @@ export default function NewProductPage() {
       setName(draft.name ?? "");
       setPrice(draft.price ?? "");
       setCustomerPrice(draft.customerPrice ?? "");
+
       setDescription(draft.description ?? "");
+      setFullDescription(draft.fullDescription ?? "");
+
       setHighlightsText(draft.highlightsText ?? "");
+      setEffectsText(draft.effectsText ?? "");
+      setBenefitsText(draft.benefitsText ?? "");
+      setHowToUseText(draft.howToUseText ?? "");
+
       setStock(
         Number.isFinite(Number(draft.stock)) ? Math.max(0, Number(draft.stock)) : 0
       );
@@ -213,15 +241,17 @@ export default function NewProductPage() {
       setCategoryIds(Array.isArray(draft.categoryIds) ? draft.categoryIds : []);
       setCatSearch(draft.catSearch ?? "");
       setAudience(draft.audience ?? "ALL");
+
       setBrand(draft.brand ?? "");
       setLine(draft.line ?? "");
       setVolume(draft.volume ?? "");
-      setEffect(draft.effect ?? "");
+
       setWeightKg(draft.weightKg ?? "");
       setHeightCm(draft.heightCm ?? "");
       setWidthCm(draft.widthCm ?? "");
       setLengthCm(draft.lengthCm ?? "");
       setPackageVolumes(draft.packageVolumes ?? "1");
+
       setVideoTitle(draft.videoTitle ?? "");
       setVideoDescription(draft.videoDescription ?? "");
       setVideoSortOrder(draft.videoSortOrder ?? "0");
@@ -244,23 +274,32 @@ export default function NewProductPage() {
           name,
           price,
           customerPrice,
+
           description,
+          fullDescription,
+
           highlightsText,
+          effectsText,
+          benefitsText,
+          howToUseText,
+
           stock,
           active,
           categoryId,
           categoryIds,
           catSearch,
           audience,
+
           brand,
           line,
           volume,
-          effect,
+
           weightKg,
           heightCm,
           widthCm,
           lengthCm,
           packageVolumes,
+
           videoTitle,
           videoDescription,
           videoSortOrder,
@@ -275,23 +314,32 @@ export default function NewProductPage() {
     name,
     price,
     customerPrice,
+
     description,
+    fullDescription,
+
     highlightsText,
+    effectsText,
+    benefitsText,
+    howToUseText,
+
     stock,
     active,
     categoryId,
     categoryIds,
     catSearch,
     audience,
+
     brand,
     line,
     volume,
-    effect,
+
     weightKg,
     heightCm,
     widthCm,
     lengthCm,
     packageVolumes,
+
     videoTitle,
     videoDescription,
     videoSortOrder,
@@ -453,9 +501,9 @@ export default function NewProductPage() {
   }, [categories, categoryId]);
 
   const categoriesById = useMemo(() => {
-    const m = new Map<string, Category>();
-    for (const c of categories) m.set(c.id, c);
-    return m;
+    const map = new Map<string, Category>();
+    for (const c of categories) map.set(c.id, c);
+    return map;
   }, [categories]);
 
   const selectedExtraCategories = useMemo(() => {
@@ -474,6 +522,12 @@ export default function NewProductPage() {
   }, [categories, categoryId, catSearch]);
 
   const highlightItems = useMemo(() => parseHighlights(highlightsText), [highlightsText]);
+  const effectsItems = useMemo(() => parseStringList(effectsText), [effectsText]);
+  const benefitsItems = useMemo(() => parseStringList(benefitsText), [benefitsText]);
+  const howToUseItems = useMemo(() => parseStringList(howToUseText), [howToUseText]);
+
+  const pricePreview = price ? `R$ ${price}` : "—";
+  const customerPricePreview = customerPrice ? `R$ ${customerPrice}` : "Usa preço padrão";
 
   const createM = useMutation({
     mutationFn: async () => {
@@ -498,7 +552,7 @@ export default function NewProductPage() {
 
       const stockSafe = Number.isFinite(stock) ? Math.max(0, Math.trunc(stock)) : 0;
 
-        const payload: {
+      const payload: {
         sku: string;
         name: string;
         price: string;
@@ -508,12 +562,19 @@ export default function NewProductPage() {
         categoryId: string | null;
         categoryIds: string[];
         audience: ProductAudience;
+
         description?: string;
+        fullDescription?: string;
+
         highlights?: string[];
+        effects?: string[];
+        benefits?: string[];
+        howToUse?: string[];
+
         brand?: string | null;
         line?: string | null;
         volume?: string | null;
-        effect?: string | null;
+
         weightKg?: string | null;
         heightCm?: string | null;
         widthCm?: string | null;
@@ -534,7 +595,6 @@ export default function NewProductPage() {
         brand: brand.trim() ? brand.trim() : null,
         line: line.trim() ? line.trim() : null,
         volume: volume.trim() ? volume.trim() : null,
-        effect: effect.trim() ? effect.trim() : null,
         weightKg: weightKgN ? weightKgN : null,
         heightCm: heightCmN ? heightCmN : null,
         widthCm: widthCmN ? widthCmN : null,
@@ -545,8 +605,20 @@ export default function NewProductPage() {
       const desc = description.trim();
       if (desc) payload.description = desc;
 
+      const fullDesc = fullDescription.trim();
+      if (fullDesc) payload.fullDescription = fullDesc;
+
       const highlights = parseHighlights(highlightsText);
       if (highlights.length) payload.highlights = highlights;
+
+      const effects = parseStringList(effectsText);
+      if (effects.length) payload.effects = effects;
+
+      const benefits = parseStringList(benefitsText);
+      if (benefits.length) payload.benefits = benefits;
+
+      const howToUse = parseStringList(howToUseText);
+      if (howToUse.length) payload.howToUse = howToUse;
 
       const createRes = await api.post(endpoints.products.create, payload, {
         headers: {
@@ -666,7 +738,9 @@ export default function NewProductPage() {
                   </div>
 
                   <div className="space-y-2 xl:col-span-2">
-                    <Label className="text-sm font-medium text-slate-800">Linha / Família</Label>
+                    <Label className="text-sm font-medium text-slate-800">
+                      Linha / Família
+                    </Label>
                     <Input
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
                       value={line}
@@ -688,18 +762,120 @@ export default function NewProductPage() {
                   </div>
 
                   <div className="space-y-2 xl:col-span-2">
-                    <Label className="text-sm font-medium text-slate-800">Efeito</Label>
+                    <Label className="text-sm font-medium text-slate-800">
+                      Estoque
+                    </Label>
                     <Input
+                      type="number"
+                      min={0}
+                      step={1}
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
-                      value={effect}
-                      onChange={(e) => setEffect(e.target.value)}
-                      placeholder="Ex: Brilho intenso"
-                      maxLength={20}
+                      value={String(stock)}
+                      onChange={(e) => setStock(Math.max(0, Number(e.target.value || 0)))}
+                      placeholder="0"
                     />
-                    <FieldHint>Texto curto. Máx. 20 caracteres.</FieldHint>
                   </div>
 
-                                    <div className="xl:col-span-4 rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Preço <span className="text-rose-500">*</span>
+                    </Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={price}
+                      onChange={(e) => setPrice(e.target.value)}
+                      placeholder="59.90"
+                      inputMode="decimal"
+                    />
+                    <FieldHint>Use o formato que seu backend espera.</FieldHint>
+                  </div>
+
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Preço cliente final <span className="text-slate-400">(opcional)</span>
+                    </Label>
+                    <Input
+                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
+                      value={customerPrice}
+                      onChange={(e) => setCustomerPrice(e.target.value)}
+                      placeholder="49.90"
+                      inputMode="decimal"
+                    />
+                    <FieldHint>Se vazio, cliente final usa o preço padrão.</FieldHint>
+                  </div>
+
+                  <div className="space-y-2 xl:col-span-4">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Descrição curta
+                    </Label>
+                    <Textarea
+                      className="min-h-[110px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Texto principal que o usuário verá primeiro."
+                    />
+                    <FieldHint>
+                      Essa será a primeira descrição exibida no app.
+                    </FieldHint>
+                  </div>
+
+                  <div className="space-y-2 xl:col-span-4">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Descrição completa
+                    </Label>
+                    <Textarea
+                      className="min-h-[150px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
+                      value={fullDescription}
+                      onChange={(e) => setFullDescription(e.target.value)}
+                      placeholder="Conteúdo mais detalhado para o accordion de descrição completa."
+                    />
+                    <FieldHint>
+                      Essa aparecerá quando o usuário abrir a descrição completa.
+                    </FieldHint>
+                  </div>
+
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Efeitos
+                    </Label>
+                    <Textarea
+                      className="min-h-[140px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
+                      value={effectsText}
+                      onChange={(e) => setEffectsText(e.target.value)}
+                      placeholder={"Um por linha\nBrilho intenso\nRedução de frizz"}
+                    />
+                    <FieldHint>Um item por linha.</FieldHint>
+                  </div>
+
+                  <div className="space-y-2 xl:col-span-2">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Principais benefícios
+                    </Label>
+                    <Textarea
+                      className="min-h-[140px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
+                      value={benefitsText}
+                      onChange={(e) => setBenefitsText(e.target.value)}
+                      placeholder={"Um por linha\nHidratação profunda\nMaciez"}
+                    />
+                    <FieldHint>Um item por linha.</FieldHint>
+                  </div>
+
+                  <div className="space-y-2 xl:col-span-4">
+                    <Label className="text-sm font-medium text-slate-800">
+                      Modo de uso
+                    </Label>
+                    <Textarea
+                      className="min-h-[150px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
+                      value={howToUseText}
+                      onChange={(e) => setHowToUseText(e.target.value)}
+                      placeholder={
+                        "Um passo por linha\nAplique nos cabelos úmidos\nMassageie\nEnxágue"
+                      }
+                    />
+                    <FieldHint>Um passo por linha.</FieldHint>
+                  </div>
+
+                  <div className="xl:col-span-4 rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
                     <div className="mb-4">
                       <div className="text-sm font-semibold text-slate-900">
                         Logística / Embalagem
@@ -735,7 +911,6 @@ export default function NewProductPage() {
                           placeholder="Ex: 20.50"
                           inputMode="decimal"
                         />
-                        <FieldHint>Medida da embalagem.</FieldHint>
                       </div>
 
                       <div className="space-y-2">
@@ -749,7 +924,6 @@ export default function NewProductPage() {
                           placeholder="Ex: 10.00"
                           inputMode="decimal"
                         />
-                        <FieldHint>Medida da embalagem.</FieldHint>
                       </div>
 
                       <div className="space-y-2">
@@ -763,7 +937,6 @@ export default function NewProductPage() {
                           placeholder="Ex: 5.25"
                           inputMode="decimal"
                         />
-                        <FieldHint>Medida da embalagem.</FieldHint>
                       </div>
 
                       <div className="space-y-2">
@@ -785,110 +958,82 @@ export default function NewProductPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2 xl:col-span-2">
+                  <div className="space-y-2 xl:col-span-4">
                     <Label className="text-sm font-medium text-slate-800">
-                      Preço <span className="text-rose-500">*</span>
+                      Imagens do produto <span className="text-slate-400">(opcional)</span>
                     </Label>
-                    <Input
-                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
-                      value={price}
-                      onChange={(e) => setPrice(e.target.value)}
-                      placeholder="R$ 59,90"
-                      inputMode="decimal"
-                    />
-                    <FieldHint>Use o formato que seu backend espera (ex.: 59.90).</FieldHint>
-                  </div>
 
-                  <div className="space-y-2 xl:col-span-2">
-                    <Label className="text-sm font-medium text-slate-800">
-                      Preço cliente final <span className="text-slate-400">(opcional)</span>
-                    </Label>
-                    <Input
-                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
-                      value={customerPrice}
-                      onChange={(e) => setCustomerPrice(e.target.value)}
-                      placeholder="R$ 49,90"
-                      inputMode="decimal"
-                    />
-                    <FieldHint>Se vazio, cliente final usa o preço padrão.</FieldHint>
-                  </div>
-                </div>
+                    <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 p-3">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <input
+                            id="product-image-input"
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            className="hidden"
+                            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+                          />
 
-                <div className="mt-5 space-y-2">
-                  <Label className="text-sm font-medium text-slate-800">Descrição</Label>
-                  <Textarea
-                    className="min-h-[108px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Ex: Shampoo enriquecido com queratina"
-                  />
-                </div>
+                          <Button
+                            type="button"
+                            className="h-11 rounded-2xl bg-[#e8f8f5] px-4 text-sm font-semibold text-[#16897d] hover:bg-[#d9f3ee]"
+                            variant="ghost"
+                            onClick={() =>
+                              document.getElementById("product-image-input")?.click()
+                            }
+                          >
+                            <Upload className="mr-2 h-4 w-4" />
+                            Enviar imagem
+                          </Button>
 
-                <div className="mt-6">
-                  <Label className="mb-3 block text-sm font-medium text-slate-800">
-                    Imagem do produto <span className="text-slate-400">(opcional)</span>
-                  </Label>
-
-                  <div className="rounded-[24px] border border-dashed border-slate-200 bg-slate-50/70 p-3">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex flex-wrap items-center gap-3">
-                        <input
-                          id="product-image-input"
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          className="hidden"
-                          onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-                        />
-
-                        <Button
-                          type="button"
-                          className="h-11 rounded-2xl bg-[#e8f8f5] px-4 text-sm font-semibold text-[#16897d] hover:bg-[#d9f3ee]"
-                          variant="ghost"
-                          onClick={() =>
-                            document.getElementById("product-image-input")?.click()
-                          }
-                        >
-                          <Upload className="mr-2 h-4 w-4" />
-                          Enviar imagem
-                        </Button>
-
-                        <span className="text-sm text-slate-500">
-                          Tamanho máximo: 5MB | Aceita JPG, PNG ou WEBP
-                        </span>
-                      </div>
-                    </div>
-
-                    {files.length > 0 ? (
-                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
-                        <div className="mb-2 text-xs font-medium text-slate-700">
-                          {files.length === 1
-                            ? files[0].name
-                            : `${files.length} imagens selecionadas`}
+                          <span className="text-sm text-slate-500">
+                            JPG, PNG ou WEBP
+                          </span>
                         </div>
-
-                        {previewUrls.length > 0 ? (
-                          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-                            {previewUrls.slice(0, 6).map((url, index) => (
-                              <div
-                                key={`${url}-${index}`}
-                                className="aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
-                              >
-                                <img
-                                  src={url}
-                                  alt={`Preview ${index + 1}`}
-                                  className="h-full w-full object-cover"
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        <p className="mt-2 text-[11px] text-slate-500">
-                          As imagens serão enviadas após criar. A primeira vira primária.
-                        </p>
                       </div>
-                    ) : null}
+
+                      {files.length > 0 ? (
+                        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
+                          <div className="mb-3 flex items-center justify-between gap-3">
+                            <div className="text-xs font-medium text-slate-700">
+                              {files.length === 1
+                                ? files[0].name
+                                : `${files.length} imagens selecionadas`}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => setFiles([])}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+
+                          {previewUrls.length > 0 ? (
+                            <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                              {previewUrls.slice(0, 6).map((url, index) => (
+                                <div
+                                  key={`${url}-${index}`}
+                                  className="aspect-square overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
+                                >
+                                  <img
+                                    src={url}
+                                    alt={`Preview ${index + 1}`}
+                                    className="h-full w-full object-cover"
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          <p className="mt-2 text-[11px] text-slate-500">
+                            As imagens serão enviadas após criar. A primeira vira primária.
+                          </p>
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -950,7 +1095,6 @@ export default function NewProductPage() {
                       onChange={(e) => setVideoThumbnailUrl(e.target.value)}
                       placeholder="https://..."
                     />
-                    <FieldHint>Se vazio, depois você pode ajustar no editar.</FieldHint>
                   </div>
 
                   <label className="flex h-12 min-w-[150px] items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800">
@@ -1003,11 +1147,21 @@ export default function NewProductPage() {
                     </div>
 
                     {videoFile ? (
-                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
-                        <span className="font-medium text-slate-700">{videoFile.name}</span>
-                        <span className="ml-2 text-slate-400">
-                          • {Math.round(videoFile.size / 1024)} KB
-                        </span>
+                      <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-sm text-slate-600">
+                        <div>
+                          <span className="font-medium text-slate-700">{videoFile.name}</span>
+                          <span className="ml-2 text-slate-400">
+                            • {Math.round(videoFile.size / 1024)} KB
+                          </span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setVideoFile(null)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-50"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
                       </div>
                     ) : null}
                   </div>
@@ -1017,141 +1171,140 @@ export default function NewProductPage() {
 
                 <Separator className="my-7" />
 
-                <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_220px]">
+                <div className="grid gap-6 xl:grid-cols-2">
                   <div>
                     <div className="mb-2 flex items-center gap-3">
                       <Label className="text-sm font-medium text-slate-800">
                         Destaques (1 por linha)
                       </Label>
-                      <span className="text-sm text-slate-400">Máx. 10 itens</span>
+                      <span className="text-sm text-slate-400">Máx. 10</span>
                     </div>
 
                     <Textarea
-                      className="min-h-[110px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
+                      className="min-h-[180px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
                       value={highlightsText}
                       onChange={(e) => setHighlightsText(e.target.value)}
-                      placeholder={`Ex:\nBrilho\nHidratação\nReconstrução`}
+                      placeholder={"Um destaque por linha\nSem sal\nUso profissional"}
                     />
-
-                    <p className="mt-2 text-xs text-slate-500">
-                      Máx: 10 itens • 60 caracteres por linha.
-                    </p>
-
-                    {highlightItems.length > 0 ? (
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {highlightItems.map((item, index) => (
-                          <div
-                            key={`${item}-${index}`}
-                            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-700"
-                          >
-                            {item}
-                          </div>
-                        ))}
-                        <div className="inline-flex items-center gap-2 rounded-2xl border border-dashed border-teal-200 bg-white px-4 py-2 text-sm font-medium text-teal-700">
-                          <Plus className="h-4 w-4" />
-                          Preview
-                        </div>
-                      </div>
-                    ) : null}
                   </div>
 
-                  <div className="xl:border-l xl:border-slate-200 xl:pl-6">
-                    <Label className="mb-2 block text-sm font-medium text-slate-800">
-                      Estoque
-                    </Label>
-                    <Input
-                      type="number"
-                      min={0}
-                      className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none"
-                      value={stock}
-                      onChange={(e) => {
-                        const n = Number(e.target.value);
-                        setStock(Number.isFinite(n) ? Math.max(0, n) : 0);
-                      }}
-                    />
+                  <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="mb-3 text-sm font-semibold text-slate-900">
+                      Prévia dos destaques
+                    </div>
+
+                    {highlightItems.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {highlightItems.map((item, index) => (
+                          <span
+                            key={`${item}-${index}`}
+                            className="inline-flex rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-700"
+                          >
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-500">
+                        Os destaques digitados aparecerão aqui.
+                      </p>
+                    )}
                   </div>
                 </div>
               </CardContent>
             </Card>
           </div>
 
-          <div className="space-y-6 xl:sticky xl:top-6 self-start">
+          <div className="space-y-6">
             <Card className="rounded-[30px] border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
               <CardContent className="p-5">
-                <div className="mb-5 text-[18px] font-semibold text-slate-900">Status</div>
-
-                <div className="space-y-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setActive((v) => !v)}
-                      className="flex flex-1 items-start gap-3 rounded-2xl text-left transition hover:bg-slate-50/80"
-                    >
-                      <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                      </div>
-
-                      <div className="space-y-1">
-                        <p className="text-[15px] font-semibold text-slate-900">Produto</p>
-                        <p className="text-sm leading-5 text-slate-500">
-                          Aparece como ativo no catálogo.
-                        </p>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setActive((v) => !v)}
-                      className={[
-                        "shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.03em] transition",
-                        active
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-slate-200 bg-slate-100 text-slate-600",
-                      ].join(" ")}
-                    >
-                      {active ? "ATIVO" : "INATIVO"}
-                    </button>
-                  </div>
-
-                  <div className="flex items-start justify-between gap-4">
-                    <button
-                      type="button"
-                      onClick={() => setAudience((v) => (v === "ALL" ? "STAFF_ONLY" : "ALL"))}
-                      className="flex flex-1 items-start gap-3 rounded-2xl text-left transition hover:bg-slate-50/80"
-                    >
-                      <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-emerald-200 bg-emerald-50">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                      </div>
-
-                      <div className="space-y-1">
-                        <p className="text-[15px] font-semibold text-slate-900">Cliente final</p>
-                        <p className="text-sm leading-5 text-slate-500">
-                          Clientes conseguem ver este produto.
-                        </p>
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setAudience((v) => (v === "ALL" ? "STAFF_ONLY" : "ALL"))}
-                      className={[
-                        "shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.03em] transition",
-                        availableToCustomer
-                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-slate-200 bg-slate-100 text-slate-600",
-                      ].join(" ")}
-                    >
-                      {availableToCustomer ? "CLIENTE VÊ" : "INTERNO"}
-                    </button>
-                  </div>
-
-                  <div className="pt-1">
-                    <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.03em] text-emerald-700">
-                      {audience}
-                    </span>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Produto ativo aparece no catálogo.
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[18px] font-semibold text-slate-900">Status</div>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Controle de publicação e audiência.
                     </p>
+                  </div>
+
+                  <div
+                    className={[
+                      "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.03em]",
+                      active
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-slate-200 bg-slate-100 text-slate-600",
+                    ].join(" ")}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    {active ? "Ativo" : "Inativo"}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">
+                        Produto ativo
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Produto ativo aparece no catálogo.
+                      </p>
+                    </div>
+
+                    <Checkbox
+                      checked={active}
+                      onCheckedChange={(checked) => setActive(checked === true)}
+                    />
+                  </label>
+
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="mb-3 text-sm font-semibold text-slate-900">
+                      Audiência
+                    </div>
+
+                    <Select
+                      value={audience}
+                      onValueChange={(v: ProductAudience) => setAudience(v)}
+                    >
+                      <SelectTrigger className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] text-slate-700">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">ALL</SelectItem>
+                        <SelectItem value="STAFF_ONLY">STAFF_ONLY</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-sm font-medium text-slate-800">
+                          Disponível para cliente final
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Quando a audiência for ALL, o cliente também enxerga.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setAudience((v) => (v === "ALL" ? "STAFF_ONLY" : "ALL"))
+                        }
+                        className={[
+                          "shrink-0 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.03em] transition",
+                          availableToCustomer
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                            : "border-slate-200 bg-slate-100 text-slate-600",
+                        ].join(" ")}
+                      >
+                        {availableToCustomer ? "CLIENTE VÊ" : "INTERNO"}
+                      </button>
+                    </div>
+
+                    <div className="pt-4">
+                      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.03em] text-emerald-700">
+                        {audience}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -1208,131 +1361,167 @@ export default function NewProductPage() {
                           </span>
                         </>
                       ) : (
-                        "Nenhuma categoria principal"
+                        "Nenhuma categoria principal."
                       )}
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium text-slate-800">
-                      Categorias Extras <span className="text-slate-400">(multi)</span>
-                    </Label>
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Categorias adicionais
+                      </div>
+                      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                        {categoryIds.length}
+                      </span>
+                    </div>
 
-                    <div className="relative">
-                      <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <div className="relative mb-3">
+                      <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                       <Input
-                        className="h-12 rounded-2xl border-slate-200 bg-white pl-11 text-[15px] shadow-none placeholder:text-slate-400"
                         value={catSearch}
                         onChange={(e) => setCatSearch(e.target.value)}
                         placeholder="Buscar categoria..."
+                        className="h-11 rounded-2xl border-slate-200 bg-white pl-10 text-[14px] shadow-none placeholder:text-slate-400"
                       />
                     </div>
 
                     {selectedExtraCategories.length > 0 ? (
-                      <div className="flex flex-wrap gap-2 pt-1">
+                      <div className="mb-3 flex flex-wrap gap-2">
                         {selectedExtraCategories.map((c) => (
                           <button
                             key={c.id}
                             type="button"
                             onClick={() =>
-                              setCategoryIds((prev) => prev.filter((x) => x !== c.id))
+                              setCategoryIds((prev) => prev.filter((id) => id !== c.id))
                             }
-                            className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-800 hover:bg-slate-100"
-                            title="Remover categoria"
+                            className="inline-flex items-center gap-2 rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-800"
                           >
-                            <span className="max-w-[180px] truncate">{c.name}</span>
-                            <X className="h-3.5 w-3.5 text-slate-500" />
+                            {c.name}
+                            <X className="h-3.5 w-3.5" />
                           </button>
                         ))}
-
-                        <button
-                          type="button"
-                          onClick={() => setCategoryIds([])}
-                          className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
-                        >
-                          Limpar
-                        </button>
                       </div>
                     ) : null}
 
-                    <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
-                      <div className="mb-3 flex items-center justify-between gap-2">
-                        <div className="text-xs text-slate-500">
-                          Mostrando <b>{filteredExtraCategories.length}</b> • Selecionadas:{" "}
-                          <b>{categoryIds.length}</b>
-                        </div>
+                    <div className="max-h-72 space-y-2 overflow-auto pr-1">
+                      {filteredExtraCategories.map((c) => {
+                        const checked = categoryIds.includes(c.id);
 
-                        {!!catSearch ? (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            className="h-8 rounded-xl px-2 text-xs"
-                            onClick={() => setCatSearch("")}
+                        return (
+                          <label
+                            key={c.id}
+                            className={[
+                              "flex cursor-pointer items-center gap-2 rounded-2xl border px-3 py-2 text-sm transition",
+                              checked
+                                ? "border-sky-200 bg-sky-50 text-sky-900"
+                                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50",
+                            ].join(" ")}
                           >
-                            Limpar busca
-                          </Button>
-                        ) : null}
-                      </div>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setCategoryIds((prev) => toggleCategoryId(c.id, prev))
+                              }
+                            />
+                            <span className="truncate">{c.name}</span>
+                          </label>
+                        );
+                      })}
 
-                      <div className="max-h-56 overflow-auto pr-1">
-                        <div className="grid gap-2">
-                          {filteredExtraCategories.map((c) => {
-                            const checked = categoryIds.includes(c.id);
-
-                            return (
-                              <label
-                                key={c.id}
-                                className={[
-                                  "flex cursor-pointer items-center gap-3 rounded-2xl border px-3 py-2.5 text-sm transition-colors",
-                                  checked
-                                    ? "border-slate-200 bg-white"
-                                    : "border-slate-200 bg-white hover:bg-slate-50",
-                                ].join(" ")}
-                              >
-                                <Checkbox
-                                  checked={checked}
-                                  onCheckedChange={() =>
-                                    setCategoryIds((prev) => toggleCategoryId(c.id, prev))
-                                  }
-                                />
-                                <span className="truncate text-slate-700">{c.name}</span>
-                              </label>
-                            );
-                          })}
-
-                          {filteredExtraCategories.length === 0 ? (
-                            <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-400">
-                              Nenhuma categoria encontrada.
-                            </div>
-                          ) : null}
+                      {!filteredExtraCategories.length ? (
+                        <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-center text-sm text-slate-500">
+                          Nenhuma categoria encontrada.
                         </div>
-                      </div>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-3 text-xs text-slate-500">
+                      Preenche <code>categoryIds</code>. A principal (
+                      <code>categoryId</code>) é opcional.
                     </div>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <div className="flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                className="h-12 rounded-2xl border-slate-200 bg-white px-6 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-                onClick={() => router.replace(returnTo)}
-                disabled={createM.isPending}
-              >
-                Cancelar
-              </Button>
+            <Card className="rounded-[30px] border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+              <CardContent className="p-5">
+                <div className="mb-4 text-[18px] font-semibold text-slate-900">
+                  Resumo rápido
+                </div>
 
-              <Button
-                type="submit"
-                form="new-product-form"
-                disabled={createM.isPending}
-                className="h-12 rounded-2xl bg-[#18a999] px-7 text-sm font-semibold text-white shadow-sm hover:bg-[#159989]"
-              >
-                {createM.isPending ? "Criando..." : "Criar"}
-              </Button>
-            </div>
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Preço</span>
+                    <span className="font-semibold text-slate-900">{pricePreview}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Preço cliente</span>
+                    <span className="font-semibold text-slate-900">
+                      {customerPricePreview}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Estoque</span>
+                    <span className="font-semibold text-slate-900">{stock}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Imagens</span>
+                    <span className="font-semibold text-slate-900">{files.length}</span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Vídeo</span>
+                    <span className="font-semibold text-slate-900">
+                      {videoFile ? "Selecionado" : "Nenhum"}
+                    </span>
+                  </div>
+
+                  <Separator className="my-2" />
+
+                  <div>
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Conteúdo
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Destaques</span>
+                        <span className="font-semibold text-slate-900">
+                          {highlightItems.length}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Efeitos</span>
+                        <span className="font-semibold text-slate-900">
+                          {effectsItems.length}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Benefícios</span>
+                        <span className="font-semibold text-slate-900">
+                          {benefitsItems.length}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-slate-500">Modo de uso</span>
+                        <span className="font-semibold text-slate-900">
+                          {howToUseItems.length}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </form>
       </div>

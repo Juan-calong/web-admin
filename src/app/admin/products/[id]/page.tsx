@@ -72,7 +72,10 @@ type Product = {
   id: string;
   sku: string;
   name: string;
+
   description?: string | null;
+  fullDescription?: string | null;
+
   price: string;
   active: boolean;
   stock?: number | null;
@@ -90,7 +93,11 @@ type Product = {
   brand?: string | null;
   line?: string | null;
   volume?: string | null;
-  effect?: string | null;
+
+  effects?: string[] | null;
+  benefits?: string[] | null;
+  howToUse?: string[] | null;
+
   weightKg?: string | null;
   heightCm?: string | null;
   widthCm?: string | null;
@@ -125,9 +132,16 @@ type EditDraft = {
   sku: string;
   name: string;
   price: string;
+
   description: string;
+  fullDescription: string;
+
   customerPrice: string;
   highlightsText: string;
+  effectsText: string;
+  benefitsText: string;
+  howToUseText: string;
+
   active: boolean;
   stock: number;
   categoryId: string;
@@ -136,12 +150,13 @@ type EditDraft = {
   brand: string;
   line: string;
   volume: string;
-  effect: string;
+
   weightKg: string;
   heightCm: string;
   widthCm: string;
   lengthCm: string;
   packageVolumes: string;
+
   videoTitle: string;
   videoDescription: string;
   videoSortOrder: string;
@@ -274,6 +289,13 @@ function parseHighlights(text: string) {
     .map((s) => s.slice(0, 60));
 }
 
+function parseStringList(text: string) {
+  return String(text ?? "")
+    .split(/\r?\n|;/g)
+    .map((s) => s.replace(/^\s*[-•\d.)]+\s*/, "").trim())
+    .filter(Boolean);
+}
+
 function toggleCategoryId(id: string, prev: string[]) {
   return prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
 }
@@ -397,8 +419,12 @@ export default function EditProductPage() {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
+  const [fullDescription, setFullDescription] = useState("");
   const [customerPrice, setCustomerPrice] = useState("");
   const [highlightsText, setHighlightsText] = useState("");
+  const [effectsText, setEffectsText] = useState("");
+  const [benefitsText, setBenefitsText] = useState("");
+  const [howToUseText, setHowToUseText] = useState("");
   const [active, setActive] = useState(true);
   const [stock, setStock] = useState<number>(0);
 
@@ -422,7 +448,6 @@ export default function EditProductPage() {
   const [line, setLine] = useState("");
 
   const [volume, setVolume] = useState("");
-  const [effect, setEffect] = useState("");
   const [weightKg, setWeightKg] = useState("");
   const [heightCm, setHeightCm] = useState("");
   const [widthCm, setWidthCm] = useState("");
@@ -441,8 +466,12 @@ export default function EditProductPage() {
       setName(draft.name ?? "");
       setPrice(draft.price ?? "");
       setDescription(draft.description ?? "");
+      setFullDescription(draft.fullDescription ?? "");
       setCustomerPrice(draft.customerPrice ?? "");
       setHighlightsText(draft.highlightsText ?? "");
+      setEffectsText(draft.effectsText ?? "");
+      setBenefitsText(draft.benefitsText ?? "");
+      setHowToUseText(draft.howToUseText ?? "");
       setActive(!!draft.active);
       setStock(Math.max(0, Number(draft.stock ?? 0)));
       setCategoryId(draft.categoryId ?? "");
@@ -451,7 +480,6 @@ export default function EditProductPage() {
       setBrand(draft.brand ?? "");
       setLine(draft.line ?? "");
       setVolume(draft.volume ?? "");
-      setEffect(draft.effect ?? "");
       setWeightKg(draft.weightKg ?? "");
       setHeightCm(draft.heightCm ?? "");
       setWidthCm(draft.widthCm ?? "");
@@ -472,10 +500,13 @@ export default function EditProductPage() {
     setPrice(String(product.price ?? ""));
     setCustomerPrice(product.customerPrice != null ? String(product.customerPrice) : "");
     setDescription(product.description ?? "");
+    setFullDescription(product.fullDescription ?? "");
     setBrand(product.brand ?? "");
     setLine(product.line ?? "");
     setVolume(product.volume ?? "");
-    setEffect(product.effect ?? "");
+    setEffectsText((product.effects ?? []).join("\n"));
+    setBenefitsText((product.benefits ?? []).join("\n"));
+    setHowToUseText((product.howToUse ?? []).join("\n"));
     setWeightKg(product.weightKg != null ? String(product.weightKg) : "");
     setHeightCm(product.heightCm != null ? String(product.heightCm) : "");
     setWidthCm(product.widthCm != null ? String(product.widthCm) : "");
@@ -533,6 +564,10 @@ export default function EditProductPage() {
           name,
           price,
           description,
+          fullDescription,
+          effectsText,
+          benefitsText,
+          howToUseText,
           customerPrice,
           highlightsText,
           active,
@@ -543,7 +578,6 @@ export default function EditProductPage() {
           brand,
           line,
           volume,
-          effect,
           weightKg,
           heightCm,
           widthCm,
@@ -564,17 +598,20 @@ export default function EditProductPage() {
     name,
     price,
     description,
+    fullDescription,
     customerPrice,
     highlightsText,
     active,
     stock,
+    effectsText,
+    benefitsText,
+    howToUseText,
     categoryId,
     categoryIds,
     audience,
     brand,
     line,
     volume,
-    effect,
     weightKg,
     heightCm,
     widthCm,
@@ -619,11 +656,15 @@ export default function EditProductPage() {
 
       const stockSafe = Number.isFinite(stock) ? Math.max(0, Math.trunc(stock)) : 0;
       const highlights = parseHighlights(highlightsText);
+      const effects = parseStringList(effectsText);
+      const benefits = parseStringList(benefitsText);
+      const howToUse = parseStringList(howToUseText);
 
       const payload = {
         sku: skuN,
         name: nameN,
         description: description.trim() ? description.trim() : null,
+        fullDescription: fullDescription.trim() ? fullDescription.trim() : null,
         price: priceSan,
         customerPrice: customerPrice.trim() ? normalizeMoney(customerPrice) : null,
         active: Boolean(active),
@@ -632,10 +673,13 @@ export default function EditProductPage() {
         categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
         audience,
         highlights,
+        effects,
+        benefits,
+        howToUse,
         brand: brand.trim() ? brand.trim() : null,
         line: line.trim() ? line.trim() : null,
         volume: volume.trim() ? volume.trim() : null,
-        effect: effect.trim() ? effect.trim() : null,
+
 
         weightKg: weightKgSan,
         heightCm: heightCmSan,
@@ -1326,33 +1370,29 @@ export default function EditProductPage() {
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label>Volume</Label>
-                  <Input
-                    className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
-                    value={volume}
-                    onChange={(e) => setVolume(e.target.value)}
-                    placeholder="Ex.: 500ml"
-                    maxLength={20}
-                  />
-                  <div className="text-xs text-slate-500">Máx. 20 caracteres.</div>
-                </div>
+<div className="grid gap-4 md:grid-cols-2">
+  <div className="grid gap-2">
+    <Label>Volume</Label>
+    <Input
+      className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
+      value={volume}
+      onChange={(e) => setVolume(e.target.value)}
+      placeholder="Ex.: 500ml"
+      maxLength={20}
+    />
+    <div className="text-xs text-slate-500">Máx. 20 caracteres.</div>
+  </div>
 
-                <div className="grid gap-2">
-                  <Label>Efeito</Label>
-                  <Input
-                    className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
-                    value={effect}
-                    onChange={(e) => setEffect(e.target.value)}
-                    placeholder="Ex.: Brilho intenso"
-                    maxLength={20}
-                  />
-                  <div className="text-xs text-slate-500">
-                    Texto curto. Máx. 20 caracteres.
-                  </div>
-                </div>
-              </div>
+  <div className="grid gap-2">
+    <Label>Descrição curta</Label>
+    <Textarea
+      className="min-h-[110px] rounded-2xl border-slate-200 bg-slate-50/60"
+      value={description}
+      onChange={(e) => setDescription(e.target.value)}
+      placeholder="Texto principal que o usuário verá primeiro."
+    />
+  </div>
+</div>
 
                             <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
                 <div className="mb-3">
@@ -1467,15 +1507,47 @@ export default function EditProductPage() {
                 </div>
               </div>
 
-              <div className="grid gap-2">
-                <Label>Descrição</Label>
-                <Textarea
-                  className="min-h-[120px] rounded-2xl border-slate-200 bg-slate-50/60"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Opcional..."
-                />
-              </div>
+<div className="grid gap-2">
+  <Label>Descrição completa</Label>
+  <Textarea
+    className="min-h-[150px] rounded-2xl border-slate-200 bg-slate-50/60"
+    value={fullDescription}
+    onChange={(e) => setFullDescription(e.target.value)}
+    placeholder="Conteúdo detalhado que aparecerá ao abrir a descrição completa."
+  />
+</div>
+
+<div className="grid gap-4 md:grid-cols-2">
+  <div className="grid gap-2">
+    <Label>Efeitos (1 por linha)</Label>
+    <Textarea
+      className="min-h-[130px] rounded-2xl border-slate-200 bg-slate-50/60"
+      value={effectsText}
+      onChange={(e) => setEffectsText(e.target.value)}
+      placeholder={`Ex.:\nBrilho intenso\nRedução de frizz`}
+    />
+  </div>
+
+  <div className="grid gap-2">
+    <Label>Principais benefícios (1 por linha)</Label>
+    <Textarea
+      className="min-h-[130px] rounded-2xl border-slate-200 bg-slate-50/60"
+      value={benefitsText}
+      onChange={(e) => setBenefitsText(e.target.value)}
+      placeholder={`Ex.:\nHidratação\nMaciez`}
+    />
+  </div>
+</div>
+
+<div className="grid gap-2">
+  <Label>Modo de uso (1 por linha)</Label>
+  <Textarea
+    className="min-h-[140px] rounded-2xl border-slate-200 bg-slate-50/60"
+    value={howToUseText}
+    onChange={(e) => setHowToUseText(e.target.value)}
+    placeholder={`Ex.:\nAplique nos cabelos úmidos\nMassageie\nEnxágue`}
+  />
+</div>
 
               <div className="grid gap-2">
                 <Label>Destaques (1 por linha)</Label>
