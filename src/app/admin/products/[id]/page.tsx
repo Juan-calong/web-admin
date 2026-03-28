@@ -74,7 +74,6 @@ type Product = {
   name: string;
 
   description?: string | null;
-  fullDescription?: string | null;
 
   price: string;
   active: boolean;
@@ -134,7 +133,6 @@ type EditDraft = {
   price: string;
 
   description: string;
-  fullDescription: string;
 
   customerPrice: string;
   highlightsText: string;
@@ -419,7 +417,6 @@ export default function EditProductPage() {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
   const [description, setDescription] = useState("");
-  const [fullDescription, setFullDescription] = useState("");
   const [customerPrice, setCustomerPrice] = useState("");
   const [highlightsText, setHighlightsText] = useState("");
   const [effectsText, setEffectsText] = useState("");
@@ -466,7 +463,6 @@ export default function EditProductPage() {
       setName(draft.name ?? "");
       setPrice(draft.price ?? "");
       setDescription(draft.description ?? "");
-      setFullDescription(draft.fullDescription ?? "");
       setCustomerPrice(draft.customerPrice ?? "");
       setHighlightsText(draft.highlightsText ?? "");
       setEffectsText(draft.effectsText ?? "");
@@ -500,7 +496,6 @@ export default function EditProductPage() {
     setPrice(String(product.price ?? ""));
     setCustomerPrice(product.customerPrice != null ? String(product.customerPrice) : "");
     setDescription(product.description ?? "");
-    setFullDescription(product.fullDescription ?? "");
     setBrand(product.brand ?? "");
     setLine(product.line ?? "");
     setVolume(product.volume ?? "");
@@ -564,7 +559,6 @@ export default function EditProductPage() {
           name,
           price,
           description,
-          fullDescription,
           effectsText,
           benefitsText,
           howToUseText,
@@ -598,7 +592,6 @@ export default function EditProductPage() {
     name,
     price,
     description,
-    fullDescription,
     customerPrice,
     highlightsText,
     active,
@@ -664,7 +657,6 @@ export default function EditProductPage() {
         sku: skuN,
         name: nameN,
         description: description.trim() ? description.trim() : null,
-        fullDescription: fullDescription.trim() ? fullDescription.trim() : null,
         price: priceSan,
         customerPrice: customerPrice.trim() ? normalizeMoney(customerPrice) : null,
         active: Boolean(active),
@@ -1384,13 +1376,13 @@ export default function EditProductPage() {
   </div>
 
   <div className="grid gap-2">
-    <Label>Descrição curta</Label>
-    <Textarea
-      className="min-h-[110px] rounded-2xl border-slate-200 bg-slate-50/60"
-      value={description}
-      onChange={(e) => setDescription(e.target.value)}
-      placeholder="Texto principal que o usuário verá primeiro."
-    />
+<Label>Descrição do produto</Label>
+<Textarea
+  className="min-h-[110px] rounded-2xl border-slate-200 bg-slate-50/60"
+  value={description}
+  onChange={(e) => setDescription(e.target.value)}
+  placeholder="Texto principal exibido no app."
+/>
   </div>
 </div>
 
@@ -1507,19 +1499,9 @@ export default function EditProductPage() {
                 </div>
               </div>
 
-<div className="grid gap-2">
-  <Label>Descrição completa</Label>
-  <Textarea
-    className="min-h-[150px] rounded-2xl border-slate-200 bg-slate-50/60"
-    value={fullDescription}
-    onChange={(e) => setFullDescription(e.target.value)}
-    placeholder="Conteúdo detalhado que aparecerá ao abrir a descrição completa."
-  />
-</div>
-
 <div className="grid gap-4 md:grid-cols-2">
   <div className="grid gap-2">
-    <Label>Efeitos (1 por linha)</Label>
+    <Label>Benefício (1 por linha)</Label>
     <Textarea
       className="min-h-[130px] rounded-2xl border-slate-200 bg-slate-50/60"
       value={effectsText}
@@ -1529,7 +1511,7 @@ export default function EditProductPage() {
   </div>
 
   <div className="grid gap-2">
-    <Label>Principais benefícios (1 por linha)</Label>
+    <Label>Ativos e funções (1 por linha)</Label>
     <Textarea
       className="min-h-[130px] rounded-2xl border-slate-200 bg-slate-50/60"
       value={benefitsText}

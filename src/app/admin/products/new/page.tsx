@@ -52,8 +52,6 @@ type NewDraft = {
   customerPrice: string;
 
   description: string;
-  fullDescription: string;
-
   highlightsText: string;
   effectsText: string;
   benefitsText: string;
@@ -178,7 +176,6 @@ export default function NewProductPage() {
   const [customerPrice, setCustomerPrice] = useState("");
 
   const [description, setDescription] = useState("");
-  const [fullDescription, setFullDescription] = useState("");
 
   const [highlightsText, setHighlightsText] = useState("");
   const [effectsText, setEffectsText] = useState("");
@@ -226,7 +223,6 @@ export default function NewProductPage() {
       setCustomerPrice(draft.customerPrice ?? "");
 
       setDescription(draft.description ?? "");
-      setFullDescription(draft.fullDescription ?? "");
 
       setHighlightsText(draft.highlightsText ?? "");
       setEffectsText(draft.effectsText ?? "");
@@ -276,7 +272,6 @@ export default function NewProductPage() {
           customerPrice,
 
           description,
-          fullDescription,
 
           highlightsText,
           effectsText,
@@ -316,8 +311,6 @@ export default function NewProductPage() {
     customerPrice,
 
     description,
-    fullDescription,
-
     highlightsText,
     effectsText,
     benefitsText,
@@ -564,7 +557,6 @@ export default function NewProductPage() {
         audience: ProductAudience;
 
         description?: string;
-        fullDescription?: string;
 
         highlights?: string[];
         effects?: string[];
@@ -604,9 +596,6 @@ export default function NewProductPage() {
 
       const desc = description.trim();
       if (desc) payload.description = desc;
-
-      const fullDesc = fullDescription.trim();
-      if (fullDesc) payload.fullDescription = fullDesc;
 
       const highlights = parseHighlights(highlightsText);
       if (highlights.length) payload.highlights = highlights;
@@ -806,7 +795,7 @@ export default function NewProductPage() {
 
                   <div className="space-y-2 xl:col-span-4">
                     <Label className="text-sm font-medium text-slate-800">
-                      Descrição curta
+                      Descrição do produto
                     </Label>
                     <Textarea
                       className="min-h-[110px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
@@ -815,28 +804,12 @@ export default function NewProductPage() {
                       placeholder="Texto principal que o usuário verá primeiro."
                     />
                     <FieldHint>
-                      Essa será a primeira descrição exibida no app.
+                      Essa será a descrição exibida no app.
                     </FieldHint>
                   </div>
-
-                  <div className="space-y-2 xl:col-span-4">
-                    <Label className="text-sm font-medium text-slate-800">
-                      Descrição completa
-                    </Label>
-                    <Textarea
-                      className="min-h-[150px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
-                      value={fullDescription}
-                      onChange={(e) => setFullDescription(e.target.value)}
-                      placeholder="Conteúdo mais detalhado para o accordion de descrição completa."
-                    />
-                    <FieldHint>
-                      Essa aparecerá quando o usuário abrir a descrição completa.
-                    </FieldHint>
-                  </div>
-
                   <div className="space-y-2 xl:col-span-2">
                     <Label className="text-sm font-medium text-slate-800">
-                      Efeitos
+                      Benefício
                     </Label>
                     <Textarea
                       className="min-h-[140px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
@@ -849,7 +822,7 @@ export default function NewProductPage() {
 
                   <div className="space-y-2 xl:col-span-2">
                     <Label className="text-sm font-medium text-slate-800">
-                      Principais benefícios
+                      Ativos e funções
                     </Label>
                     <Textarea
                       className="min-h-[140px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
@@ -1498,14 +1471,14 @@ export default function NewProductPage() {
                       </div>
 
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">Efeitos</span>
+                       <span className="text-slate-500">Benefício</span>
                         <span className="font-semibold text-slate-900">
                           {effectsItems.length}
                         </span>
                       </div>
 
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-slate-500">Benefícios</span>
+                        <span className="text-slate-500">Ativos e funções</span>
                         <span className="font-semibold text-slate-900">
                           {benefitsItems.length}
                         </span>
