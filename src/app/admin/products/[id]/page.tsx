@@ -256,6 +256,63 @@ function sanitizeIntInput(v: string) {
   return String(v ?? "").replace(/[^\d]/g, "");
 }
 
+function parsePositiveDecimal(value: string) {
+  const normalized = normalizeMoney(String(value ?? ""));
+  if (!normalized) return null;
+
+  const n = Number(normalized);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function formatPtNumber(value: number, maxFractionDigits = 3) {
+  return new Intl.NumberFormat("pt-BR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxFractionDigits,
+  }).format(value);
+}
+
+function describeWeight(value: string) {
+  const kg = parsePositiveDecimal(value);
+
+  if (kg == null) {
+    return "Ex.: 0,200 = 200 g";
+  }
+
+  const grams = kg * 1000;
+
+  if (grams < 1000) {
+    return `Equivale a ${formatPtNumber(grams, 0)} g`;
+  }
+
+  return `Equivale a ${formatPtNumber(kg, 3)} kg (${formatPtNumber(grams, 0)} g)`;
+}
+
+function describeDimension(value: string) {
+  const cm = parsePositiveDecimal(value);
+
+  if (cm == null) {
+    return "Ex.: 15 = 15 cm • 10,5 = 10 cm e meio";
+  }
+
+  if (cm < 1) {
+    return `${formatPtNumber(cm, 2)} cm = ${formatPtNumber(cm * 10, 1)} mm`;
+  }
+
+  if (Number.isInteger(cm)) {
+    return `${formatPtNumber(cm, 0)} cm`;
+  }
+
+  return `${formatPtNumber(cm, 2)} cm`;
+}
+
+function describeVolumes(value: string) {
+  const raw = String(value ?? "").trim();
+  const n = raw ? Math.max(1, Math.trunc(Number(raw) || 1)) : 1;
+
+  return n === 1 ? "1 caixa/pacote" : `${n} caixas/pacotes`;
+}
+
+
 function statusPill(active: boolean) {
   return active
     ? "bg-emerald-600 text-white border-transparent"
@@ -1146,6 +1203,40 @@ export default function EditProductPage() {
   const pricePreview = price ? `R$ ${price}` : "—";
   const customerPricePreview = customerPrice ? `R$ ${customerPrice}` : "Preço padrão";
 
+  const packageSummary = useMemo(() => {
+  const weight = parsePositiveDecimal(weightKg);
+  const height = parsePositiveDecimal(heightCm);
+  const width = parsePositiveDecimal(widthCm);
+  const length = parsePositiveDecimal(lengthCm);
+
+  const volumes = Math.max(1, Math.trunc(Number(packageVolumes || 1) || 1));
+
+  const parts: string[] = [];
+
+  if (length != null || width != null || height != null) {
+    parts.push(
+      `${length != null ? formatPtNumber(length, 2) : "—"} × ${
+        width != null ? formatPtNumber(width, 2) : "—"
+      } × ${height != null ? formatPtNumber(height, 2) : "—"} cm`
+    );
+  }
+
+  if (weight != null) {
+    const grams = weight * 1000;
+    parts.push(
+      grams < 1000
+        ? `${formatPtNumber(grams, 0)} g`
+        : `${formatPtNumber(weight, 3)} kg`
+    );
+  }
+
+  parts.push(volumes === 1 ? "1 volume" : `${volumes} volumes`);
+
+  return parts.length
+    ? parts.join(" • ")
+    : "Preencha peso e medidas da embalagem.";
+}, [weightKg, heightCm, widthCm, lengthCm, packageVolumes]);
+
   if (id === "new") return null;
 
   if (productQ.isLoading) {
@@ -1387,82 +1478,134 @@ export default function EditProductPage() {
 </div>
 
                             <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
-                <div className="mb-3">
-                  <div className="text-sm font-semibold text-slate-900">
-                    Logística / Embalagem
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    Usado para frete, volume físico e futuras integrações de transporte.
-                  </div>
-                </div>
+  <div className="mb-4">
+    <div className="text-sm font-semibold text-slate-900">
+      Logística / Embalagem
+    </div>
 
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-                  <div className="grid gap-2">
-                    <Label>Peso (kg)</Label>
-                    <Input
-                      className="h-11 rounded-2xl border-slate-200 bg-white"
-                      value={weightKg}
-                      onChange={(e) => setWeightKg(sanitizeMoneyInput(e.target.value))}
-                      placeholder="Ex.: 1,250"
-                      inputMode="decimal"
-                    />
-                    <div className="text-xs text-slate-500">Até 3 casas decimais.</div>
-                  </div>
+    <p className="mt-1 text-xs text-slate-500">
+      Preencha o tamanho da embalagem em <span className="font-semibold">centímetros</span> e o peso em <span className="font-semibold">quilogramas</span>.
+    </p>
 
-                  <div className="grid gap-2">
-                    <Label>Altura (cm)</Label>
-                    <Input
-                      className="h-11 rounded-2xl border-slate-200 bg-white"
-                      value={heightCm}
-                      onChange={(e) => setHeightCm(sanitizeMoneyInput(e.target.value))}
-                      placeholder="Ex.: 20,50"
-                      inputMode="decimal"
-                    />
-                    <div className="text-xs text-slate-500">Medida da embalagem.</div>
-                  </div>
+    <p className="mt-1 text-xs text-slate-500">
+      Exemplo: <span className="font-semibold">15</span> = 15 cm •{" "}
+      <span className="font-semibold">10,5</span> = 10 cm e meio •{" "}
+      <span className="font-semibold">0,200</span> = 200 g
+    </p>
+  </div>
 
-                  <div className="grid gap-2">
-                    <Label>Largura (cm)</Label>
-                    <Input
-                      className="h-11 rounded-2xl border-slate-200 bg-white"
-                      value={widthCm}
-                      onChange={(e) => setWidthCm(sanitizeMoneyInput(e.target.value))}
-                      placeholder="Ex.: 10,00"
-                      inputMode="decimal"
-                    />
-                    <div className="text-xs text-slate-500">Medida da embalagem.</div>
-                  </div>
+  <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-5">
+    <div className="flex h-full flex-col">
+      <div className="mb-2 flex min-h-[48px] items-end">
+        <Label className="block text-sm font-medium leading-5 text-slate-800">
+          Peso da embalagem (kg)
+        </Label>
+      </div>
 
-                  <div className="grid gap-2">
-                    <Label>Comprimento (cm)</Label>
-                    <Input
-                      className="h-11 rounded-2xl border-slate-200 bg-white"
-                      value={lengthCm}
-                      onChange={(e) => setLengthCm(sanitizeMoneyInput(e.target.value))}
-                      placeholder="Ex.: 5,25"
-                      inputMode="decimal"
-                    />
-                    <div className="text-xs text-slate-500">Medida da embalagem.</div>
-                  </div>
+      <Input
+        className="h-11 rounded-2xl border-slate-200 bg-white"
+        value={weightKg}
+        onChange={(e) => setWeightKg(sanitizeMoneyInput(e.target.value))}
+        placeholder="Ex.: 0,200"
+        inputMode="decimal"
+      />
 
-                  <div className="grid gap-2">
-                    <Label>Volumes</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      step={1}
-                      className="h-11 rounded-2xl border-slate-200 bg-white"
-                      value={packageVolumes}
-                      onChange={(e) => setPackageVolumes(sanitizeIntInput(e.target.value))}
-                      placeholder="1"
-                      inputMode="numeric"
-                    />
-                    <div className="text-xs text-slate-500">
-                      Quantidade de volumes físicos.
-                    </div>
-                  </div>
-                </div>
-              </div>
+      <div className="mt-2 min-h-[20px] text-xs text-slate-500">
+        {describeWeight(weightKg)}
+      </div>
+    </div>
+
+    <div className="flex h-full flex-col">
+      <div className="mb-2 flex min-h-[48px] items-end">
+        <Label className="block text-sm font-medium leading-5 text-slate-800">
+          Altura da caixa (cm)
+        </Label>
+      </div>
+
+      <Input
+        className="h-11 rounded-2xl border-slate-200 bg-white"
+        value={heightCm}
+        onChange={(e) => setHeightCm(sanitizeMoneyInput(e.target.value))}
+        placeholder="Ex.: 10"
+        inputMode="decimal"
+      />
+
+      <div className="mt-2 min-h-[20px] text-xs text-slate-500">
+        {describeDimension(heightCm)}
+      </div>
+    </div>
+
+    <div className="flex h-full flex-col">
+      <div className="mb-2 flex min-h-[48px] items-end">
+        <Label className="block text-sm font-medium leading-5 text-slate-800">
+          Largura da caixa (cm)
+        </Label>
+      </div>
+
+      <Input
+        className="h-11 rounded-2xl border-slate-200 bg-white"
+        value={widthCm}
+        onChange={(e) => setWidthCm(sanitizeMoneyInput(e.target.value))}
+        placeholder="Ex.: 15"
+        inputMode="decimal"
+      />
+
+      <div className="mt-2 min-h-[20px] text-xs text-slate-500">
+        {describeDimension(widthCm)}
+      </div>
+    </div>
+
+    <div className="flex h-full flex-col">
+      <div className="mb-2 flex min-h-[48px] items-end">
+        <Label className="block text-sm font-medium leading-5 text-slate-800">
+          Comprimento da caixa (cm)
+        </Label>
+      </div>
+
+      <Input
+        className="h-11 rounded-2xl border-slate-200 bg-white"
+        value={lengthCm}
+        onChange={(e) => setLengthCm(sanitizeMoneyInput(e.target.value))}
+        placeholder="Ex.: 20"
+        inputMode="decimal"
+      />
+
+      <div className="mt-2 min-h-[20px] text-xs text-slate-500">
+        {describeDimension(lengthCm)}
+      </div>
+    </div>
+
+    <div className="flex h-full flex-col">
+      <div className="mb-2 flex min-h-[48px] items-end">
+        <Label className="block text-sm font-medium leading-5 text-slate-800">
+          Quantidade de volumes
+        </Label>
+      </div>
+
+      <Input
+        type="number"
+        min={1}
+        step={1}
+        className="h-11 rounded-2xl border-slate-200 bg-white"
+        value={packageVolumes}
+        onChange={(e) => setPackageVolumes(sanitizeIntInput(e.target.value))}
+        placeholder="1"
+        inputMode="numeric"
+      />
+
+      <div className="mt-2 min-h-[20px] text-xs text-slate-500">
+        {describeVolumes(packageVolumes)}
+      </div>
+    </div>
+  </div>
+
+  <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+    <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-emerald-800">
+      Resumo da embalagem
+    </div>
+    <p className="mt-1 text-sm font-medium text-slate-900">{packageSummary}</p>
+  </div>
+</div>
 
 
               <div className="grid gap-4 lg:grid-cols-2">
