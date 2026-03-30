@@ -1116,84 +1116,122 @@ export default function EditProductPage() {
   }
 
   const patchPromoM = useMutation({
-    mutationFn: async (promoId: string) => {
-      const valueNum = parseNumberBR(eValue);
-      if (!Number.isFinite(valueNum)) throw new Error("Informe um valor válido.");
-      const msg = validatePromo(eType, valueNum);
-      if (msg) throw new Error(msg);
+  mutationFn: async ({
+    promoId,
+    updatedAt,
+  }: {
+    promoId: string;
+    updatedAt?: string;
+  }) => {
+    const valueNum = parseNumberBR(eValue);
+    if (!Number.isFinite(valueNum)) throw new Error("Informe um valor válido.");
 
-      if (!eStartsAt) throw new Error("Informe a data/hora de início.");
-      const startsISO = datetimeLocalToISO(eStartsAt);
-      if (!startsISO) throw new Error("Início inválido.");
+    const msg = validatePromo(eType, valueNum);
+    if (msg) throw new Error(msg);
 
-      const endsISO = eEndsAt ? datetimeLocalToISO(eEndsAt) : null;
-      if (eEndsAt && !endsISO) throw new Error("Fim inválido.");
+    if (!eStartsAt) throw new Error("Informe a data/hora de início.");
+    const startsISO = datetimeLocalToISO(eStartsAt);
+    if (!startsISO) throw new Error("Início inválido.");
 
-      if (endsISO) {
-        const a = new Date(startsISO).getTime();
-        const b = new Date(endsISO).getTime();
-        if (!(b > a)) throw new Error("O fim deve ser maior que o início.");
-      }
+    const endsISO = eEndsAt ? datetimeLocalToISO(eEndsAt) : null;
+    if (eEndsAt && !endsISO) throw new Error("Fim inválido.");
 
-      const priorityNum = ePriority.trim() ? Number(ePriority) : 0;
-      if (!Number.isFinite(priorityNum) || !Number.isInteger(priorityNum) || priorityNum < 0)
-        throw new Error("Prioridade inválida (use inteiro >= 0).");
+    if (endsISO) {
+      const a = new Date(startsISO).getTime();
+      const b = new Date(endsISO).getTime();
+      if (!(b > a)) throw new Error("O fim deve ser maior que o início.");
+    }
 
-      const payload: {
-        appliesTo: PromoAppliesTo;
-        type: DiscountType;
-        value: number;
-        active: boolean;
-        startsAt: string;
-        priority: number;
-        endsAt: string | null;
-      } = {
-        appliesTo: eAppliesTo,
-        type: eType,
-        value: valueNum,
-        active: Boolean(eActive),
-        startsAt: startsISO,
-        endsAt: eEndsAt ? endsISO : null,
-        priority: priorityNum,
-      };
+    const priorityNum = ePriority.trim() ? Number(ePriority) : 0;
+    if (!Number.isFinite(priorityNum) || !Number.isInteger(priorityNum) || priorityNum < 0) {
+      throw new Error("Prioridade inválida (use inteiro >= 0).");
+    }
 
-      const idem = stableIdem(`admin-prod-promo-patch:${id}:${promoId}`, payload);
+    const payload = {
+      appliesTo: eAppliesTo,
+      type: eType,
+      value: valueNum,
+      active: Boolean(eActive),
+      startsAt: startsISO,
+      endsAt: eEndsAt ? endsISO : null,
+      priority: priorityNum,
+    };
 
-      await api.patch(promoEndpoints.patch(id, promoId), payload, {
-        headers: { "Idempotency-Key": idem },
-      });
-    },
-    onSuccess: async () => {
-      toast.success("Promoção salva.");
-      setEditPromoId(null);
-      await qc.invalidateQueries({ queryKey: ["admin-product-promos", id] });
-      await promosQ.refetch();
-    },
-    onError: (e: unknown) => toast.error(apiErrorMessage(e, "Falha ao salvar promoção.")),
-  });
+    const idem = stableIdem(`admin-prod-promo-patch:${id}:${promoId}`, {
+      ...payload,
+      lastUpdatedAt: updatedAt ?? "",
+    });
+
+    const res = await api.patch(promoEndpoints.patch(id, promoId), payload, {
+      headers: { "Idempotency-Key": idem },
+    });
+
+    return (res.data?.promotion ?? res.data) as ProductPromotion;
+  },
+
+  onSuccess: async (updatedPromo) => {
+    toast.success("Promoção salva.");
+    setEditPromoId(null);
+
+    qc.setQueryData<ProductPromotion[]>(["admin-product-promos", id], (prev = []) =>
+      prev.map((p) => (p.id === updatedPromo.id ? { ...p, ...updatedPromo } : p))
+    );
+
+    await qc.invalidateQueries({ queryKey: ["admin-product-promos", id] });
+    await qc.invalidateQueries({ queryKey: ["products"] });
+    await qc.invalidateQueries({ queryKey: ["product", id] });
+    await promosQ.refetch();
+  },
+
+  onError: (e: unknown) => {
+    toast.error(apiErrorMessage(e, "Falha ao salvar promoção."));
+  },
+});
 
   const disablePromoM = useMutation({
-    mutationFn: async (promoId: string) => {
-      await api.patch(
-        promoEndpoints.disable(id, promoId),
-        {},
-        { headers: { "Idempotency-Key": `admin-prod-promo-disable:${id}:${promoId}` } }
-      );
-    },
-    onSuccess: async () => {
-      toast.success("Promoção desativada.");
-      await qc.invalidateQueries({ queryKey: ["admin-product-promos", id] });
-      await promosQ.refetch();
-    },
-    onError: (e: unknown) => {
-      const status = (e as { response?: { status?: number } })?.response?.status;
-      if (status === 409) {
-        toast.error(promoConflictMsg(eAppliesTo));
-        return;
-      }
-      toast.error(apiErrorMessage(e, "Falha ao salvar promoção."));
-    },
-  });
+  mutationFn: async ({
+    promoId,
+    updatedAt,
+  }: {
+    promoId: string;
+    updatedAt?: string;
+  }) => {
+    const idem = stableIdem(`admin-prod-promo-disable:${id}:${promoId}`, {
+      updatedAt: updatedAt ?? "",
+    });
+
+    const res = await api.patch(
+      promoEndpoints.disable(id, promoId),
+      {},
+      { headers: { "Idempotency-Key": idem } }
+    );
+
+    return (res.data?.promotion ?? res.data) as ProductPromotion;
+  },
+
+  onSuccess: async (updatedPromo) => {
+    toast.success("Promoção desativada.");
+
+    qc.setQueryData<ProductPromotion[]>(["admin-product-promos", id], (prev = []) =>
+      prev.map((p) => (p.id === updatedPromo.id ? { ...p, ...updatedPromo } : p))
+    );
+
+    await qc.invalidateQueries({ queryKey: ["admin-product-promos", id] });
+    await qc.invalidateQueries({ queryKey: ["products"] });
+    await qc.invalidateQueries({ queryKey: ["product", id] });
+
+    await promosQ.refetch();
+  },
+
+  onError: (e: unknown) => {
+    const status = (e as { response?: { status?: number } })?.response?.status;
+    if (status === 409) {
+      toast.error(promoConflictMsg(eAppliesTo));
+      return;
+    }
+    toast.error(apiErrorMessage(e, "Falha ao desativar promoção."));
+  },
+});
 
   const selectedCategoryNames = useMemo(() => {
     const map = new Map(categories.map((c) => [c.id, c.name]));
@@ -1932,16 +1970,21 @@ export default function EditProductPage() {
                               )}
 
                               <Button
-                                type="button"
-                                variant="outline"
-                                className="rounded-2xl"
-                                disabled={disablePromoM.isPending || p.active === false}
-                                onClick={() => {
-                                  if (confirm("Desativar esta promoção?")) disablePromoM.mutate(p.id);
-                                }}
-                              >
-                                Desativar
-                              </Button>
+  type="button"
+  variant="outline"
+  className="rounded-2xl"
+  disabled={disablePromoM.isPending || p.active === false}
+onClick={() => {
+  if (confirm("Desativar esta promoção?")) {
+    disablePromoM.mutate({
+      promoId: p.id,
+      updatedAt: p.updatedAt as string | undefined,
+    });
+  }
+}}
+>
+  Desativar
+</Button>
                             </div>
                           </div>
 
@@ -2033,7 +2076,12 @@ export default function EditProductPage() {
                                 <div className="flex items-end sm:col-span-2">
                                   <Button
                                     className="h-11 w-full rounded-2xl bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
-                                    onClick={() => patchPromoM.mutate(p.id)}
+                                    onClick={() =>
+  patchPromoM.mutate({
+    promoId: p.id,
+    updatedAt: p.updatedAt as string | undefined,
+  })
+}
                                     disabled={patchPromoM.isPending}
                                   >
                                     {patchPromoM.isPending ? "Salvando…" : "Salvar promoção"}
