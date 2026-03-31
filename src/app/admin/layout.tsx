@@ -19,6 +19,7 @@ import {
   HeartHandshake,
   MessageSquareText,
   Megaphone,
+  Truck,
 } from "lucide-react";
 import { TicketPercent } from "lucide-react";
 
@@ -208,6 +209,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   rightBadge={<CountBadge count={commentUnreadCount} />}
                 />
               </nav>
+              <NavItem href="/admin/shipping" label="Entrega e frete" icon={Truck} />
 
               <div className="mt-6">
                 <Separator className="my-4" />

@@ -184,4 +184,8 @@ export const endpoints = {
     readOne: (id: string) => `/notifications/me/${id}/read`,
     readAll: "/notifications/me/read-all",
   },
+  adminShippingConfig: {
+  get: "/admin/shipping-config",
+  save: "/admin/shipping-config",
+},
 } as const;
