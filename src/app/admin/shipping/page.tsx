@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -9,6 +9,8 @@ import {
   BadgePercent,
   Save,
   RefreshCw,
+  Plus,
+  Trash2,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -21,20 +23,48 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 
-type ShippingConfig = {
+type LocalDeliveryCityItem = {
+  id?: string;
+  city: string;
+  state: string;
+  price: string | number;
+  active: boolean;
+  sortOrder?: number;
+};
+
+type ShippingConfigResponse = {
   id?: string;
   localDeliveryEnabled: boolean;
-  localDeliveryCity: string;
-  localDeliveryState: string;
-  localDeliveryPrice: string | number;
 
   correiosDiscountEnabled: boolean;
   correiosDiscountMinSubtotal: string | number;
   correiosDiscountMaxAmount: string | number;
 
-  createdAt?: string;
-  updatedAt?: string;
+  localDeliveryCities: LocalDeliveryCityItem[];
 };
+
+type CityRow = {
+  clientId: string;
+  id?: string;
+  city: string;
+  state: string;
+  price: string;
+  active: boolean;
+};
+
+function makeClientId() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function makeEmptyCityRow(): CityRow {
+  return {
+    clientId: makeClientId(),
+    city: "",
+    state: "SP",
+    price: "0",
+    active: true,
+  };
+}
 
 function normalizeMoneyInput(v: string) {
   let s = String(v ?? "").replace(/[^\d.,]/g, "");
@@ -50,7 +80,10 @@ function normalizeMoneyInput(v: string) {
   return s;
 }
 
-function toMoneyString(value: string | number | null | undefined, fallback = "0") {
+function toMoneyString(
+  value: string | number | null | undefined,
+  fallback = "0"
+) {
   if (value == null || value === "") return fallback;
   return String(value).replace(".", ",");
 }
@@ -103,10 +136,10 @@ function SectionCard({
   description,
   children,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   title: string;
   description?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <Card className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
@@ -130,13 +163,14 @@ function SectionCard({
   );
 }
 
-async function fetchShippingConfig(): Promise<ShippingConfig> {
+async function fetchShippingConfig(): Promise<ShippingConfigResponse> {
   const { data } = await api.get(endpoints.adminShippingConfig.get);
-  return (data?.item ?? data) as ShippingConfig;
+  return (data?.item ?? data) as ShippingConfigResponse;
 }
 
 export default function AdminShippingPage() {
   const qc = useQueryClient();
+  const cityInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const configQ = useQuery({
     queryKey: ["admin-shipping-config"],
@@ -148,22 +182,18 @@ export default function AdminShippingPage() {
   const config = configQ.data ?? null;
 
   const [localDeliveryEnabled, setLocalDeliveryEnabled] = useState(true);
-  const [localDeliveryCity, setLocalDeliveryCity] = useState("São José do Rio Preto");
-  const [localDeliveryState, setLocalDeliveryState] = useState("SP");
-  const [localDeliveryPrice, setLocalDeliveryPrice] = useState("0");
+  const [rows, setRows] = useState<CityRow[]>([]);
 
   const [correiosDiscountEnabled, setCorreiosDiscountEnabled] = useState(false);
-  const [correiosDiscountMinSubtotal, setCorreiosDiscountMinSubtotal] = useState("300");
-  const [correiosDiscountMaxAmount, setCorreiosDiscountMaxAmount] = useState("30");
+  const [correiosDiscountMinSubtotal, setCorreiosDiscountMinSubtotal] =
+    useState("300");
+  const [correiosDiscountMaxAmount, setCorreiosDiscountMaxAmount] =
+    useState("30");
 
   useEffect(() => {
     if (!config) return;
 
     setLocalDeliveryEnabled(Boolean(config.localDeliveryEnabled));
-    setLocalDeliveryCity(config.localDeliveryCity || "São José do Rio Preto");
-    setLocalDeliveryState((config.localDeliveryState || "SP").toUpperCase());
-    setLocalDeliveryPrice(toMoneyString(config.localDeliveryPrice, "0"));
-
     setCorreiosDiscountEnabled(Boolean(config.correiosDiscountEnabled));
     setCorreiosDiscountMinSubtotal(
       toMoneyString(config.correiosDiscountMinSubtotal, "300")
@@ -171,15 +201,64 @@ export default function AdminShippingPage() {
     setCorreiosDiscountMaxAmount(
       toMoneyString(config.correiosDiscountMaxAmount, "30")
     );
+
+    const mappedRows: CityRow[] = (config.localDeliveryCities ?? []).map(
+      (item) => ({
+        clientId: makeClientId(),
+        id: item.id,
+        city: item.city || "",
+        state: (item.state || "SP").toUpperCase(),
+        price: toMoneyString(item.price, "0"),
+        active: Boolean(item.active),
+      })
+    );
+
+    setRows(mappedRows.length ? mappedRows : [makeEmptyCityRow()]);
   }, [config]);
+
+  function updateRow(clientId: string, patch: Partial<CityRow>) {
+    setRows((prev) =>
+      prev.map((row) =>
+        row.clientId === clientId ? { ...row, ...patch } : row
+      )
+    );
+  }
+
+  function addRow() {
+    const newRow = makeEmptyCityRow();
+
+    setRows((prev) => [...prev, newRow]);
+
+    setTimeout(() => {
+      cityInputRefs.current[newRow.clientId]?.focus();
+      cityInputRefs.current[newRow.clientId]?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 50);
+  }
+
+  function removeRow(clientId: string) {
+    setRows((prev) => {
+      const next = prev.filter((row) => row.clientId !== clientId);
+      return next.length ? next : [makeEmptyCityRow()];
+    });
+  }
 
   const saveM = useMutation({
     mutationFn: async () => {
+      const normalizedRows = rows
+        .map((row) => ({
+          id: row.id,
+          city: row.city.trim(),
+          state: row.state.trim().toUpperCase(),
+          price: String(row.price || "0").replace(",", "."),
+          active: Boolean(row.active),
+        }))
+        .filter((row) => row.city && row.state.length === 2);
+
       const payload = {
         localDeliveryEnabled: Boolean(localDeliveryEnabled),
-        localDeliveryCity: localDeliveryCity.trim(),
-        localDeliveryState: localDeliveryState.trim().toUpperCase(),
-        localDeliveryPrice: String(localDeliveryPrice || "0").replace(",", "."),
 
         correiosDiscountEnabled: Boolean(correiosDiscountEnabled),
         correiosDiscountMinSubtotal: String(
@@ -188,19 +267,9 @@ export default function AdminShippingPage() {
         correiosDiscountMaxAmount: String(
           correiosDiscountMaxAmount || "0"
         ).replace(",", "."),
+
+        localDeliveryCities: normalizedRows,
       };
-
-      if (!payload.localDeliveryCity) {
-        throw new Error("Informe a cidade da entrega local.");
-      }
-
-      if (!payload.localDeliveryState || payload.localDeliveryState.length !== 2) {
-        throw new Error("UF inválida. Use 2 letras, ex.: SP.");
-      }
-
-      if (toNumberBR(payload.localDeliveryPrice) < 0) {
-        throw new Error("O valor da entrega local não pode ser negativo.");
-      }
 
       if (toNumberBR(payload.correiosDiscountMinSubtotal) < 0) {
         throw new Error("O mínimo do desconto dos Correios não pode ser negativo.");
@@ -208,6 +277,20 @@ export default function AdminShippingPage() {
 
       if (toNumberBR(payload.correiosDiscountMaxAmount) < 0) {
         throw new Error("O teto do desconto dos Correios não pode ser negativo.");
+      }
+
+      for (const row of normalizedRows) {
+        if (!row.city) {
+          throw new Error("Preencha o nome da cidade.");
+        }
+
+        if (!row.state || row.state.length !== 2) {
+          throw new Error(`UF inválida para a cidade ${row.city}.`);
+        }
+
+        if (toNumberBR(row.price) < 0) {
+          throw new Error(`O valor da cidade ${row.city} não pode ser negativo.`);
+        }
       }
 
       await api.put(endpoints.adminShippingConfig.save, payload);
@@ -223,11 +306,11 @@ export default function AdminShippingPage() {
 
   const summary = useMemo(() => {
     return {
-      localPriceLabel: formatCurrencyBRL(localDeliveryPrice),
       minSubtotalLabel: formatCurrencyBRL(correiosDiscountMinSubtotal),
       maxDiscountLabel: formatCurrencyBRL(correiosDiscountMaxAmount),
+      activeCities: rows.filter((row) => row.city.trim() && row.active),
     };
-  }, [localDeliveryPrice, correiosDiscountMinSubtotal, correiosDiscountMaxAmount]);
+  }, [rows, correiosDiscountMinSubtotal, correiosDiscountMaxAmount]);
 
   if (configQ.isLoading) {
     return (
@@ -257,7 +340,7 @@ export default function AdminShippingPage() {
                 </Badge>
 
                 <Badge className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-1 text-emerald-200">
-                  Entrega local + Correios
+                  Múltiplas cidades
                 </Badge>
               </div>
 
@@ -266,30 +349,25 @@ export default function AdminShippingPage() {
                   Entrega e frete
                 </h1>
                 <p className="text-sm text-white/70">
-                  Centralize a entrega local e o desconto automático dos Correios
-                  em um só lugar.
+                  Configure cidades com entrega local e o desconto automático dos Correios.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2 text-xs text-white/70">
-                <span className="rounded-full bg-white/10 px-3 py-1">
-                  Cidade local:{" "}
-                  <span className="font-semibold text-white">
-                    {localDeliveryCity || "-"}
-                  </span>
-                </span>
-                <span className="rounded-full bg-white/10 px-3 py-1">
-                  UF:{" "}
-                  <span className="font-semibold text-white">
-                    {localDeliveryState || "-"}
-                  </span>
-                </span>
                 <span className="rounded-full bg-white/10 px-3 py-1">
                   Entrega local:{" "}
                   <span className="font-semibold text-white">
                     {localDeliveryEnabled ? "Ligada" : "Desligada"}
                   </span>
                 </span>
+
+                <span className="rounded-full bg-white/10 px-3 py-1">
+                  Cidades cadastradas:{" "}
+                  <span className="font-semibold text-white">
+                    {rows.filter((row) => row.city.trim()).length}
+                  </span>
+                </span>
+
                 <span className="rounded-full bg-white/10 px-3 py-1">
                   Desconto Correios:{" "}
                   <span className="font-semibold text-white">
@@ -324,13 +402,13 @@ export default function AdminShippingPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
+        <div className="grid gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-3">
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
             <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              Valor entrega local
+              Cidades ativas
             </div>
             <div className="mt-1 text-lg font-bold text-slate-900">
-              {summary.localPriceLabel}
+              {summary.activeCities.length}
             </div>
           </div>
 
@@ -351,15 +429,6 @@ export default function AdminShippingPage() {
               {summary.maxDiscountLabel}
             </div>
           </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              Região local
-            </div>
-            <div className="mt-1 text-sm font-semibold text-slate-900">
-              {localDeliveryCity || "—"} / {localDeliveryState || "—"}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -367,55 +436,134 @@ export default function AdminShippingPage() {
         <div className="space-y-5 xl:col-span-8">
           <SectionCard
             icon={<MapPinned className="h-5 w-5" />}
-            title="Entrega local"
-            description="Defina quando a entrega própria aparece e qual valor será cobrado."
+            title="Entrega local por cidade"
+            description="Cadastre uma ou várias cidades e defina o valor de frete de cada uma."
           >
             <ToggleField
               checked={localDeliveryEnabled}
               onChange={setLocalDeliveryEnabled}
               title="Ativar entrega local"
-              description="Quando ligado, pedidos da cidade/UF configuradas poderão receber a opção de entrega local."
+              description="Quando ligado, pedidos de cidades cadastradas poderão receber a opção de entrega local."
             />
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="grid gap-2 md:col-span-2">
-                <Label>Cidade atendida</Label>
-                <Input
-                  className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
-                  value={localDeliveryCity}
-                  onChange={(e) => setLocalDeliveryCity(e.target.value)}
-                  placeholder="Ex.: São José do Rio Preto"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label>UF</Label>
-                <Input
-                  className="h-11 rounded-2xl border-slate-200 bg-slate-50/60 uppercase"
-                  value={localDeliveryState}
-                  onChange={(e) =>
-                    setLocalDeliveryState(
-                      e.target.value.replace(/[^a-zA-Z]/g, "").slice(0, 2).toUpperCase()
-                    )
-                  }
-                  placeholder="SP"
-                  maxLength={2}
-                />
-              </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-2xl"
+                onClick={addRow}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Adicionar cidade
+              </Button>
             </div>
 
-            <div className="grid gap-2 md:max-w-xs">
-              <Label>Valor da entrega local</Label>
-              <Input
-                className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
-                value={localDeliveryPrice}
-                onChange={(e) => setLocalDeliveryPrice(normalizeMoneyInput(e.target.value))}
-                placeholder="0"
-                inputMode="decimal"
-              />
-              <div className="text-xs text-slate-500">
-                Use <span className="font-semibold">0</span> para entrega grátis.
-              </div>
+            <div className="space-y-3">
+              {rows.map((row, index) => (
+                <div
+                  key={row.clientId}
+                  className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4"
+                >
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-slate-900">
+                      Cidade {index + 1}
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="rounded-2xl"
+                      onClick={() => removeRow(row.clientId)}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Remover
+                    </Button>
+                  </div>
+
+                  <div className="grid gap-4 md:grid-cols-12">
+                    <div className="grid gap-2 md:col-span-5">
+                      <Label>Cidade</Label>
+                      <Input
+                        ref={(el) => {
+                          cityInputRefs.current[row.clientId] = el;
+                        }}
+                        className="h-11 rounded-2xl border-slate-200 bg-white"
+                        value={row.city}
+                        onChange={(e) =>
+                          updateRow(row.clientId, { city: e.target.value })
+                        }
+                        placeholder="Ex.: São José do Rio Preto"
+                      />
+                    </div>
+
+                    <div className="grid gap-2 md:col-span-2">
+                      <Label>UF</Label>
+                      <Input
+                        className="h-11 rounded-2xl border-slate-200 bg-white uppercase"
+                        value={row.state}
+                        onChange={(e) =>
+                          updateRow(row.clientId, {
+                            state: e.target.value
+                              .replace(/[^a-zA-Z]/g, "")
+                              .slice(0, 2)
+                              .toUpperCase(),
+                          })
+                        }
+                        placeholder="SP"
+                        maxLength={2}
+                      />
+                    </div>
+
+                    <div className="grid gap-2 md:col-span-3">
+                      <Label>Frete da cidade</Label>
+                      <Input
+                        className="h-11 rounded-2xl border-slate-200 bg-white"
+                        value={row.price}
+                        onChange={(e) =>
+                          updateRow(row.clientId, {
+                            price: normalizeMoneyInput(e.target.value),
+                          })
+                        }
+                        placeholder="0"
+                        inputMode="decimal"
+                      />
+                    </div>
+
+                    <div className="grid gap-2 md:col-span-2">
+                      <Label>Ativa</Label>
+                      <label className="flex h-11 items-center justify-center rounded-2xl border border-slate-200 bg-white">
+                        <input
+                          type="checkbox"
+                          checked={row.active}
+                          onChange={(e) =>
+                            updateRow(row.clientId, { active: e.target.checked })
+                          }
+                          className="h-4 w-4 accent-black"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="mt-2 text-xs text-slate-500">
+                    Valor atual:{" "}
+                    <span className="font-semibold text-slate-700">
+                      {formatCurrencyBRL(row.price)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-2xl"
+                onClick={addRow}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Adicionar outra cidade
+              </Button>
             </div>
           </SectionCard>
 
@@ -438,7 +586,9 @@ export default function AdminShippingPage() {
                   className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
                   value={correiosDiscountMinSubtotal}
                   onChange={(e) =>
-                    setCorreiosDiscountMinSubtotal(normalizeMoneyInput(e.target.value))
+                    setCorreiosDiscountMinSubtotal(
+                      normalizeMoneyInput(e.target.value)
+                    )
                   }
                   placeholder="300"
                   inputMode="decimal"
@@ -454,7 +604,9 @@ export default function AdminShippingPage() {
                   className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
                   value={correiosDiscountMaxAmount}
                   onChange={(e) =>
-                    setCorreiosDiscountMaxAmount(normalizeMoneyInput(e.target.value))
+                    setCorreiosDiscountMaxAmount(
+                      normalizeMoneyInput(e.target.value)
+                    )
                   }
                   placeholder="30"
                   inputMode="decimal"
@@ -480,7 +632,7 @@ export default function AdminShippingPage() {
                 </div>
                 <p className="mt-1 text-sm text-slate-600">
                   {localDeliveryEnabled
-                    ? `Pedidos de ${localDeliveryCity || "—"}/${localDeliveryState || "—"} podem receber entrega local por ${summary.localPriceLabel}.`
+                    ? "A entrega local está ligada para as cidades cadastradas abaixo."
                     : "A entrega local está desligada no momento."}
                 </p>
               </div>
@@ -498,13 +650,32 @@ export default function AdminShippingPage() {
 
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
                 <div className="text-[11px] font-semibold uppercase tracking-[0.04em] text-emerald-800">
-                  Comportamento esperado
+                  Cidades configuradas
                 </div>
-                <p className="mt-1 text-sm font-medium text-slate-900">
-                  Mesma região configurada → pode aparecer entrega local. Fora da região →
-                  segue cotação normal. Desconto dos Correios só entra quando estiver ativo
-                  e o pedido bater o mínimo.
-                </p>
+
+                <div className="mt-2 space-y-2">
+                  {summary.activeCities.length ? (
+                    summary.activeCities.map((row) => (
+                      <div
+                        key={row.clientId}
+                        className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200/70 bg-white px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-slate-900">
+                            {row.city || "Cidade sem nome"} / {row.state || "--"}
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-sm font-semibold text-slate-900">
+                          {formatCurrencyBRL(row.price)}
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-slate-600">
+                      Nenhuma cidade ativa cadastrada.
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           </SectionCard>
