@@ -15,6 +15,9 @@ import {
   X,
   Loader2,
   MailCheck,
+  MessageCircle,
+  MessageCircleOff,
+  Pencil,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -32,9 +35,28 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type CommentStatus = "PENDING" | "APPROVED" | "HIDDEN" | "REJECTED";
 type FilterStatus = CommentStatus | "ALL";
+
+type CommentAdminResponse = {
+  id: string;
+  response: string;
+  createdAt: string;
+  updatedAt: string;
+  adminUser?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+};
 
 type CommentItem = {
   id: string;
@@ -54,6 +76,7 @@ type CommentItem = {
     name: string;
     sku?: string | null;
   };
+  adminResponse?: CommentAdminResponse | null;
 };
 
 type CommentsResponse = {
@@ -200,7 +223,10 @@ export default function AdminProductCommentsPage() {
   const autoReadTriggeredRef = useRef(false);
 
   const [status, setStatus] = useState<FilterStatus>("PENDING");
+  const [productFilter, setProductFilter] = useState<string>("ALL");
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [responseDrafts, setResponseDrafts] = useState<Record<string, string>>({});
+  const [editingResponse, setEditingResponse] = useState<Record<string, boolean>>({});
 
   const query = useQuery({
     queryKey: ["admin-product-comments", status],
@@ -225,15 +251,30 @@ export default function AdminProductCommentsPage() {
   const items = useMemo(() => query.data?.items ?? [], [query.data]);
   const commentUnreadCount = commentUnread.data?.count ?? 0;
 
+  const productOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of items) {
+      if (!map.has(item.product.id)) {
+        map.set(item.product.id, item.product.name);
+      }
+    }
+    return [...map.entries()].map(([id, name]) => ({ id, name }));
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    if (productFilter === "ALL") return items;
+    return items.filter((item) => item.product.id === productFilter);
+  }, [items, productFilter]);
+
   const counts = useMemo(() => {
     return {
-      all: items.length,
-      pending: items.filter((item) => item.status === "PENDING").length,
-      approved: items.filter((item) => item.status === "APPROVED").length,
-      hidden: items.filter((item) => item.status === "HIDDEN").length,
-      rejected: items.filter((item) => item.status === "REJECTED").length,
+      all: filteredItems.length,
+      pending: filteredItems.filter((item) => item.status === "PENDING").length,
+      approved: filteredItems.filter((item) => item.status === "APPROVED").length,
+      hidden: filteredItems.filter((item) => item.status === "HIDDEN").length,
+      rejected: filteredItems.filter((item) => item.status === "REJECTED").length,
     };
-  }, [items]);
+  }, [filteredItems]);
 
   useEffect(() => {
     if (!items.length) return;
@@ -244,6 +285,18 @@ export default function AdminProductCommentsPage() {
       for (const item of items) {
         if (next[item.id] === undefined) {
           next[item.id] = item.adminNote ?? "";
+        }
+      }
+
+      return next;
+    });
+
+    setResponseDrafts((prev) => {
+      const next = { ...prev };
+
+      for (const item of items) {
+        if (next[item.id] === undefined) {
+          next[item.id] = item.adminResponse?.response ?? "";
         }
       }
 
@@ -324,6 +377,52 @@ export default function AdminProductCommentsPage() {
     },
   });
 
+  const saveAdminResponseMutation = useMutation({
+    mutationFn: async ({
+      id,
+      content,
+      hasResponse,
+    }: {
+      id: string;
+      content: string;
+      hasResponse: boolean;
+    }) => {
+      const payload = { response: content.trim() };
+      const url = endpoints.adminProductComments.adminResponse.update(id);
+
+      if (hasResponse) {
+        const res = await api.patch(url, payload);
+        return res.data;
+      }
+
+      const res = await api.put(url, payload);
+      return res.data;
+    },
+    onSuccess: async (_data, vars) => {
+      toast.success(vars.hasResponse ? "Resposta atualizada." : "Resposta criada.");
+      setEditingResponse((prev) => ({ ...prev, [vars.id]: false }));
+
+      await queryClient.invalidateQueries({ queryKey: ["admin-product-comments"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Não foi possível salvar a resposta administrativa."));
+    },
+  });
+
+  const deactivateAdminResponseMutation = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const res = await api.delete(endpoints.adminProductComments.adminResponse.deactivate(id));
+      return res.data;
+    },
+    onSuccess: async () => {
+      toast.success("Resposta administrativa desativada.");
+      await queryClient.invalidateQueries({ queryKey: ["admin-product-comments"] });
+    },
+    onError: (error) => {
+      toast.error(apiErrorMessage(error, "Não foi possível desativar a resposta administrativa."));
+    },
+  });
+
   function handleModerate(
     id: string,
     nextStatus: Exclude<CommentStatus, "PENDING">
@@ -335,9 +434,36 @@ export default function AdminProductCommentsPage() {
     });
   }
 
+  function handleSaveResponse(item: CommentItem) {
+    const draft = responseDrafts[item.id] ?? "";
+
+    if (!draft.trim()) {
+      toast.error("Digite uma resposta administrativa antes de salvar.");
+      return;
+    }
+
+    saveAdminResponseMutation.mutate({
+      id: item.id,
+      content: draft,
+      hasResponse: Boolean(item.adminResponse),
+    });
+  }
+
+  function handleEditResponse(item: CommentItem) {
+    setEditingResponse((prev) => ({ ...prev, [item.id]: true }));
+    setResponseDrafts((prev) => ({
+      ...prev,
+      [item.id]: item.adminResponse?.response ?? prev[item.id] ?? "",
+    }));
+  }
+
   const refreshing = query.isFetching || commentUnread.isFetching;
   const actingCommentId =
     (moderateMutation.variables as { id?: string } | undefined)?.id ?? null;
+  const savingResponseId =
+    (saveAdminResponseMutation.variables as { id?: string } | undefined)?.id ?? null;
+  const deactivatingResponseId =
+    (deactivateAdminResponseMutation.variables as { id?: string } | undefined)?.id ?? null;
 
   return (
     <div className="space-y-6">
@@ -425,29 +551,45 @@ export default function AdminProductCommentsPage() {
               </CardDescription>
             </div>
 
-            <Tabs
-              value={status}
-              onValueChange={(value) => setStatus(value as FilterStatus)}
-              className="w-full lg:w-auto"
-            >
-              <TabsList className="grid h-auto w-full grid-cols-5 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm lg:w-auto">
-                <TabsTrigger value="ALL" className="rounded-xl px-3 py-2">
-                  Todos
-                </TabsTrigger>
-                <TabsTrigger value="PENDING" className="rounded-xl px-3 py-2">
-                  Pend.
-                </TabsTrigger>
-                <TabsTrigger value="APPROVED" className="rounded-xl px-3 py-2">
-                  Aprov.
-                </TabsTrigger>
-                <TabsTrigger value="HIDDEN" className="rounded-xl px-3 py-2">
-                  Ocult.
-                </TabsTrigger>
-                <TabsTrigger value="REJECTED" className="rounded-xl px-3 py-2">
-                  Rej.
-                </TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <div className="flex w-full flex-col gap-2 lg:w-auto lg:flex-row lg:items-center">
+              <Tabs
+                value={status}
+                onValueChange={(value) => setStatus(value as FilterStatus)}
+                className="w-full lg:w-auto"
+              >
+                <TabsList className="grid h-auto w-full grid-cols-5 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm lg:w-auto">
+                  <TabsTrigger value="ALL" className="rounded-xl px-3 py-2">
+                    Todos
+                  </TabsTrigger>
+                  <TabsTrigger value="PENDING" className="rounded-xl px-3 py-2">
+                    Pend.
+                  </TabsTrigger>
+                  <TabsTrigger value="APPROVED" className="rounded-xl px-3 py-2">
+                    Aprov.
+                  </TabsTrigger>
+                  <TabsTrigger value="HIDDEN" className="rounded-xl px-3 py-2">
+                    Ocult.
+                  </TabsTrigger>
+                  <TabsTrigger value="REJECTED" className="rounded-xl px-3 py-2">
+                    Rej.
+                  </TabsTrigger>
+                </TabsList>
+              </Tabs>
+
+              <Select value={productFilter} onValueChange={setProductFilter}>
+                <SelectTrigger className="h-11 min-w-[220px] rounded-xl border-slate-300 bg-white text-slate-900">
+                  <SelectValue placeholder="Filtrar produto" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todos os produtos</SelectItem>
+                  {productOptions.map((product) => (
+                    <SelectItem key={product.id} value={product.id}>
+                      {product.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </CardHeader>
 
@@ -460,13 +602,19 @@ export default function AdminProductCommentsPage() {
             <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               {apiErrorMessage(query.error, "Erro ao carregar avaliações.")}
             </div>
-          ) : items.length === 0 ? (
+          ) : filteredItems.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-500">
               Nenhuma avaliação encontrada para o filtro selecionado.
             </div>
           ) : (
-            items.map((item) => {
+            filteredItems.map((item) => {
               const acting = actingCommentId === item.id && moderateMutation.isPending;
+              const responseEditing = editingResponse[item.id] || !item.adminResponse;
+              const responseExists = Boolean(item.adminResponse);
+              const responseBusy =
+                (savingResponseId === item.id && saveAdminResponseMutation.isPending) ||
+                (deactivatingResponseId === item.id &&
+                  deactivateAdminResponseMutation.isPending);
 
               return (
                 <div
@@ -484,6 +632,17 @@ export default function AdminProductCommentsPage() {
                             )}
                           >
                             {statusLabel(item.status)}
+                          </span>
+
+                          <span
+                            className={cn(
+                              "inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold",
+                              responseExists
+                                ? "border-indigo-200 bg-indigo-50 text-indigo-700"
+                                : "border-slate-200 bg-slate-50 text-slate-600"
+                            )}
+                          >
+                            {responseExists ? "Com resposta admin" : "Sem resposta admin"}
                           </span>
 
                           <div className="inline-flex items-center gap-2 text-sm text-slate-600">
@@ -526,6 +685,19 @@ export default function AdminProductCommentsPage() {
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm leading-6 text-slate-700">
                       {item.comment?.trim() ? item.comment : "Sem comentário escrito."}
                     </div>
+
+                    {item.adminResponse ? (
+                      <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm">
+                        <p className="font-semibold text-indigo-900">Resposta administrativa ativa</p>
+                        <p className="mt-2 whitespace-pre-wrap text-indigo-900">
+                          {item.adminResponse.response}
+                        </p>
+                        <p className="mt-3 text-xs text-indigo-700">
+                          Respondido por {item.adminResponse.adminUser?.name ?? "Admin"} em{" "}
+                          {formatDateTime(item.adminResponse.updatedAt)}
+                        </p>
+                      </div>
+                    ) : null}
 
                     <div className="space-y-2">
                       <label className="text-sm font-medium text-slate-700">
@@ -586,6 +758,97 @@ export default function AdminProductCommentsPage() {
                         )}
                         Rejeitar
                       </Button>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-800">
+                          Resposta administrativa
+                        </p>
+                        {item.adminResponse && !responseEditing ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="rounded-xl border-slate-300 bg-white"
+                            onClick={() => handleEditResponse(item)}
+                            disabled={responseBusy}
+                          >
+                            <Pencil className="mr-2 h-4 w-4" />
+                            Editar resposta
+                          </Button>
+                        ) : null}
+                      </div>
+
+                      {responseEditing ? (
+                        <div className="space-y-2">
+                          <Textarea
+                            value={responseDrafts[item.id] ?? ""}
+                            onChange={(e) =>
+                              setResponseDrafts((prev) => ({
+                                ...prev,
+                                [item.id]: e.target.value,
+                              }))
+                            }
+                            placeholder="Escreva a resposta da administração para este comentário..."
+                            className="min-h-[100px] rounded-2xl border-slate-300 bg-white"
+                            disabled={responseBusy}
+                          />
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              className="rounded-xl bg-indigo-600 text-white hover:bg-indigo-700"
+                              onClick={() => handleSaveResponse(item)}
+                              disabled={responseBusy}
+                            >
+                              {savingResponseId === item.id &&
+                              saveAdminResponseMutation.isPending ? (
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              ) : (
+                                <MessageCircle className="mr-2 h-4 w-4" />
+                              )}
+                              Salvar resposta
+                            </Button>
+
+                            {item.adminResponse ? (
+                              <Button
+                                variant="outline"
+                                className="rounded-xl border-slate-300 bg-white"
+                                onClick={() =>
+                                  setEditingResponse((prev) => ({
+                                    ...prev,
+                                    [item.id]: false,
+                                  }))
+                                }
+                                disabled={responseBusy}
+                              >
+                                Cancelar edição
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-slate-600">
+                          Use “Editar resposta” para atualizar ou desativar a resposta ativa.
+                        </p>
+                      )}
+
+                      {item.adminResponse ? (
+                        <div className="mt-3">
+                          <Button
+                            variant="outline"
+                            className="rounded-xl border-red-200 bg-white text-red-600 hover:bg-red-50 hover:text-red-700"
+                            onClick={() => deactivateAdminResponseMutation.mutate({ id: item.id })}
+                            disabled={responseBusy}
+                          >
+                            {deactivatingResponseId === item.id &&
+                            deactivateAdminResponseMutation.isPending ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <MessageCircleOff className="mr-2 h-4 w-4" />
+                            )}
+                            Desativar resposta
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>

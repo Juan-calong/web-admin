@@ -161,6 +161,11 @@ export const endpoints = {
   adminProductComments: {
     list: "/admin/product-comments",
     moderate: (id: string) => `/admin/product-comments/${id}/moderate`,
+    adminResponse: {
+      create: (id: string) => `/admin/product-comments/${id}/admin-response`,
+      update: (id: string) => `/admin/product-comments/${id}/admin-response`,
+      deactivate: (id: string) => `/admin/product-comments/${id}/admin-response`,
+    },
   },
 
   adminQuantityDiscountGroups: {
