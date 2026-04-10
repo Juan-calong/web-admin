@@ -30,6 +30,7 @@ type LocalDeliveryCityItem = {
   price: string | number;
   active: boolean;
   sortOrder?: number;
+  deliveryWeekdays?: DeliveryWeekday[];
 };
 
 type ShippingConfigResponse = {
@@ -50,7 +51,27 @@ type CityRow = {
   state: string;
   price: string;
   active: boolean;
+  deliveryWeekdays: DeliveryWeekday[];
 };
+
+type DeliveryWeekday =
+  | "MONDAY"
+  | "TUESDAY"
+  | "WEDNESDAY"
+  | "THURSDAY"
+  | "FRIDAY"
+  | "SATURDAY"
+  | "SUNDAY";
+
+const DELIVERY_WEEKDAYS: Array<{ value: DeliveryWeekday; label: string }> = [
+  { value: "MONDAY", label: "Seg" },
+  { value: "TUESDAY", label: "Ter" },
+  { value: "WEDNESDAY", label: "Qua" },
+  { value: "THURSDAY", label: "Qui" },
+  { value: "FRIDAY", label: "Sex" },
+  { value: "SATURDAY", label: "Sáb" },
+  { value: "SUNDAY", label: "Dom" },
+];
 
 function makeClientId() {
   return Math.random().toString(36).slice(2, 10);
@@ -63,7 +84,18 @@ function makeEmptyCityRow(): CityRow {
     state: "SP",
     price: "0",
     active: true,
+    deliveryWeekdays: [],
   };
+}
+
+function normalizeDeliveryWeekdays(
+  weekdays: unknown
+): DeliveryWeekday[] {
+  if (!Array.isArray(weekdays)) return [];
+
+  return weekdays.filter((weekday): weekday is DeliveryWeekday =>
+    DELIVERY_WEEKDAYS.some((item) => item.value === weekday)
+  );
 }
 
 function normalizeMoneyInput(v: string) {
@@ -210,6 +242,7 @@ export default function AdminShippingPage() {
         state: (item.state || "SP").toUpperCase(),
         price: toMoneyString(item.price, "0"),
         active: Boolean(item.active),
+        deliveryWeekdays: normalizeDeliveryWeekdays(item.deliveryWeekdays),
       })
     );
 
@@ -253,7 +286,7 @@ export default function AdminShippingPage() {
           city: row.city.trim(),
           state: row.state.trim().toUpperCase(),
           price: String(row.price || "0").replace(",", "."),
-          active: Boolean(row.active),
+          deliveryWeekdays: normalizeDeliveryWeekdays(row.deliveryWeekdays),
         }))
         .filter((row) => row.city && row.state.length === 2);
 
@@ -542,12 +575,69 @@ export default function AdminShippingPage() {
                         />
                       </label>
                     </div>
+                    <div className="grid gap-2 md:col-span-12">
+                      <Label>Dias de entrega</Label>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                        {DELIVERY_WEEKDAYS.map((weekday) => {
+                          const checked = row.deliveryWeekdays.includes(
+                            weekday.value
+                          );
+
+                          return (
+                            <label
+                              key={weekday.value}
+                              className="flex h-11 cursor-pointer items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const next = e.target.checked
+                                    ? [...row.deliveryWeekdays, weekday.value]
+                                    : row.deliveryWeekdays.filter(
+                                        (v) => v !== weekday.value
+                                      );
+
+                                  updateRow(row.clientId, {
+                                    deliveryWeekdays:
+                                      normalizeDeliveryWeekdays(next),
+                                  });
+                                }}
+                                className="h-4 w-4 accent-black"
+                              />
+                              <span className="text-sm font-medium text-slate-700">
+                                {weekday.label}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        Recomendado: selecione os dias em que esta cidade recebe
+                        entrega local. Compatibilidade mantida para cidades
+                        antigas sem dias configurados.
+                      </p>
+                    </div>
                   </div>
 
                   <div className="mt-2 text-xs text-slate-500">
                     Valor atual:{" "}
                     <span className="font-semibold text-slate-700">
                       {formatCurrencyBRL(row.price)}
+                    </span>
+                                        {" • "}
+                    Dias:{" "}
+                    <span className="font-semibold text-slate-700">
+                      {row.deliveryWeekdays.length
+                        ? row.deliveryWeekdays
+                            .map(
+                              (weekday) =>
+                                DELIVERY_WEEKDAYS.find(
+                                  (item) => item.value === weekday
+                                )?.label ?? weekday
+                            )
+                            .join(", ")
+                        : "não configurados"}
                     </span>
                   </div>
                 </div>
@@ -663,6 +753,19 @@ export default function AdminShippingPage() {
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium text-slate-900">
                             {row.city || "Cidade sem nome"} / {row.state || "--"}
+                          </div>
+                                                    <div className="text-xs text-slate-500">
+                            Dias:{" "}
+                            {row.deliveryWeekdays.length
+                              ? row.deliveryWeekdays
+                                  .map(
+                                    (weekday) =>
+                                      DELIVERY_WEEKDAYS.find(
+                                        (item) => item.value === weekday
+                                      )?.label ?? weekday
+                                  )
+                                  .join(", ")
+                              : "não configurados"}
                           </div>
                         </div>
                         <div className="shrink-0 text-sm font-semibold text-slate-900">
