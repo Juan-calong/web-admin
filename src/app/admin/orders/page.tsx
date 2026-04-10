@@ -12,7 +12,13 @@ import { apiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 
 import {
   AlertDialog,
@@ -31,12 +37,15 @@ type Order = {
   createdAt?: string;
   paymentStatus?: string;
   adminApprovalStatus?: string;
+  orderStatus?: string;
+  status?: string;
   total?: string | number;
   salonName?: string;
+  customerName?: string;
 };
 
 function fmtDate(iso?: string) {
-  if (!iso) return "";
+  if (!iso) return "Não informado";
   try {
     return new Date(iso).toLocaleString("pt-BR");
   } catch {
@@ -48,11 +57,91 @@ function brl(v?: string | number) {
   if (v === undefined || v === null || v === "") return null;
   const n = typeof v === "string" ? Number(v) : v;
   if (!Number.isFinite(n)) return null;
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(n);
 }
 
 function idempotencyKey(orderId: string, action: string) {
   return `admin-order:${orderId}:${action}`;
+}
+
+function formatStatus(value?: string | null) {
+  if (!value) return "Não informado";
+  return String(value).toUpperCase();
+}
+
+function badgeClasses(value?: string | null) {
+  const v = String(value ?? "").toUpperCase();
+
+  if (["PAID", "APPROVED", "SUCCESS"].includes(v)) {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (["PENDING", "WAITING", "PROCESSING"].includes(v)) {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+
+  if (["REJECTED", "FAILED", "CANCELED", "CANCELLED", "DENIED"].includes(v)) {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  if (["REFUNDED", "PARTIALLY_REFUNDED"].includes(v)) {
+    return "border-slate-200 bg-slate-100 text-slate-700";
+  }
+
+  if (!value) {
+    return "border-dashed border-black/15 bg-black/[0.03] text-black/45";
+  }
+
+  return "border-zinc-200 bg-zinc-50 text-zinc-700";
+}
+
+function InfoField({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | number | null;
+}) {
+  const hasValue =
+    value !== undefined && value !== null && String(value).trim() !== "";
+
+  return (
+    <div className="rounded-xl border bg-white p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-black/45">
+        {label}
+      </div>
+      <div className={cn("mt-1 text-sm", hasValue ? "text-black" : "text-black/45")}>
+        {hasValue ? String(value) : "Não informado"}
+      </div>
+    </div>
+  );
+}
+
+function LabeledStatus({
+  label,
+  value,
+}: {
+  label: string;
+  value?: string | null;
+}) {
+  return (
+    <div className="rounded-xl border bg-white p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-black/45">
+        {label}
+      </div>
+      <span
+        className={cn(
+          "mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold",
+          badgeClasses(value)
+        )}
+      >
+        {formatStatus(value)}
+      </span>
+    </div>
+  );
 }
 
 export default function AdminOrdersPage() {
@@ -96,11 +185,13 @@ export default function AdminOrdersPage() {
   const actingOrderId = (decideM.variables as { orderId?: string } | undefined)?.orderId;
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 px-3 lg:px-6">
+    <div className="mx-auto w-full max-w-7xl space-y-4 px-3 lg:px-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-xl font-black sm:text-2xl">Pedidos pendentes</h1>
-          <p className="text-sm text-black/60">Pedidos aguardando decisão do admin</p>
+          <p className="text-sm text-black/60">
+            Pagamentos já confirmados e aguardando decisão do admin
+          </p>
         </div>
 
         <Button
@@ -114,55 +205,86 @@ export default function AdminOrdersPage() {
         </Button>
       </div>
 
-      <Card className="rounded-2xl">
+      <Card className="rounded-2xl border-black/10 shadow-sm">
         <CardHeader>
-          <CardTitle>Fila</CardTitle>
+          <CardTitle>Fila de aprovação</CardTitle>
           <CardDescription>
-            {ordersQ.isLoading ? "Carregando…" : `${pending.length} pendente(s)`}
+            {ordersQ.isLoading ? "Carregando…" : `${pending.length} pedido(s) aguardando aprovação`}
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-3">
           {ordersQ.isLoading ? (
-            <div className="text-sm">Carregando…</div>
+            <div className="rounded-xl border border-dashed p-4 text-sm text-black/60">
+              Carregando pedidos…
+            </div>
           ) : ordersQ.isError ? (
-            <div className="text-sm text-red-600">
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
               {apiErrorMessage(ordersQ.error, "Erro ao carregar pedidos.")}
             </div>
           ) : pending.length === 0 ? (
-            <div className="text-sm text-black/70">Nenhum pedido pendente 🎉</div>
+            <div className="rounded-xl border border-dashed p-5 text-sm text-black/60">
+              Nenhum pedido pendente no momento.
+            </div>
           ) : (
-            <div className="grid gap-3">
+            <div className="grid gap-4">
               {pending.map((o) => {
                 const total = brl(o.total);
                 const busyThis = decideM.isPending && actingOrderId === o.id;
+                const orderStatus = o.orderStatus ?? o.status ?? null;
 
                 return (
-                  <div key={o.id} className="rounded-2xl border bg-white p-4">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0 space-y-1">
-                        <div className="break-words font-semibold">
-                          Pedido #{o.id.slice(0, 8)}{" "}
-                          {busyThis ? (
-                            <span className="text-xs text-black/50">• Processando…</span>
-                          ) : null}
+                  <div
+                    key={o.id}
+                    className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm"
+                  >
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="break-words text-base font-bold">
+                              Pedido #{o.id.slice(0, 8)}
+                            </div>
+                            {busyThis ? (
+                              <span className="text-xs font-medium text-black/45">
+                                Processando…
+                              </span>
+                            ) : null}
+                          </div>
+
+                          <div className="text-sm text-black/60">
+                            Criado em {fmtDate(o.createdAt)}
+                          </div>
+
+                          <div className="break-all text-xs text-black/45">
+                            ID completo: <span className="font-mono">{o.id}</span>
+                          </div>
                         </div>
 
-                        <div className="break-words text-sm text-black/60">
-                          {o.salonName ? `Salão: ${o.salonName} • ` : ""}
-                          {fmtDate(o.createdAt)}
-                          {total ? ` • ${total}` : ""}
-                        </div>
-
-                        <div className="pt-1 break-all text-xs text-black/50">
-                          ID completo: <span className="font-mono">{o.id}</span>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[420px]">
+                          <LabeledStatus label="Pagamento" value={o.paymentStatus} />
+                          <LabeledStatus label="Pedido" value={orderStatus} />
+                          <LabeledStatus
+                            label="Aprovação do admin"
+                            value={o.adminApprovalStatus}
+                          />
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <InfoField label="Salão" value={o.salonName ?? null} />
+                        <InfoField label="Cliente" value={o.customerName ?? null} />
+                        <InfoField label="Total" value={total ?? null} />
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:justify-end">
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button variant="outline" className="w-full rounded-xl" disabled={decideM.isPending}>
+                            <Button
+                              variant="outline"
+                              className="w-full rounded-xl"
+                              disabled={decideM.isPending}
+                            >
                               Reprovar
                             </Button>
                           </AlertDialogTrigger>
@@ -170,16 +292,20 @@ export default function AdminOrdersPage() {
                             <AlertDialogHeader>
                               <AlertDialogTitle>Reprovar este pedido?</AlertDialogTitle>
                               <AlertDialogDescription>
-                                Esta ação muda o status de aprovação do admin.
+                                Esta ação altera apenas a aprovação do admin.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+                              <AlertDialogCancel className="rounded-xl">
+                                Cancelar
+                              </AlertDialogCancel>
                               <AlertDialogAction
                                 className="rounded-xl"
-                                onClick={() => decideM.mutate({ orderId: o.id, action: "reject" })}
+                                onClick={() =>
+                                  decideM.mutate({ orderId: o.id, action: "reject" })
+                                }
                               >
-                                Confirmar
+                                Confirmar reprovação
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
@@ -187,7 +313,10 @@ export default function AdminOrdersPage() {
 
                         <AlertDialog>
                           <AlertDialogTrigger asChild>
-                            <Button className="w-full rounded-xl" disabled={decideM.isPending}>
+                            <Button
+                              className="w-full rounded-xl"
+                              disabled={decideM.isPending}
+                            >
                               Aprovar
                             </Button>
                           </AlertDialogTrigger>
@@ -199,20 +328,28 @@ export default function AdminOrdersPage() {
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>
-                              <AlertDialogCancel className="rounded-xl">Cancelar</AlertDialogCancel>
+                              <AlertDialogCancel className="rounded-xl">
+                                Cancelar
+                              </AlertDialogCancel>
                               <AlertDialogAction
                                 className="rounded-xl"
-                                onClick={() => decideM.mutate({ orderId: o.id, action: "approve" })}
+                                onClick={() =>
+                                  decideM.mutate({ orderId: o.id, action: "approve" })
+                                }
                               >
-                                Confirmar
+                                Confirmar aprovação
                               </AlertDialogAction>
                             </AlertDialogFooter>
                           </AlertDialogContent>
                         </AlertDialog>
 
-                        <Link href={`/admin/orders/${o.id}`} className="col-span-2 sm:col-span-1">
-                          <Button variant="outline" className="w-full rounded-xl" disabled={decideM.isPending}>
-                            Abrir
+                        <Link href={`/admin/orders/${o.id}`}>
+                          <Button
+                            variant="outline"
+                            className="w-full rounded-xl"
+                            disabled={decideM.isPending}
+                          >
+                            Abrir detalhe
                             <ArrowRight className="ml-2 h-4 w-4" />
                           </Button>
                         </Link>
