@@ -1,10 +1,21 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type ComponentType } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { RefreshCw, ArrowRight } from "lucide-react";
+import {
+  RefreshCw,
+  ArrowRight,
+  CheckCircle2,
+  XCircle,
+  Store,
+  UserRound,
+  Wallet,
+  Clock3,
+  Package2,
+  ShieldCheck,
+} from "lucide-react";
 
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
@@ -67,79 +78,147 @@ function idempotencyKey(orderId: string, action: string) {
   return `admin-order:${orderId}:${action}`;
 }
 
-function formatStatus(value?: string | null) {
+function prettyStatus(value?: string | null) {
   if (!value) return "Não informado";
-  return String(value).toUpperCase();
+  return String(value).replaceAll("_", " ").toUpperCase();
 }
 
-function badgeClasses(value?: string | null) {
-  const v = String(value ?? "").toUpperCase();
+function getStatusMeta(value?: string | null) {
+  const normalized = String(value ?? "").toUpperCase();
 
-  if (["PAID", "APPROVED", "SUCCESS"].includes(v)) {
-    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (
+    [
+      "PAID",
+      "APPROVED",
+      "SUCCESS",
+      "COMPLETED",
+      "DONE",
+      "DELIVERED",
+    ].includes(normalized)
+  ) {
+    return {
+      chip: "bg-emerald-600/10 text-emerald-700 ring-emerald-200",
+      border: "border-emerald-200/80",
+      soft: "bg-emerald-50/80",
+    };
   }
 
-  if (["PENDING", "WAITING", "PROCESSING"].includes(v)) {
-    return "border-amber-200 bg-amber-50 text-amber-700";
+  if (
+    ["PENDING", "WAITING", "PROCESSING", "AWAITING", "UNDER_REVIEW"].includes(
+      normalized
+    )
+  ) {
+    return {
+      chip: "bg-amber-600/10 text-amber-700 ring-amber-200",
+      border: "border-amber-200/80",
+      soft: "bg-amber-50/80",
+    };
   }
 
-  if (["REJECTED", "FAILED", "CANCELED", "CANCELLED", "DENIED"].includes(v)) {
-    return "border-red-200 bg-red-50 text-red-700";
+  if (
+    [
+      "REJECTED",
+      "FAILED",
+      "CANCELED",
+      "CANCELLED",
+      "DENIED",
+      "EXPIRED",
+    ].includes(normalized)
+  ) {
+    return {
+      chip: "bg-red-600/10 text-red-700 ring-red-200",
+      border: "border-red-200/80",
+      soft: "bg-red-50/80",
+    };
   }
 
-  if (["REFUNDED", "PARTIALLY_REFUNDED"].includes(v)) {
-    return "border-slate-200 bg-slate-100 text-slate-700";
+  if (["REFUNDED", "PARTIALLY_REFUNDED"].includes(normalized)) {
+    return {
+      chip: "bg-slate-600/10 text-slate-700 ring-slate-200",
+      border: "border-slate-200/80",
+      soft: "bg-slate-100/80",
+    };
   }
 
-  if (!value) {
-    return "border-dashed border-black/15 bg-black/[0.03] text-black/45";
-  }
-
-  return "border-zinc-200 bg-zinc-50 text-zinc-700";
+  return {
+    chip: "bg-zinc-600/10 text-zinc-700 ring-zinc-200",
+    border: "border-zinc-200/80",
+    soft: "bg-zinc-50/80",
+  };
 }
 
-function InfoField({
+function StatusBadge({
   label,
   value,
+  icon: Icon,
 }: {
   label: string;
-  value?: string | number | null;
+  value?: string | null;
+  icon: ComponentType<{ className?: string }>;
 }) {
-  const hasValue =
-    value !== undefined && value !== null && String(value).trim() !== "";
+  const meta = getStatusMeta(value);
 
   return (
-    <div className="rounded-xl border bg-white p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-black/45">
-        {label}
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-2xl border px-3 py-3",
+        meta.border,
+        meta.soft
+      )}
+    >
+      <div className="min-w-0">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+          {label}
+        </div>
+        <div
+          className={cn(
+            "mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset",
+            meta.chip
+          )}
+        >
+          {prettyStatus(value)}
+        </div>
       </div>
-      <div className={cn("mt-1 text-sm", hasValue ? "text-black" : "text-black/45")}>
-        {hasValue ? String(value) : "Não informado"}
+
+      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white text-zinc-700 shadow-sm">
+        <Icon className="h-4 w-4" />
       </div>
     </div>
   );
 }
 
-function LabeledStatus({
+function MiniInfo({
+  icon: Icon,
   label,
   value,
+  strong = false,
 }: {
+  icon: ComponentType<{ className?: string }>;
   label: string;
-  value?: string | null;
+  value?: string | number | null;
+  strong?: boolean;
 }) {
+  const hasValue =
+    value !== undefined && value !== null && String(value).trim() !== "";
+
   return (
-    <div className="rounded-xl border bg-white p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-black/45">
-        {label}
+    <div className="rounded-2xl border border-zinc-200/80 bg-white px-4 py-3 shadow-sm">
+      <div className="mb-2 flex items-center gap-2 text-zinc-500">
+        <Icon className="h-4 w-4" />
+        <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">
+          {label}
+        </span>
       </div>
-      <span
+
+      <div
         className={cn(
-          "mt-2 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold",
-          badgeClasses(value)
+          "break-words text-sm text-zinc-900",
+          !hasValue && "text-zinc-400",
+          strong && "text-lg font-black"
         )}
       >
-        {formatStatus(value)}
-      </span>
+        {hasValue ? String(value) : "Não informado"}
+      </div>
     </div>
   );
 }
@@ -165,6 +244,16 @@ export default function AdminOrdersPage() {
     );
   }, [ordersQ.data]);
 
+  const pendingTotal = useMemo(() => {
+    const total = pending.reduce((acc, order) => {
+      const value =
+        typeof order.total === "string" ? Number(order.total) : order.total ?? 0;
+      return Number.isFinite(value) ? acc + Number(value) : acc;
+    }, 0);
+
+    return brl(total) ?? "R$ 0,00";
+  }, [pending]);
+
   const decideM = useMutation({
     mutationFn: async (vars: { orderId: string; action: "approve" | "reject" }) => {
       const { orderId, action } = vars;
@@ -185,183 +274,237 @@ export default function AdminOrdersPage() {
   const actingOrderId = (decideM.variables as { orderId?: string } | undefined)?.orderId;
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-4 px-3 lg:px-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl font-black sm:text-2xl">Pedidos pendentes</h1>
-          <p className="text-sm text-black/60">
-            Pagamentos já confirmados e aguardando decisão do admin
-          </p>
+    <div className="min-h-screen bg-[linear-gradient(180deg,#fafafa_0%,#ffffff_45%,#f4f4f5_100%)]">
+      <div className="mx-auto w-full max-w-[1600px] space-y-5 px-3 py-4 sm:px-4 lg:px-6 lg:py-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-zinc-950 sm:text-3xl">
+              Pedidos pendentes
+            </h1>
+            <p className="mt-1 text-sm text-zinc-500">
+              Pagamentos confirmados aguardando decisão do admin
+            </p>
+          </div>
+
+          <Button
+            variant="outline"
+            className="w-full rounded-2xl border-zinc-200 bg-white sm:w-auto"
+            onClick={() => ordersQ.refetch()}
+            disabled={ordersQ.isFetching}
+          >
+            <RefreshCw className={cn("mr-2 h-4 w-4", ordersQ.isFetching && "animate-spin")} />
+            {ordersQ.isFetching ? "Atualizando…" : "Atualizar"}
+          </Button>
         </div>
 
-        <Button
-          variant="outline"
-          className="w-full rounded-xl sm:w-auto"
-          onClick={() => ordersQ.refetch()}
-          disabled={ordersQ.isFetching}
-        >
-          <RefreshCw className={cn("mr-2 h-4 w-4", ordersQ.isFetching ? "animate-spin" : "")} />
-          {ordersQ.isFetching ? "Atualizando…" : "Atualizar"}
-        </Button>
-      </div>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+          <Card className="rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
+            <CardHeader className="border-b border-zinc-100 pb-4">
+              <CardTitle className="text-xl font-bold text-zinc-950">
+                Fila de aprovação
+              </CardTitle>
+              <CardDescription className="text-sm text-zinc-500">
+                {ordersQ.isLoading
+                  ? "Carregando pedidos…"
+                  : `${pending.length} pedido(s) aguardando aprovação • ${pendingTotal} em análise`}
+              </CardDescription>
+            </CardHeader>
 
-      <Card className="rounded-2xl border-black/10 shadow-sm">
-        <CardHeader>
-          <CardTitle>Fila de aprovação</CardTitle>
-          <CardDescription>
-            {ordersQ.isLoading ? "Carregando…" : `${pending.length} pedido(s) aguardando aprovação`}
-          </CardDescription>
-        </CardHeader>
+            <CardContent className="p-4 sm:p-5">
+              {ordersQ.isLoading ? (
+                <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-5 text-sm text-zinc-600">
+                  Carregando pedidos…
+                </div>
+              ) : ordersQ.isError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700">
+                  {apiErrorMessage(ordersQ.error, "Erro ao carregar pedidos.")}
+                </div>
+              ) : pending.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
+                  Nenhum pedido pendente no momento.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {pending.map((o) => {
+                    const total = brl(o.total);
+                    const busyThis = decideM.isPending && actingOrderId === o.id;
+                    const orderStatus = o.orderStatus ?? o.status ?? null;
 
-        <CardContent className="space-y-3">
-          {ordersQ.isLoading ? (
-            <div className="rounded-xl border border-dashed p-4 text-sm text-black/60">
-              Carregando pedidos…
-            </div>
-          ) : ordersQ.isError ? (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-              {apiErrorMessage(ordersQ.error, "Erro ao carregar pedidos.")}
-            </div>
-          ) : pending.length === 0 ? (
-            <div className="rounded-xl border border-dashed p-5 text-sm text-black/60">
-              Nenhum pedido pendente no momento.
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              {pending.map((o) => {
-                const total = brl(o.total);
-                const busyThis = decideM.isPending && actingOrderId === o.id;
-                const orderStatus = o.orderStatus ?? o.status ?? null;
+                    return (
+                      <div
+                        key={o.id}
+                        className="overflow-hidden rounded-[28px] border border-zinc-200/80 bg-zinc-50/85 shadow-sm"
+                      >
+                        <div className="h-1 w-full bg-gradient-to-r from-zinc-950 via-zinc-700 to-zinc-400" />
 
-                return (
-                  <div
-                    key={o.id}
-                    className="rounded-2xl border border-black/10 bg-white p-4 shadow-sm"
-                  >
-                    <div className="flex flex-col gap-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0 space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <div className="break-words text-base font-bold">
-                              Pedido #{o.id.slice(0, 8)}
+                        <div className="space-y-4 p-4">
+                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <h2 className="text-lg font-black tracking-tight text-zinc-950">
+                                  Pedido #{o.id.slice(0, 8)}
+                                </h2>
+
+                                {busyThis ? (
+                                  <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-white">
+                                    Processando…
+                                  </span>
+                                ) : null}
+                              </div>
+
+                              <div className="mt-1 text-sm text-zinc-500">
+                                Criado em {fmtDate(o.createdAt)}
+                              </div>
+
+                              <div className="mt-1 break-all font-mono text-[12px] text-zinc-400">
+                                ID completo: {o.id}
+                              </div>
                             </div>
-                            {busyThis ? (
-                              <span className="text-xs font-medium text-black/45">
-                                Processando…
-                              </span>
-                            ) : null}
+
+                            <div className="flex shrink-0 items-center gap-2 rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-600 shadow-sm">
+                              <Clock3 className="h-4 w-4" />
+                              <span>Pronto para decisão</span>
+                            </div>
                           </div>
 
-                          <div className="text-sm text-black/60">
-                            Criado em {fmtDate(o.createdAt)}
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <MiniInfo icon={Store} label="Salão" value={o.salonName ?? null} />
+                            <MiniInfo icon={UserRound} label="Cliente" value={o.customerName ?? null} />
+                            <MiniInfo icon={Wallet} label="Total" value={total ?? null} strong />
                           </div>
 
-                          <div className="break-all text-xs text-black/45">
-                            ID completo: <span className="font-mono">{o.id}</span>
+                          <div className="grid gap-3 lg:grid-cols-3">
+                            <StatusBadge
+                              label="Pagamento"
+                              value={o.paymentStatus}
+                              icon={Wallet}
+                            />
+                            <StatusBadge
+                              label="Pedido"
+                              value={orderStatus}
+                              icon={Package2}
+                            />
+                            <StatusBadge
+                              label="Aprovação do admin"
+                              value={o.adminApprovalStatus}
+                              icon={ShieldCheck}
+                            />
+                          </div>
+
+                          <div className="grid gap-2 sm:grid-cols-3">
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  className="h-10 rounded-2xl border-zinc-200 bg-white"
+                                  disabled={decideM.isPending}
+                                >
+                                  <XCircle className="mr-2 h-4 w-4" />
+                                  Reprovar
+                                </Button>
+                              </AlertDialogTrigger>
+
+                              <AlertDialogContent className="rounded-[28px]">
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Reprovar este pedido?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Esta ação altera apenas a aprovação do admin.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel className="rounded-2xl">
+                                    Cancelar
+                                  </AlertDialogCancel>
+                                  <AlertDialogAction
+                                    className="rounded-2xl"
+                                    onClick={() =>
+                                      decideM.mutate({ orderId: o.id, action: "reject" })
+                                    }
+                                  >
+                                    Confirmar reprovação
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  className="h-10 rounded-2xl"
+                                  disabled={decideM.isPending}
+                                >
+                                  <CheckCircle2 className="mr-2 h-4 w-4" />
+                                  Aprovar
+                                </Button>
+                              </AlertDialogTrigger>
+
+                              <AlertDialogContent className="rounded-[28px]">
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Aprovar este pedido?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    Esta ação libera o pedido para seguir o fluxo.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel className="rounded-2xl">
+                                    Cancelar
+                                  </AlertDialogCancel>
+                                  <AlertDialogAction
+                                    className="rounded-2xl"
+                                    onClick={() =>
+                                      decideM.mutate({ orderId: o.id, action: "approve" })
+                                    }
+                                  >
+                                    Confirmar aprovação
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+
+                            <Link href={`/admin/orders/${o.id}`} className="block">
+                              <Button
+                                variant="outline"
+                                className="h-10 w-full rounded-2xl border-zinc-200 bg-white"
+                                disabled={decideM.isPending}
+                              >
+                                Abrir detalhe
+                                <ArrowRight className="ml-2 h-4 w-4" />
+                              </Button>
+                            </Link>
                           </div>
                         </div>
-
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:min-w-[420px]">
-                          <LabeledStatus label="Pagamento" value={o.paymentStatus} />
-                          <LabeledStatus label="Pedido" value={orderStatus} />
-                          <LabeledStatus
-                            label="Aprovação do admin"
-                            value={o.adminApprovalStatus}
-                          />
-                        </div>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-                      <div className="grid gap-3 md:grid-cols-3">
-                        <InfoField label="Salão" value={o.salonName ?? null} />
-                        <InfoField label="Cliente" value={o.customerName ?? null} />
-                        <InfoField label="Total" value={total ?? null} />
-                      </div>
+          <Card className="rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
+            <CardHeader className="border-b border-zinc-100 pb-4">
+              <CardTitle className="text-lg font-bold text-zinc-950">
+                Resumo rápido
+              </CardTitle>
+              <CardDescription className="text-sm text-zinc-500">
+                Visão geral da fila atual
+              </CardDescription>
+            </CardHeader>
 
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:justify-end">
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="outline"
-                              className="w-full rounded-xl"
-                              disabled={decideM.isPending}
-                            >
-                              Reprovar
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent className="rounded-2xl">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Reprovar este pedido?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Esta ação altera apenas a aprovação do admin.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel className="rounded-xl">
-                                Cancelar
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                className="rounded-xl"
-                                onClick={() =>
-                                  decideM.mutate({ orderId: o.id, action: "reject" })
-                                }
-                              >
-                                Confirmar reprovação
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              className="w-full rounded-xl"
-                              disabled={decideM.isPending}
-                            >
-                              Aprovar
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent className="rounded-2xl">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Aprovar este pedido?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Esta ação libera o pedido para seguir o fluxo.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel className="rounded-xl">
-                                Cancelar
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                className="rounded-xl"
-                                onClick={() =>
-                                  decideM.mutate({ orderId: o.id, action: "approve" })
-                                }
-                              >
-                                Confirmar aprovação
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-
-                        <Link href={`/admin/orders/${o.id}`}>
-                          <Button
-                            variant="outline"
-                            className="w-full rounded-xl"
-                            disabled={decideM.isPending}
-                          >
-                            Abrir detalhe
-                            <ArrowRight className="ml-2 h-4 w-4" />
-                          </Button>
-                        </Link>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+            <CardContent className="space-y-3 p-4 sm:p-5">
+              <MiniInfo icon={Clock3} label="Pendentes" value={String(pending.length)} strong />
+              <MiniInfo icon={Wallet} label="Total em análise" value={pendingTotal} strong />
+              <MiniInfo
+                icon={ShieldCheck}
+                label="Critério"
+                value="PAID + admin PENDING"
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }
