@@ -43,6 +43,15 @@ export const endpoints = {
     refund: (orderId: string) => `/admin/orders/${orderId}/refund`,
   },
 
+    adminOrderShipping: {
+    byOrder: (orderId: string) => `/admin/orders/${orderId}/shipping`,
+    label: (orderId: string) => `/admin/orders/${orderId}/shipping/label`,
+    markPrinted: (orderId: string) => `/admin/orders/${orderId}/shipping/printed`,
+    markPosted: (orderId: string) => `/admin/orders/${orderId}/shipping/posted`,
+    generateLabel: (orderId: string) => `/admin/orders/${orderId}/shipping/correios/generate-label`,
+    reprintLabel: (orderId: string) => `/admin/orders/${orderId}/shipping/correios/reprint-label`,
+  },
+
   adminCoupons: {
     list: "/admin/coupons",
     byId: (id: string) => `/admin/coupons/${id}`,
@@ -190,7 +199,12 @@ export const endpoints = {
     readAll: "/notifications/me/read-all",
   },
   adminShippingConfig: {
-  get: "/admin/shipping-config",
-  save: "/admin/shipping-config",
-},
+    get: "/admin/shipping-config",
+    save: "/admin/shipping-config",
+  },
+
+  adminCorreiosIntegration: {
+    status: "/admin/integrations/correios/status",
+    verify: "/admin/integrations/correios/verify",
+  },
 } as const;

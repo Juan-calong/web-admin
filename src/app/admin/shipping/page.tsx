@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { CorreiosIntegrationPanel } from "@/components/admin/CorreiosIntegrationPanel";
 
 type LocalDeliveryCityItem = {
   id?: string;
@@ -464,6 +465,8 @@ export default function AdminShippingPage() {
           </div>
         </div>
       </div>
+
+        <CorreiosIntegrationPanel />
 
       <div className="grid gap-5 xl:grid-cols-12">
         <div className="space-y-5 xl:col-span-8">

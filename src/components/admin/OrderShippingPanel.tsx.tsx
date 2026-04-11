@@ -1,0 +1,427 @@
+"use client";
+
+import { useMemo, type ReactNode } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { AxiosError } from "axios";
+import { api } from "@/lib/api";
+import { apiErrorMessage } from "@/lib/apiError";
+import { endpoints } from "@/lib/endpoints";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { toast } from "sonner";
+import { CheckCircle2, Loader2, Printer, RefreshCw, Send, ShieldAlert, Truck, Wrench } from "lucide-react";
+
+type ShipmentStatus =
+  | "NOT_CREATED"
+  | "PRE_POSTED"
+  | "LABEL_READY"
+  | "POSTED"
+  | "CANCELED"
+  | "ERROR";
+
+type ShipmentProvider = "CORREIOS" | string;
+
+type ShipmentDetails = {
+  id?: string;
+  provider: ShipmentProvider;
+  shipmentStatus: ShipmentStatus;
+  orderId: string;
+  prePostagemId?: string | null;
+  trackingCode?: string | null;
+  serviceCode?: string | null;
+  serviceName?: string | null;
+  labelUrl?: string | null;
+  labelFileKey?: string | null;
+  labelFormat?: string | null;
+  generatedAt?: string | null;
+  printedAt?: string | null;
+  postedAt?: string | null;
+  lastError?: string | null;
+  diagnostics?: string[] | null;
+};
+
+type ShipmentResponse = {
+  shipment?: ShipmentDetails | null;
+  item?: ShipmentDetails | null;
+} & Partial<ShipmentDetails>;
+
+function fmtDate(value?: string | null) {
+  if (!value) return "Não informado";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return "Data inválida";
+  return dt.toLocaleString("pt-BR");
+}
+
+function normalizedShipment(data: ShipmentResponse | ShipmentDetails | null | undefined): ShipmentDetails | null {
+  if (!data) return null;
+
+  const maybeWrapped = data as ShipmentResponse;
+  const item = maybeWrapped.shipment ?? maybeWrapped.item;
+
+  if (item) return item;
+
+  if ((data as ShipmentDetails).shipmentStatus) return data as ShipmentDetails;
+
+  return null;
+}
+
+function isCanceledOrder(orderStatus?: string | null) {
+  const v = String(orderStatus ?? "").toUpperCase();
+  return ["CANCELED", "CANCELLED", "REJECTED", "REFUNDED"].includes(v);
+}
+
+function badgeClass(status: ShipmentStatus) {
+  if (status === "POSTED" || status === "LABEL_READY") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (status === "PRE_POSTED") {
+    return "border-amber-200 bg-amber-50 text-amber-700";
+  }
+
+  if (status === "ERROR" || status === "CANCELED") {
+    return "border-rose-200 bg-rose-50 text-rose-700";
+  }
+
+  return "border-slate-200 bg-slate-100 text-slate-700";
+}
+
+function shipmentLabel(status?: ShipmentStatus | null) {
+  if (!status) return "Não criado";
+
+  if (status === "NOT_CREATED") return "Não criado";
+  if (status === "PRE_POSTED") return "Pré-postado";
+  if (status === "LABEL_READY") return "Etiqueta pronta";
+  if (status === "POSTED") return "Postado";
+  if (status === "CANCELED") return "Cancelado";
+
+  return "Erro";
+}
+
+function classifyError(err: unknown) {
+  const msg = apiErrorMessage(err, "Falha na operação de expedição.");
+
+  if (typeof err === "object" && err && "isAxiosError" in err) {
+    const axiosErr = err as AxiosError;
+    const status = axiosErr.response?.status;
+
+    if (status === 401) return "Sua sessão expirou ou não está autorizada.";
+    if (status === 403) return "Seu usuário não tem permissão para operar expedição.";
+    if (status && status >= 500) return "Serviço indisponível no momento. Tente novamente.";
+  }
+
+  return msg;
+}
+
+async function fetchShipping(orderId: string): Promise<ShipmentDetails | null> {
+  const { data } = await api.get(endpoints.adminOrderShipping.byOrder(orderId));
+  return normalizedShipment(data as ShipmentResponse);
+}
+
+export function OrderShippingPanel({
+  orderId,
+  paymentStatus,
+  adminApprovalStatus,
+  orderStatus,
+}: {
+  orderId: string;
+  paymentStatus?: string | null;
+  adminApprovalStatus?: string | null;
+  orderStatus?: string | null;
+}) {
+  const qc = useQueryClient();
+
+  const shippingQ = useQuery({
+    queryKey: ["admin-order-shipping", orderId],
+    queryFn: () => fetchShipping(orderId),
+    enabled: Boolean(orderId),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  const shipment = shippingQ.data;
+  const shipmentStatus = shipment?.shipmentStatus ?? "NOT_CREATED";
+  const hasLabel = Boolean(shipment?.labelUrl || shipment?.labelFileKey || shipmentStatus === "LABEL_READY" || shipmentStatus === "POSTED");
+
+  const canGenerate = useMemo(() => {
+    if (String(paymentStatus ?? "").toUpperCase() !== "PAID") {
+      return { ok: false, reason: "Pagamento precisa estar como PAID." };
+    }
+
+    if (String(adminApprovalStatus ?? "").toUpperCase() !== "APPROVED") {
+      return { ok: false, reason: "Aprovação do admin precisa estar como APPROVED." };
+    }
+
+    if (isCanceledOrder(orderStatus)) {
+      return { ok: false, reason: "Pedido cancelado/reprovado não pode gerar etiqueta." };
+    }
+
+    if (hasLabel) {
+      return { ok: false, reason: "Etiqueta já existe. Use Reimprimir etiqueta." };
+    }
+
+    return { ok: true, reason: null };
+  }, [adminApprovalStatus, hasLabel, orderStatus, paymentStatus]);
+
+  async function syncShippingQueries() {
+    await qc.invalidateQueries({ queryKey: ["admin-order-shipping", orderId] });
+    await qc.invalidateQueries({ queryKey: ["admin-order-details", orderId] });
+    await qc.invalidateQueries({ queryKey: ["orders"] });
+  }
+
+  const generateM = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post(
+        endpoints.adminOrderShipping.generateLabel(orderId),
+        {},
+        { headers: { "Idempotency-Key": `admin-shipping:${orderId}:generate-label` } }
+      );
+      return normalizedShipment(data as ShipmentResponse);
+    },
+    onSuccess: async () => {
+      toast.success("Etiqueta gerada com sucesso.");
+      await syncShippingQueries();
+    },
+    onError: (err) => toast.error(classifyError(err)),
+  });
+
+  const reprintM = useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post(
+        endpoints.adminOrderShipping.reprintLabel(orderId),
+        {},
+        { headers: { "Idempotency-Key": `admin-shipping:${orderId}:reprint-label` } }
+      );
+      return normalizedShipment(data as ShipmentResponse);
+    },
+    onSuccess: async () => {
+      toast.success("Etiqueta preparada para reimpressão.");
+      await syncShippingQueries();
+    },
+    onError: (err) => toast.error(classifyError(err)),
+  });
+
+  const printedM = useMutation({
+    mutationFn: async () => {
+      await api.post(endpoints.adminOrderShipping.markPrinted(orderId), {});
+    },
+    onSuccess: async () => {
+      await syncShippingQueries();
+    },
+    onError: (err) => toast.error(classifyError(err)),
+  });
+
+  const postedM = useMutation({
+    mutationFn: async () => {
+      await api.post(
+        endpoints.adminOrderShipping.markPosted(orderId),
+        {},
+        { headers: { "Idempotency-Key": `admin-shipping:${orderId}:mark-posted` } }
+      );
+    },
+    onSuccess: async () => {
+      toast.success("Pedido marcado como postado.");
+      await syncShippingQueries();
+    },
+    onError: (err) => toast.error(classifyError(err)),
+  });
+
+  const printM = useMutation({
+    mutationFn: async () => {
+      const response = await api.get(endpoints.adminOrderShipping.label(orderId), {
+        responseType: "blob",
+      });
+
+      const blob = response.data as Blob;
+      if (!(blob instanceof Blob) || blob.size === 0) {
+        throw new Error("Etiqueta vazia ou inválida retornada pelo backend.");
+      }
+
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    },
+    onSuccess: async () => {
+      toast.success("Etiqueta aberta para impressão no navegador.");
+      printedM.mutate();
+    },
+    onError: (err) => toast.error(classifyError(err)),
+  });
+
+  const busy =
+    shippingQ.isFetching ||
+    generateM.isPending ||
+    reprintM.isPending ||
+    printM.isPending ||
+    postedM.isPending ||
+    printedM.isPending;
+
+  return (
+    <Card className="overflow-hidden rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
+      <CardHeader className="border-b border-zinc-100 pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-lg font-bold text-zinc-950">Expedição / Correios</CardTitle>
+            <p className="mt-1 text-sm text-zinc-500">
+              Pré-postagem + emissão de etiqueta + impressão + controle de postagem.
+            </p>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-2xl border-zinc-200"
+            onClick={() => shippingQ.refetch()}
+            disabled={busy}
+          >
+            <RefreshCw className={`mr-2 h-4 w-4 ${shippingQ.isFetching ? "animate-spin" : ""}`} />
+            Atualizar status
+          </Button>
+        </div>
+      </CardHeader>
+
+      <CardContent className="space-y-4 p-4 sm:p-6">
+        {shippingQ.isError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {classifyError(shippingQ.error)}
+          </div>
+        ) : null}
+
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <InfoCard label="Provider" value={shipment?.provider ?? "CORREIOS"} />
+          <InfoCard
+            label="Status expedição"
+            value={
+              <Badge className={`rounded-full border px-2.5 py-0.5 ${badgeClass(shipmentStatus)}`}>
+                {shipmentLabel(shipmentStatus)}
+              </Badge>
+            }
+          />
+          <InfoCard label="Código rastreio" value={shipment?.trackingCode || "Não informado"} mono />
+          <InfoCard label="Serviço" value={shipment?.serviceName || shipment?.serviceCode || "Não informado"} />
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-3">
+          <InfoCard label="Gerado em" value={fmtDate(shipment?.generatedAt)} />
+          <InfoCard label="Impresso em" value={fmtDate(shipment?.printedAt)} />
+          <InfoCard label="Postado em" value={fmtDate(shipment?.postedAt)} />
+        </div>
+
+        {!canGenerate.ok && !hasLabel ? (
+          <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <ShieldAlert className="mt-0.5 h-4 w-4" />
+            <div>
+              <div className="font-semibold">Etiqueta bloqueada por regra de negócio</div>
+              <div>{canGenerate.reason}</div>
+            </div>
+          </div>
+        ) : null}
+
+        {shipment?.lastError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="font-semibold">Último erro na expedição</div>
+            <div>{shipment.lastError}</div>
+          </div>
+        ) : null}
+
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <Button
+            type="button"
+            className="rounded-2xl"
+            onClick={() => generateM.mutate()}
+            disabled={!canGenerate.ok || busy}
+          >
+            {generateM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+            Gerar etiqueta
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-2xl border-zinc-200"
+            onClick={() => printM.mutate()}
+            disabled={!hasLabel || busy}
+          >
+            {printM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+            Imprimir etiqueta
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-2xl border-zinc-200"
+            onClick={() => reprintM.mutate()}
+            disabled={!hasLabel || busy}
+          >
+            {reprintM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+            Reimprimir etiqueta
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-2xl border-zinc-200"
+            onClick={() => postedM.mutate()}
+            disabled={busy || shipmentStatus === "POSTED" || shipmentStatus === "NOT_CREATED"}
+          >
+            {postedM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
+            Marcar como postado
+          </Button>
+        </div>
+
+        {(shipment?.prePostagemId || shipment?.labelFileKey || shipment?.diagnostics?.length) ? (
+          <Accordion type="single" collapsible className="rounded-2xl border border-zinc-200 px-4">
+            <AccordionItem value="shipment-tech" className="border-0">
+              <AccordionTrigger className="py-3 text-sm font-semibold text-zinc-900">
+                <span className="flex items-center gap-2">
+                  <Wrench className="h-4 w-4" /> Ver detalhes técnicos
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                <div className="space-y-2 text-xs text-zinc-700">
+                  <div>prePostagemId: {shipment?.prePostagemId || "não informado"}</div>
+                  <div>labelFileKey: {shipment?.labelFileKey || "não informado"}</div>
+                  <div>labelFormat: {shipment?.labelFormat || "não informado"}</div>
+                  {(shipment?.diagnostics ?? []).length ? (
+                    <ul className="list-disc space-y-1 pl-5">
+                      {(shipment?.diagnostics ?? []).map((item, idx) => (
+                        <li key={`${item}-${idx}`}>{item}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        ) : null}
+
+        {!shippingQ.isLoading && !shippingQ.isError ? (
+          <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            <CheckCircle2 className="h-4 w-4" /> Painel de expedição sincronizado.
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function InfoCard({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">{label}</div>
+      <div className={`mt-2 break-all text-sm text-zinc-900 ${mono ? "font-mono" : ""}`}>{value}</div>
+    </div>
+  );
+}

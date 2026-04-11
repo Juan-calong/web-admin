@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { OrderShippingPanel } from "../../../../components/admin/OrderShippingPanel.tsx";
 
 import {
   AlertDialog,
@@ -863,6 +864,13 @@ export default function AdminOrderDetailsPage() {
                     <EmptyBlock text="Dados de pagamento ainda não enviados por este payload." />
                   )}
                 </SectionShell>
+
+                  <OrderShippingPanel
+                  orderId={id}
+                  paymentStatus={order?.paymentStatus}
+                  adminApprovalStatus={order?.adminApprovalStatus}
+                  orderStatus={orderStatus}
+                />
 
                 <SectionShell
                   title="Ações do admin"
