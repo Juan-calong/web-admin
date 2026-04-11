@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { OrderShippingPanel } from "../../../../components/admin/OrderShippingPanel.tsx";
+import { OrderShippingPanel } from "@/components/admin/OrderShippingPanel";
 
 import {
   AlertDialog,

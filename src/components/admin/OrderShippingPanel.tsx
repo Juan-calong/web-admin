@@ -3,16 +3,27 @@
 import { useMemo, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AxiosError } from "axios";
+import { toast } from "sonner";
+import {
+  Loader2,
+  Printer,
+  RefreshCw,
+  Send,
+  ShieldAlert,
+  Truck,
+  Wrench,
+  CircleDot,
+} from "lucide-react";
 import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/apiError";
 import { endpoints } from "@/lib/endpoints";
 
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { toast } from "sonner";
-import { CheckCircle2, Loader2, Printer, RefreshCw, Send, ShieldAlert, Truck, Wrench } from "lucide-react";
+
 
 type ShipmentStatus =
   | "NOT_CREATED"
@@ -47,6 +58,12 @@ type ShipmentResponse = {
   shipment?: ShipmentDetails | null;
   item?: ShipmentDetails | null;
 } & Partial<ShipmentDetails>;
+
+type Eligibility = {
+  ok: boolean;
+  reason: string;
+};
+
 
 function fmtDate(value?: string | null) {
   if (!value) return "Não informado";
@@ -90,15 +107,12 @@ function badgeClass(status: ShipmentStatus) {
 }
 
 function shipmentLabel(status?: ShipmentStatus | null) {
-  if (!status) return "Não criado";
-
-  if (status === "NOT_CREATED") return "Não criado";
-  if (status === "PRE_POSTED") return "Pré-postado";
-  if (status === "LABEL_READY") return "Etiqueta pronta";
-  if (status === "POSTED") return "Postado";
-  if (status === "CANCELED") return "Cancelado";
-
-  return "Erro";
+  if (!status || status === "NOT_CREATED") return "Etiqueta ainda não gerada";
+  if (status === "PRE_POSTED") return "Pré-postagem criada";
+  if (status === "LABEL_READY") return "Etiqueta pronta para impressão";
+  if (status === "POSTED") return "Pedido marcado como postado";
+  if (status === "CANCELED") return "Expedição cancelada";
+  return "Erro na expedição";
 }
 
 function classifyError(err: unknown) {
@@ -120,6 +134,37 @@ async function fetchShipping(orderId: string): Promise<ShipmentDetails | null> {
   const { data } = await api.get(endpoints.adminOrderShipping.byOrder(orderId));
   return normalizedShipment(data as ShipmentResponse);
 }
+
+function buildEligibility({
+  paymentStatus,
+  adminApprovalStatus,
+  orderStatus,
+  hasLabel,
+}: {
+  paymentStatus?: string | null;
+  adminApprovalStatus?: string | null;
+  orderStatus?: string | null;
+  hasLabel: boolean;
+}): Eligibility {
+  if (String(paymentStatus ?? "").toUpperCase() !== "PAID") {
+    return { ok: false, reason: "Pagamento ainda não confirmado para expedição." };
+  }
+
+  if (String(adminApprovalStatus ?? "").toUpperCase() !== "APPROVED") {
+    return { ok: false, reason: "Pedido ainda não aprovado para expedição." };
+  }
+
+  if (isCanceledOrder(orderStatus)) {
+    return { ok: false, reason: "Pedido cancelado não é elegível para expedição." };
+  }
+
+  if (hasLabel) {
+    return { ok: false, reason: "Etiqueta já gerada. Use imprimir ou reimprimir." };
+  }
+
+  return { ok: true, reason: "Pedido apto para gerar etiqueta." };
+}
+
 
 export function OrderShippingPanel({
   orderId,
@@ -144,27 +189,17 @@ export function OrderShippingPanel({
 
   const shipment = shippingQ.data;
   const shipmentStatus = shipment?.shipmentStatus ?? "NOT_CREATED";
-  const hasLabel = Boolean(shipment?.labelUrl || shipment?.labelFileKey || shipmentStatus === "LABEL_READY" || shipmentStatus === "POSTED");
+  const hasLabel = Boolean(
+    shipment?.labelUrl ||
+      shipment?.labelFileKey ||
+      shipmentStatus === "LABEL_READY" ||
+      shipmentStatus === "POSTED"
+  );
 
-  const canGenerate = useMemo(() => {
-    if (String(paymentStatus ?? "").toUpperCase() !== "PAID") {
-      return { ok: false, reason: "Pagamento precisa estar como PAID." };
-    }
-
-    if (String(adminApprovalStatus ?? "").toUpperCase() !== "APPROVED") {
-      return { ok: false, reason: "Aprovação do admin precisa estar como APPROVED." };
-    }
-
-    if (isCanceledOrder(orderStatus)) {
-      return { ok: false, reason: "Pedido cancelado/reprovado não pode gerar etiqueta." };
-    }
-
-    if (hasLabel) {
-      return { ok: false, reason: "Etiqueta já existe. Use Reimprimir etiqueta." };
-    }
-
-    return { ok: true, reason: null };
-  }, [adminApprovalStatus, hasLabel, orderStatus, paymentStatus]);
+  const eligibility = useMemo(
+    () => buildEligibility({ paymentStatus, adminApprovalStatus, orderStatus, hasLabel }),
+    [adminApprovalStatus, hasLabel, orderStatus, paymentStatus]
+  );
 
   async function syncShippingQueries() {
     await qc.invalidateQueries({ queryKey: ["admin-order-shipping", orderId] });
@@ -182,7 +217,7 @@ export function OrderShippingPanel({
       return normalizedShipment(data as ShipmentResponse);
     },
     onSuccess: async () => {
-      toast.success("Etiqueta gerada com sucesso.");
+      toast.success("Etiqueta pronta para impressão.");
       await syncShippingQueries();
     },
     onError: (err) => toast.error(classifyError(err)),
@@ -242,7 +277,6 @@ export function OrderShippingPanel({
 
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank", "noopener,noreferrer");
-
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     },
     onSuccess: async () => {
@@ -260,14 +294,25 @@ export function OrderShippingPanel({
     postedM.isPending ||
     printedM.isPending;
 
+      const summaryMessage = (() => {
+    if (shippingQ.isLoading) return "Carregando dados de expedição...";
+    if (shippingQ.isError) return "Não foi possível carregar a expedição.";
+    if (!shipment) return "Etiqueta ainda não gerada.";
+    if (shipmentStatus === "LABEL_READY") return "Etiqueta pronta para impressão.";
+    if (shipmentStatus === "POSTED") return "Pedido marcado como postado.";
+    if (!eligibility.ok && !hasLabel) return eligibility.reason;
+    return "Painel de expedição sincronizado.";
+  })();
+
+
   return (
     <Card className="overflow-hidden rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
       <CardHeader className="border-b border-zinc-100 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <CardTitle className="text-lg font-bold text-zinc-950">Expedição / Correios</CardTitle>
+            <CardTitle className="text-lg font-bold text-zinc-950">Correios / Expedição</CardTitle>
             <p className="mt-1 text-sm text-zinc-500">
-              Pré-postagem + emissão de etiqueta + impressão + controle de postagem.
+              Fluxo por pedido: gerar etiqueta, imprimir e confirmar postagem.
             </p>
           </div>
 
@@ -279,7 +324,7 @@ export function OrderShippingPanel({
             disabled={busy}
           >
             <RefreshCw className={`mr-2 h-4 w-4 ${shippingQ.isFetching ? "animate-spin" : ""}`} />
-            Atualizar status
+            Atualizar expedição
           </Button>
         </div>
       </CardHeader>
@@ -292,38 +337,38 @@ export function OrderShippingPanel({
         ) : null}
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <InfoCard label="Provider" value={shipment?.provider ?? "CORREIOS"} />
+          <InfoCard label="Transportadora" value={shipment?.provider ?? "CORREIOS"} />
           <InfoCard
-            label="Status expedição"
+            label="Status da expedição"
             value={
               <Badge className={`rounded-full border px-2.5 py-0.5 ${badgeClass(shipmentStatus)}`}>
                 {shipmentLabel(shipmentStatus)}
               </Badge>
             }
           />
-          <InfoCard label="Código rastreio" value={shipment?.trackingCode || "Não informado"} mono />
+          <InfoCard label="Código de rastreio" value={shipment?.trackingCode || "Não informado"} mono />
           <InfoCard label="Serviço" value={shipment?.serviceName || shipment?.serviceCode || "Não informado"} />
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
-          <InfoCard label="Gerado em" value={fmtDate(shipment?.generatedAt)} />
-          <InfoCard label="Impresso em" value={fmtDate(shipment?.printedAt)} />
-          <InfoCard label="Postado em" value={fmtDate(shipment?.postedAt)} />
+          <InfoCard label="Data de geração" value={fmtDate(shipment?.generatedAt)} />
+          <InfoCard label="Data de impressão" value={fmtDate(shipment?.printedAt)} />
+          <InfoCard label="Data de postagem" value={fmtDate(shipment?.postedAt)} />
         </div>
 
-        {!canGenerate.ok && !hasLabel ? (
+        {!eligibility.ok && !hasLabel ? (
           <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <ShieldAlert className="mt-0.5 h-4 w-4" />
             <div>
-              <div className="font-semibold">Etiqueta bloqueada por regra de negócio</div>
-              <div>{canGenerate.reason}</div>
+              <div className="font-semibold">Pedido não elegível para gerar etiqueta</div>
+              <div>{eligibility.reason}</div>
             </div>
           </div>
         ) : null}
 
         {shipment?.lastError ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <div className="font-semibold">Último erro na expedição</div>
+            <div className="font-semibold">Último erro de expedição</div>
             <div>{shipment.lastError}</div>
           </div>
         ) : null}
@@ -333,7 +378,7 @@ export function OrderShippingPanel({
             type="button"
             className="rounded-2xl"
             onClick={() => generateM.mutate()}
-            disabled={!canGenerate.ok || busy}
+            disabled={!eligibility.ok || busy}
           >
             {generateM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
             Gerar etiqueta
@@ -373,12 +418,12 @@ export function OrderShippingPanel({
           </Button>
         </div>
 
-        {(shipment?.prePostagemId || shipment?.labelFileKey || shipment?.diagnostics?.length) ? (
+        {shipment?.prePostagemId || shipment?.labelFileKey || shipment?.diagnostics?.length ? (
           <Accordion type="single" collapsible className="rounded-2xl border border-zinc-200 px-4">
             <AccordionItem value="shipment-tech" className="border-0">
               <AccordionTrigger className="py-3 text-sm font-semibold text-zinc-900">
                 <span className="flex items-center gap-2">
-                  <Wrench className="h-4 w-4" /> Ver detalhes técnicos
+                  <Wrench className="h-4 w-4" /> Detalhes técnicos
                 </span>
               </AccordionTrigger>
               <AccordionContent>
@@ -399,11 +444,10 @@ export function OrderShippingPanel({
           </Accordion>
         ) : null}
 
-        {!shippingQ.isLoading && !shippingQ.isError ? (
-          <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-            <CheckCircle2 className="h-4 w-4" /> Painel de expedição sincronizado.
-          </div>
-        ) : null}
+        <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <CircleDot className="h-4 w-4" />
+          {summaryMessage}
+        </div>
       </CardContent>
     </Card>
   );
