@@ -23,6 +23,17 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 
 type ShipmentStatus =
@@ -130,6 +141,70 @@ function classifyError(err: unknown) {
   return msg;
 }
 
+function normalizeShippingErrorCode(raw?: string | null) {
+  if (!raw) return "";
+  const direct = String(raw).trim().toUpperCase();
+  const match = direct.match(/[A-Z_]{3,}/);
+  return (match?.[0] ?? direct).trim();
+}
+
+function isLocalDelivery({
+  deliveryMethod,
+  shipment,
+}: {
+  deliveryMethod?: string | null;
+  shipment?: ShipmentDetails | null;
+}) {
+  const candidateText = [
+    deliveryMethod,
+    shipment?.serviceCode,
+    shipment?.serviceName,
+    shipment?.lastError,
+    ...(shipment?.diagnostics ?? []),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toUpperCase();
+
+  return (
+    candidateText.includes("LOCAL_DELIVERY") ||
+    candidateText.includes("ENTREGA_LOCAL") ||
+    candidateText.includes("ENTREGA LOCAL")
+  );
+}
+
+function friendlyShipmentErrorMessage({
+  lastError,
+  deliveryMethod,
+  shipment,
+}: {
+  lastError?: string | null;
+  deliveryMethod?: string | null;
+  shipment?: ShipmentDetails | null;
+}) {
+  const errorCode = normalizeShippingErrorCode(lastError);
+  const localDeliveryOrder = isLocalDelivery({ deliveryMethod, shipment });
+
+  if (localDeliveryOrder) {
+    return "Este pedido usa entrega local e não pode gerar etiqueta dos Correios.";
+  }
+
+  if (errorCode === "SHIPMENT_REQUIRED_FIELDS_MISSING") {
+    return "Faltam dados obrigatórios para gerar a etiqueta.";
+  }
+
+  if (errorCode === "SERVICE_CODE_MISSING_FOR_SHIPMENT") {
+    return "Pedido sem serviço válido dos Correios para expedição.";
+  }
+
+  if (errorCode === "SERVICE_CODE_INVALID_FOR_SHIPMENT") {
+    return "Serviço dos Correios inválido para gerar a etiqueta deste pedido.";
+  }
+
+  if (!lastError) return null;
+  return "Não foi possível processar a expedição deste pedido no momento.";
+}
+
 async function fetchShipping(orderId: string): Promise<ShipmentDetails | null> {
   const { data } = await api.get(endpoints.adminOrderShipping.byOrder(orderId));
   return normalizedShipment(data as ShipmentResponse);
@@ -171,11 +246,13 @@ export function OrderShippingPanel({
   paymentStatus,
   adminApprovalStatus,
   orderStatus,
+  deliveryMethod,
 }: {
   orderId: string;
   paymentStatus?: string | null;
   adminApprovalStatus?: string | null;
   orderStatus?: string | null;
+  deliveryMethod?: string | null;
 }) {
   const qc = useQueryClient();
 
@@ -293,6 +370,19 @@ export function OrderShippingPanel({
     printM.isPending ||
     postedM.isPending ||
     printedM.isPending;
+  const canMarkPosted = hasLabel && (shipmentStatus === "PRE_POSTED" || shipmentStatus === "LABEL_READY");
+  const markPostedDisabledReason = (() => {
+    if (shipmentStatus === "POSTED") return "Pedido já marcado como postado.";
+    if (!hasLabel || shipmentStatus === "NOT_CREATED") return "Gere a etiqueta antes de marcar como postado.";
+    if (!canMarkPosted) return "A postagem só pode ser confirmada após pré-postagem ou etiqueta pronta.";
+    return null;
+  })();
+  const friendlyLastError = friendlyShipmentErrorMessage({
+    lastError: shipment?.lastError,
+    deliveryMethod,
+    shipment,
+  });
+  const technicalErrorCode = normalizeShippingErrorCode(shipment?.lastError);
 
       const summaryMessage = (() => {
     if (shippingQ.isLoading) return "Carregando dados de expedição...";
@@ -369,7 +459,10 @@ export function OrderShippingPanel({
         {shipment?.lastError ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <div className="font-semibold">Último erro de expedição</div>
-            <div>{shipment.lastError}</div>
+            <div>{friendlyLastError}</div>
+{technicalErrorCode ? (
+  <div className="mt-1 text-xs text-red-600/80">Código técnico: {technicalErrorCode}</div>
+) : null}
           </div>
         ) : null}
 
@@ -406,17 +499,45 @@ export function OrderShippingPanel({
             Reimprimir etiqueta
           </Button>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="rounded-2xl border-zinc-200"
-            onClick={() => postedM.mutate()}
-            disabled={busy || shipmentStatus === "POSTED" || shipmentStatus === "NOT_CREATED"}
-          >
-            {postedM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Truck className="mr-2 h-4 w-4" />}
-            Marcar como postado
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+<Button
+  type="button"
+  variant="outline"
+  className="rounded-2xl border-zinc-200"
+  disabled={busy || !canMarkPosted}
+  title={markPostedDisabledReason ?? undefined}
+>
+  {postedM.isPending ? (
+    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+  ) : (
+    <Truck className="mr-2 h-4 w-4" />
+  )}
+  Marcar como postado
+</Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent className="rounded-[28px]">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Marcar pedido como postado?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Depois de marcar como postado, esta ação não poderá ser desfeita por esta tela.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel className="rounded-2xl">Cancelar</AlertDialogCancel>
+                <AlertDialogAction className="rounded-2xl" onClick={() => postedM.mutate()}>
+                  Confirmar postagem
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
+        
+        {markPostedDisabledReason && shipmentStatus !== "POSTED" ? (
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-xs text-zinc-700">
+            {markPostedDisabledReason}
+          </div>
+        ) : null}
 
         {shipment?.prePostagemId || shipment?.labelFileKey || shipment?.diagnostics?.length ? (
           <Accordion type="single" collapsible className="rounded-2xl border border-zinc-200 px-4">

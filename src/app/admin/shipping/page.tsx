@@ -24,11 +24,22 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { CorreiosIntegrationPanel } from "@/components/admin/CorreiosIntegrationPanel";
 
+type DeliveryWeekday =
+  | "MONDAY"
+  | "TUESDAY"
+  | "WEDNESDAY"
+  | "THURSDAY"
+  | "FRIDAY"
+  | "SATURDAY"
+  | "SUNDAY";
+
 type LocalDeliveryCityItem = {
   id?: string;
   city: string;
   state: string;
   price: string | number;
+  minSubtotal?: string | number | null;
+  freeShippingMinSubtotal?: string | number | null;
   active: boolean;
   sortOrder?: number;
   deliveryWeekdays?: DeliveryWeekday[];
@@ -51,18 +62,11 @@ type CityRow = {
   city: string;
   state: string;
   price: string;
+  minSubtotal: string;
+  freeShippingMinSubtotal: string;
   active: boolean;
   deliveryWeekdays: DeliveryWeekday[];
 };
-
-type DeliveryWeekday =
-  | "MONDAY"
-  | "TUESDAY"
-  | "WEDNESDAY"
-  | "THURSDAY"
-  | "FRIDAY"
-  | "SATURDAY"
-  | "SUNDAY";
 
 const DELIVERY_WEEKDAYS: Array<{ value: DeliveryWeekday; label: string }> = [
   { value: "MONDAY", label: "Seg" },
@@ -84,14 +88,14 @@ function makeEmptyCityRow(): CityRow {
     city: "",
     state: "SP",
     price: "0",
+    minSubtotal: "",
+    freeShippingMinSubtotal: "",
     active: true,
     deliveryWeekdays: [],
   };
 }
 
-function normalizeDeliveryWeekdays(
-  weekdays: unknown
-): DeliveryWeekday[] {
+function normalizeDeliveryWeekdays(weekdays: unknown): DeliveryWeekday[] {
   if (!Array.isArray(weekdays)) return [];
 
   return weekdays.filter((weekday): weekday is DeliveryWeekday =>
@@ -121,6 +125,13 @@ function toMoneyString(
   return String(value).replace(".", ",");
 }
 
+function toOptionalMoneyString(
+  value: string | number | null | undefined
+) {
+  if (value == null || value === "") return "";
+  return String(value).replace(".", ",");
+}
+
 function toNumberBR(value: string | number | null | undefined, fallback = 0) {
   const n = Number(String(value ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : fallback;
@@ -133,6 +144,14 @@ function formatCurrencyBRL(value: string | number | null | undefined) {
     style: "currency",
     currency: "BRL",
   }).format(amount);
+}
+
+function formatOptionalCurrencyBRL(
+  value: string | number | null | undefined,
+  emptyLabel = "não definido"
+) {
+  if (value == null || value === "") return emptyLabel;
+  return formatCurrencyBRL(value);
 }
 
 function ToggleField({
@@ -242,6 +261,10 @@ export default function AdminShippingPage() {
         city: item.city || "",
         state: (item.state || "SP").toUpperCase(),
         price: toMoneyString(item.price, "0"),
+        minSubtotal: toOptionalMoneyString(item.minSubtotal),
+        freeShippingMinSubtotal: toOptionalMoneyString(
+          item.freeShippingMinSubtotal
+        ),
         active: Boolean(item.active),
         deliveryWeekdays: normalizeDeliveryWeekdays(item.deliveryWeekdays),
       })
@@ -287,6 +310,13 @@ export default function AdminShippingPage() {
           city: row.city.trim(),
           state: row.state.trim().toUpperCase(),
           price: String(row.price || "0").replace(",", "."),
+          minSubtotal: row.minSubtotal
+            ? String(row.minSubtotal).replace(",", ".")
+            : undefined,
+          freeShippingMinSubtotal: row.freeShippingMinSubtotal
+            ? String(row.freeShippingMinSubtotal).replace(",", ".")
+            : undefined,
+          active: Boolean(row.active),
           deliveryWeekdays: normalizeDeliveryWeekdays(row.deliveryWeekdays),
         }))
         .filter((row) => row.city && row.state.length === 2);
@@ -323,7 +353,30 @@ export default function AdminShippingPage() {
         }
 
         if (toNumberBR(row.price) < 0) {
-          throw new Error(`O valor da cidade ${row.city} não pode ser negativo.`);
+          throw new Error(`O valor do frete da cidade ${row.city} não pode ser negativo.`);
+        }
+
+        if (row.minSubtotal != null && toNumberBR(row.minSubtotal) < 0) {
+          throw new Error(`O pedido mínimo da cidade ${row.city} não pode ser negativo.`);
+        }
+
+        if (
+          row.freeShippingMinSubtotal != null &&
+          toNumberBR(row.freeShippingMinSubtotal) < 0
+        ) {
+          throw new Error(
+            `O mínimo de frete grátis da cidade ${row.city} não pode ser negativo.`
+          );
+        }
+
+        if (
+          row.minSubtotal != null &&
+          row.freeShippingMinSubtotal != null &&
+          toNumberBR(row.freeShippingMinSubtotal) < toNumberBR(row.minSubtotal)
+        ) {
+          throw new Error(
+            `Na cidade ${row.city}, o frete grátis não pode começar antes do pedido mínimo da entrega local.`
+          );
         }
       }
 
@@ -339,10 +392,22 @@ export default function AdminShippingPage() {
   });
 
   const summary = useMemo(() => {
+    const activeCities = rows.filter((row) => row.city.trim() && row.active);
+    const citiesWithMinSubtotal = activeCities.filter(
+      (row) => row.minSubtotal && toNumberBR(row.minSubtotal, 0) > 0
+    );
+    const citiesWithFreeShipping = activeCities.filter(
+      (row) =>
+        row.freeShippingMinSubtotal &&
+        toNumberBR(row.freeShippingMinSubtotal, 0) > 0
+    );
+
     return {
       minSubtotalLabel: formatCurrencyBRL(correiosDiscountMinSubtotal),
       maxDiscountLabel: formatCurrencyBRL(correiosDiscountMaxAmount),
-      activeCities: rows.filter((row) => row.city.trim() && row.active),
+      activeCities,
+      citiesWithMinSubtotal,
+      citiesWithFreeShipping,
     };
   }, [rows, correiosDiscountMinSubtotal, correiosDiscountMaxAmount]);
 
@@ -383,7 +448,7 @@ export default function AdminShippingPage() {
                   Entrega e frete
                 </h1>
                 <p className="text-sm text-white/70">
-                  Configure cidades com entrega local e o desconto automático dos Correios.
+                  Configure cidades com entrega local, pedido mínimo, frete grátis local e desconto automático dos Correios.
                 </p>
               </div>
 
@@ -436,13 +501,22 @@ export default function AdminShippingPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-3">
+        <div className="grid gap-3 border-t border-slate-200 bg-slate-50/70 px-4 py-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
             <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
               Cidades ativas
             </div>
             <div className="mt-1 text-lg font-bold text-slate-900">
               {summary.activeCities.length}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+            <div className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Com pedido mínimo
+            </div>
+            <div className="mt-1 text-lg font-bold text-slate-900">
+              {summary.citiesWithMinSubtotal.length}
             </div>
           </div>
 
@@ -466,14 +540,14 @@ export default function AdminShippingPage() {
         </div>
       </div>
 
-        <CorreiosIntegrationPanel />
+      <CorreiosIntegrationPanel />
 
       <div className="grid gap-5 xl:grid-cols-12">
         <div className="space-y-5 xl:col-span-8">
           <SectionCard
             icon={<MapPinned className="h-5 w-5" />}
             title="Entrega local por cidade"
-            description="Cadastre uma ou várias cidades e defina o valor de frete de cada uma."
+            description="Cadastre cidades, valor do frete, pedido mínimo e, se quiser, o valor para liberar frete grátis local."
           >
             <ToggleField
               checked={localDeliveryEnabled}
@@ -578,6 +652,45 @@ export default function AdminShippingPage() {
                         />
                       </label>
                     </div>
+
+                    <div className="grid gap-2 md:col-span-6">
+                      <Label>Pedido mínimo para entrega local</Label>
+                      <Input
+                        className="h-11 rounded-2xl border-slate-200 bg-white"
+                        value={row.minSubtotal}
+                        onChange={(e) =>
+                          updateRow(row.clientId, {
+                            minSubtotal: normalizeMoneyInput(e.target.value),
+                          })
+                        }
+                        placeholder="Ex.: 80"
+                        inputMode="decimal"
+                      />
+                      <p className="text-xs text-slate-500">
+                        Deixe vazio para não exigir pedido mínimo nesta cidade.
+                      </p>
+                    </div>
+
+                    <div className="grid gap-2 md:col-span-6">
+                      <Label>Frete grátis local a partir de</Label>
+                      <Input
+                        className="h-11 rounded-2xl border-slate-200 bg-white"
+                        value={row.freeShippingMinSubtotal}
+                        onChange={(e) =>
+                          updateRow(row.clientId, {
+                            freeShippingMinSubtotal: normalizeMoneyInput(
+                              e.target.value
+                            ),
+                          })
+                        }
+                        placeholder="Ex.: 150"
+                        inputMode="decimal"
+                      />
+                      <p className="text-xs text-slate-500">
+                        Deixe vazio para não aplicar frete grátis automático nesta cidade.
+                      </p>
+                    </div>
+
                     <div className="grid gap-2 md:col-span-12">
                       <Label>Dias de entrega</Label>
                       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
@@ -623,25 +736,47 @@ export default function AdminShippingPage() {
                     </div>
                   </div>
 
-                  <div className="mt-2 text-xs text-slate-500">
-                    Valor atual:{" "}
-                    <span className="font-semibold text-slate-700">
-                      {formatCurrencyBRL(row.price)}
-                    </span>
-                                        {" • "}
-                    Dias:{" "}
-                    <span className="font-semibold text-slate-700">
-                      {row.deliveryWeekdays.length
-                        ? row.deliveryWeekdays
-                            .map(
-                              (weekday) =>
-                                DELIVERY_WEEKDAYS.find(
-                                  (item) => item.value === weekday
-                                )?.label ?? weekday
-                            )
-                            .join(", ")
-                        : "não configurados"}
-                    </span>
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 text-xs text-slate-600">
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      <span>
+                        Frete:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {formatCurrencyBRL(row.price)}
+                        </span>
+                      </span>
+
+                      <span>
+                        Pedido mínimo:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {formatOptionalCurrencyBRL(row.minSubtotal)}
+                        </span>
+                      </span>
+
+                      <span>
+                        Frete grátis:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {formatOptionalCurrencyBRL(
+                            row.freeShippingMinSubtotal
+                          )}
+                        </span>
+                      </span>
+
+                      <span>
+                        Dias:{" "}
+                        <span className="font-semibold text-slate-800">
+                          {row.deliveryWeekdays.length
+                            ? row.deliveryWeekdays
+                                .map(
+                                  (weekday) =>
+                                    DELIVERY_WEEKDAYS.find(
+                                      (item) => item.value === weekday
+                                    )?.label ?? weekday
+                                )
+                                .join(", ")
+                            : "não configurados"}
+                        </span>
+                      </span>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -751,28 +886,44 @@ export default function AdminShippingPage() {
                     summary.activeCities.map((row) => (
                       <div
                         key={row.clientId}
-                        className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-200/70 bg-white px-3 py-2"
+                        className="rounded-2xl border border-emerald-200/70 bg-white px-3 py-3"
                       >
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium text-slate-900">
-                            {row.city || "Cidade sem nome"} / {row.state || "--"}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium text-slate-900">
+                              {row.city || "Cidade sem nome"} / {row.state || "--"}
+                            </div>
+
+                            <div className="mt-1 text-xs text-slate-500">
+                              Dias:{" "}
+                              {row.deliveryWeekdays.length
+                                ? row.deliveryWeekdays
+                                    .map(
+                                      (weekday) =>
+                                        DELIVERY_WEEKDAYS.find(
+                                          (item) => item.value === weekday
+                                        )?.label ?? weekday
+                                    )
+                                    .join(", ")
+                                : "não configurados"}
+                            </div>
+
+                            <div className="mt-1 text-xs text-slate-500">
+                              Pedido mínimo:{" "}
+                              {formatOptionalCurrencyBRL(row.minSubtotal)}
+                            </div>
+
+                            <div className="mt-1 text-xs text-slate-500">
+                              Frete grátis:{" "}
+                              {formatOptionalCurrencyBRL(
+                                row.freeShippingMinSubtotal
+                              )}
+                            </div>
                           </div>
-                                                    <div className="text-xs text-slate-500">
-                            Dias:{" "}
-                            {row.deliveryWeekdays.length
-                              ? row.deliveryWeekdays
-                                  .map(
-                                    (weekday) =>
-                                      DELIVERY_WEEKDAYS.find(
-                                        (item) => item.value === weekday
-                                      )?.label ?? weekday
-                                  )
-                                  .join(", ")
-                              : "não configurados"}
+
+                          <div className="shrink-0 text-sm font-semibold text-slate-900">
+                            {formatCurrencyBRL(row.price)}
                           </div>
-                        </div>
-                        <div className="shrink-0 text-sm font-semibold text-slate-900">
-                          {formatCurrencyBRL(row.price)}
                         </div>
                       </div>
                     ))

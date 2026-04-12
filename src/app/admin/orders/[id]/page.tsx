@@ -64,6 +64,9 @@ type OrderDetails = {
     adminApprovalStatus?: string;
     orderStatus?: string | null;
     status?: string | null;
+    deliveryMethod?: string | null;
+    shippingMethod?: string | null;
+    deliveryType?: string | null;
     totalAmount?: string | number;
     total?: string | number;
 
@@ -865,11 +868,14 @@ export default function AdminOrderDetailsPage() {
                   )}
                 </SectionShell>
 
-                  <OrderShippingPanel
+                <OrderShippingPanel
                   orderId={id}
                   paymentStatus={order?.paymentStatus}
                   adminApprovalStatus={order?.adminApprovalStatus}
                   orderStatus={orderStatus}
+                  deliveryMethod={
+                    order?.deliveryMethod ?? order?.shippingMethod ?? order?.deliveryType ?? null
+                  }
                 />
 
                 <SectionShell
