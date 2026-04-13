@@ -18,7 +18,12 @@ import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/apiError";
 import { endpoints } from "@/lib/endpoints";
 
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,7 +39,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-
 
 type ShipmentStatus =
   | "NOT_CREATED"
@@ -75,7 +79,6 @@ type Eligibility = {
   reason: string;
 };
 
-
 function fmtDate(value?: string | null) {
   if (!value) return "Não informado";
   const dt = new Date(value);
@@ -83,7 +86,9 @@ function fmtDate(value?: string | null) {
   return dt.toLocaleString("pt-BR");
 }
 
-function normalizedShipment(data: ShipmentResponse | ShipmentDetails | null | undefined): ShipmentDetails | null {
+function normalizedShipment(
+  data: ShipmentResponse | ShipmentDetails | null | undefined
+): ShipmentDetails | null {
   if (!data) return null;
 
   const maybeWrapped = data as ShipmentResponse;
@@ -99,6 +104,12 @@ function normalizedShipment(data: ShipmentResponse | ShipmentDetails | null | un
 function isCanceledOrder(orderStatus?: string | null) {
   const v = String(orderStatus ?? "").toUpperCase();
   return ["CANCELED", "CANCELLED", "REJECTED", "REFUNDED"].includes(v);
+}
+
+function isPrintableLabel(shipment?: ShipmentDetails | null) {
+  return Boolean(
+    shipment?.labelUrl || (shipment?.labelFileKey && shipment?.generatedAt)
+  );
 }
 
 function badgeClass(status: ShipmentStatus) {
@@ -134,8 +145,14 @@ function classifyError(err: unknown) {
     const status = axiosErr.response?.status;
 
     if (status === 401) return "Sua sessão expirou ou não está autorizada.";
-    if (status === 403) return "Seu usuário não tem permissão para operar expedição.";
-    if (status && status >= 500) return "Serviço indisponível no momento. Tente novamente.";
+    if (status === 403)
+      return "Seu usuário não tem permissão para operar expedição.";
+    if (status === 409)
+      return "A etiqueta não está disponível para este pedido no momento.";
+    if (status === 422)
+      return "Não foi possível concluir esta etapa da expedição.";
+    if (status && status >= 500)
+      return "Serviço indisponível no momento. Tente novamente.";
   }
 
   return msg;
@@ -214,32 +231,52 @@ function buildEligibility({
   paymentStatus,
   adminApprovalStatus,
   orderStatus,
-  hasLabel,
+  shipmentStatus,
+  hasPrintableLabel,
 }: {
   paymentStatus?: string | null;
   adminApprovalStatus?: string | null;
   orderStatus?: string | null;
-  hasLabel: boolean;
+  shipmentStatus?: ShipmentStatus | null;
+  hasPrintableLabel: boolean;
 }): Eligibility {
   if (String(paymentStatus ?? "").toUpperCase() !== "PAID") {
-    return { ok: false, reason: "Pagamento ainda não confirmado para expedição." };
+    return {
+      ok: false,
+      reason: "Pagamento ainda não confirmado para expedição.",
+    };
   }
 
   if (String(adminApprovalStatus ?? "").toUpperCase() !== "APPROVED") {
-    return { ok: false, reason: "Pedido ainda não aprovado para expedição." };
+    return {
+      ok: false,
+      reason: "Pedido ainda não aprovado para expedição.",
+    };
   }
 
   if (isCanceledOrder(orderStatus)) {
-    return { ok: false, reason: "Pedido cancelado não é elegível para expedição." };
+    return {
+      ok: false,
+      reason: "Pedido cancelado não é elegível para expedição.",
+    };
   }
 
-  if (hasLabel) {
-    return { ok: false, reason: "Etiqueta já gerada. Use imprimir ou reimprimir." };
+  if (String(shipmentStatus ?? "").toUpperCase() === "POSTED") {
+    return {
+      ok: false,
+      reason: "Pedido já foi marcado como postado.",
+    };
+  }
+
+  if (hasPrintableLabel) {
+    return {
+      ok: false,
+      reason: "Etiqueta já gerada. Use imprimir ou reimprimir.",
+    };
   }
 
   return { ok: true, reason: "Pedido apto para gerar etiqueta." };
 }
-
 
 export function OrderShippingPanel({
   orderId,
@@ -266,16 +303,34 @@ export function OrderShippingPanel({
 
   const shipment = shippingQ.data;
   const shipmentStatus = shipment?.shipmentStatus ?? "NOT_CREATED";
-  const hasLabel = Boolean(
-    shipment?.labelUrl ||
-      shipment?.labelFileKey ||
-      shipmentStatus === "LABEL_READY" ||
-      shipmentStatus === "POSTED"
+  const printableLabelAvailable = isPrintableLabel(shipment);
+  const hasPartialShipmentRecord = Boolean(
+    shipment &&
+      !printableLabelAvailable &&
+      (shipment.prePostagemId ||
+        shipment.labelFileKey ||
+        shipment.generatedAt ||
+        shipmentStatus === "PRE_POSTED" ||
+        shipmentStatus === "LABEL_READY" ||
+        shipmentStatus === "ERROR")
   );
 
   const eligibility = useMemo(
-    () => buildEligibility({ paymentStatus, adminApprovalStatus, orderStatus, hasLabel }),
-    [adminApprovalStatus, hasLabel, orderStatus, paymentStatus]
+    () =>
+      buildEligibility({
+        paymentStatus,
+        adminApprovalStatus,
+        orderStatus,
+        shipmentStatus,
+        hasPrintableLabel: printableLabelAvailable,
+      }),
+    [
+      adminApprovalStatus,
+      orderStatus,
+      paymentStatus,
+      printableLabelAvailable,
+      shipmentStatus,
+    ]
   );
 
   async function syncShippingQueries() {
@@ -289,15 +344,30 @@ export function OrderShippingPanel({
       const { data } = await api.post(
         endpoints.adminOrderShipping.generateLabel(orderId),
         {},
-        { headers: { "Idempotency-Key": `admin-shipping:${orderId}:generate-label` } }
+        {
+          headers: {
+            "Idempotency-Key": `admin-shipping:${orderId}:generate-label`,
+          },
+        }
       );
       return normalizedShipment(data as ShipmentResponse);
     },
-    onSuccess: async () => {
-      toast.success("Etiqueta pronta para impressão.");
+    onSuccess: async (nextShipment) => {
+      await syncShippingQueries();
+
+      if (isPrintableLabel(nextShipment)) {
+        toast.success("Etiqueta pronta para impressão.");
+        return;
+      }
+
+      toast.success(
+        "Solicitação recebida. Se a etiqueta não aparecer, atualize ou tente novamente."
+      );
+    },
+    onError: async (err) => {
+      toast.error(classifyError(err));
       await syncShippingQueries();
     },
-    onError: (err) => toast.error(classifyError(err)),
   });
 
   const reprintM = useMutation({
@@ -305,15 +375,30 @@ export function OrderShippingPanel({
       const { data } = await api.post(
         endpoints.adminOrderShipping.reprintLabel(orderId),
         {},
-        { headers: { "Idempotency-Key": `admin-shipping:${orderId}:reprint-label` } }
+        {
+          headers: {
+            "Idempotency-Key": `admin-shipping:${orderId}:reprint-label`,
+          },
+        }
       );
       return normalizedShipment(data as ShipmentResponse);
     },
-    onSuccess: async () => {
-      toast.success("Etiqueta preparada para reimpressão.");
+    onSuccess: async (nextShipment) => {
+      await syncShippingQueries();
+
+      if (isPrintableLabel(nextShipment)) {
+        toast.success("Etiqueta preparada para reimpressão.");
+        return;
+      }
+
+      toast.success(
+        "Solicitação de reimpressão enviada. Atualize se necessário."
+      );
+    },
+    onError: async (err) => {
+      toast.error(classifyError(err));
       await syncShippingQueries();
     },
-    onError: (err) => toast.error(classifyError(err)),
   });
 
   const printedM = useMutation({
@@ -323,7 +408,10 @@ export function OrderShippingPanel({
     onSuccess: async () => {
       await syncShippingQueries();
     },
-    onError: (err) => toast.error(classifyError(err)),
+    onError: async (err) => {
+      toast.error(classifyError(err));
+      await syncShippingQueries();
+    },
   });
 
   const postedM = useMutation({
@@ -331,14 +419,21 @@ export function OrderShippingPanel({
       await api.post(
         endpoints.adminOrderShipping.markPosted(orderId),
         {},
-        { headers: { "Idempotency-Key": `admin-shipping:${orderId}:mark-posted` } }
+        {
+          headers: {
+            "Idempotency-Key": `admin-shipping:${orderId}:mark-posted`,
+          },
+        }
       );
     },
     onSuccess: async () => {
       toast.success("Pedido marcado como postado.");
       await syncShippingQueries();
     },
-    onError: (err) => toast.error(classifyError(err)),
+    onError: async (err) => {
+      toast.error(classifyError(err));
+      await syncShippingQueries();
+    },
   });
 
   const printM = useMutation({
@@ -360,7 +455,10 @@ export function OrderShippingPanel({
       toast.success("Etiqueta aberta para impressão no navegador.");
       printedM.mutate();
     },
-    onError: (err) => toast.error(classifyError(err)),
+    onError: async (err) => {
+      toast.error(classifyError(err));
+      await syncShippingQueries();
+    },
   });
 
   const busy =
@@ -370,37 +468,84 @@ export function OrderShippingPanel({
     printM.isPending ||
     postedM.isPending ||
     printedM.isPending;
-  const canMarkPosted = hasLabel && (shipmentStatus === "PRE_POSTED" || shipmentStatus === "LABEL_READY");
+
+  const canGenerate = eligibility.ok && !busy;
+  const canPrint = printableLabelAvailable && !busy;
+  const canReprint = printableLabelAvailable && !busy;
+  const canMarkPosted =
+    printableLabelAvailable &&
+    (shipmentStatus === "PRE_POSTED" || shipmentStatus === "LABEL_READY") &&
+    !busy;
+
   const markPostedDisabledReason = (() => {
     if (shipmentStatus === "POSTED") return "Pedido já marcado como postado.";
-    if (!hasLabel || shipmentStatus === "NOT_CREATED") return "Gere a etiqueta antes de marcar como postado.";
-    if (!canMarkPosted) return "A postagem só pode ser confirmada após pré-postagem ou etiqueta pronta.";
+    if (!printableLabelAvailable)
+      return "Gere uma etiqueta válida antes de marcar como postado.";
+    if (!canMarkPosted)
+      return "A postagem só pode ser confirmada após pré-postagem ou etiqueta pronta.";
     return null;
   })();
+
   const friendlyLastError = friendlyShipmentErrorMessage({
     lastError: shipment?.lastError,
     deliveryMethod,
     shipment,
   });
+
   const technicalErrorCode = normalizeShippingErrorCode(shipment?.lastError);
 
-      const summaryMessage = (() => {
+  const generateButtonLabel = (() => {
+    if (
+      hasPartialShipmentRecord ||
+      shipment?.lastError ||
+      shipmentStatus === "PRE_POSTED" ||
+      shipmentStatus === "ERROR"
+    ) {
+      return "Tentar gerar novamente";
+    }
+
+    return "Gerar etiqueta";
+  })();
+
+  const summaryMessage = (() => {
     if (shippingQ.isLoading) return "Carregando dados de expedição...";
     if (shippingQ.isError) return "Não foi possível carregar a expedição.";
     if (!shipment) return "Etiqueta ainda não gerada.";
-    if (shipmentStatus === "LABEL_READY") return "Etiqueta pronta para impressão.";
+
+    if (shipment?.lastError) {
+      return (
+        friendlyLastError ??
+        "Não foi possível processar a expedição deste pedido no momento."
+      );
+    }
+
     if (shipmentStatus === "POSTED") return "Pedido marcado como postado.";
-    if (!eligibility.ok && !hasLabel) return eligibility.reason;
+
+    if (printableLabelAvailable && shipmentStatus === "LABEL_READY") {
+      return "Etiqueta pronta para impressão.";
+    }
+
+    if (printableLabelAvailable) {
+      return "Etiqueta disponível para impressão.";
+    }
+
+    if (hasPartialShipmentRecord) {
+      return "Existe um registro parcial de expedição, mas ainda não há etiqueta disponível para impressão.";
+    }
+
+    if (!eligibility.ok) return eligibility.reason;
+
     return "Painel de expedição sincronizado.";
   })();
-
 
   return (
     <Card className="overflow-hidden rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
       <CardHeader className="border-b border-zinc-100 pb-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <CardTitle className="text-lg font-bold text-zinc-950">Correios / Expedição</CardTitle>
+            <CardTitle className="text-lg font-bold text-zinc-950">
+              Correios / Expedição
+            </CardTitle>
             <p className="mt-1 text-sm text-zinc-500">
               Fluxo por pedido: gerar etiqueta, imprimir e confirmar postagem.
             </p>
@@ -413,7 +558,11 @@ export function OrderShippingPanel({
             onClick={() => shippingQ.refetch()}
             disabled={busy}
           >
-            <RefreshCw className={`mr-2 h-4 w-4 ${shippingQ.isFetching ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`mr-2 h-4 w-4 ${
+                shippingQ.isFetching ? "animate-spin" : ""
+              }`}
+            />
             Atualizar expedição
           </Button>
         </div>
@@ -427,17 +576,31 @@ export function OrderShippingPanel({
         ) : null}
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <InfoCard label="Transportadora" value={shipment?.provider ?? "CORREIOS"} />
+          <InfoCard
+            label="Transportadora"
+            value={shipment?.provider ?? "CORREIOS"}
+          />
           <InfoCard
             label="Status da expedição"
             value={
-              <Badge className={`rounded-full border px-2.5 py-0.5 ${badgeClass(shipmentStatus)}`}>
+              <Badge
+                className={`rounded-full border px-2.5 py-0.5 ${badgeClass(
+                  shipmentStatus
+                )}`}
+              >
                 {shipmentLabel(shipmentStatus)}
               </Badge>
             }
           />
-          <InfoCard label="Código de rastreio" value={shipment?.trackingCode || "Não informado"} mono />
-          <InfoCard label="Serviço" value={shipment?.serviceName || shipment?.serviceCode || "Não informado"} />
+          <InfoCard
+            label="Código de rastreio"
+            value={shipment?.trackingCode || "Não informado"}
+            mono
+          />
+          <InfoCard
+            label="Serviço"
+            value={shipment?.serviceName || shipment?.serviceCode || "Não informado"}
+          />
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
@@ -446,13 +609,22 @@ export function OrderShippingPanel({
           <InfoCard label="Data de postagem" value={fmtDate(shipment?.postedAt)} />
         </div>
 
-        {!eligibility.ok && !hasLabel ? (
+        {!eligibility.ok && !printableLabelAvailable ? (
           <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
             <ShieldAlert className="mt-0.5 h-4 w-4" />
             <div>
-              <div className="font-semibold">Pedido não elegível para gerar etiqueta</div>
+              <div className="font-semibold">
+                Pedido não elegível para gerar etiqueta
+              </div>
               <div>{eligibility.reason}</div>
             </div>
+          </div>
+        ) : null}
+
+        {hasPartialShipmentRecord && !shipment?.lastError ? (
+          <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
+            Há um registro parcial de expedição, mas nenhuma etiqueta válida foi encontrada
+            para impressão. Você pode tentar gerar novamente.
           </div>
         ) : null}
 
@@ -460,9 +632,11 @@ export function OrderShippingPanel({
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <div className="font-semibold">Último erro de expedição</div>
             <div>{friendlyLastError}</div>
-{technicalErrorCode ? (
-  <div className="mt-1 text-xs text-red-600/80">Código técnico: {technicalErrorCode}</div>
-) : null}
+            {technicalErrorCode ? (
+              <div className="mt-1 text-xs text-red-600/80">
+                Código técnico: {technicalErrorCode}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -471,10 +645,14 @@ export function OrderShippingPanel({
             type="button"
             className="rounded-2xl"
             onClick={() => generateM.mutate()}
-            disabled={!eligibility.ok || busy}
+            disabled={!canGenerate}
           >
-            {generateM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
-            Gerar etiqueta
+            {generateM.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Send className="mr-2 h-4 w-4" />
+            )}
+            {generateButtonLabel}
           </Button>
 
           <Button
@@ -482,9 +660,13 @@ export function OrderShippingPanel({
             variant="outline"
             className="rounded-2xl border-zinc-200"
             onClick={() => printM.mutate()}
-            disabled={!hasLabel || busy}
+            disabled={!canPrint}
           >
-            {printM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+            {printM.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Printer className="mr-2 h-4 w-4" />
+            )}
             Imprimir etiqueta
           </Button>
 
@@ -493,29 +675,34 @@ export function OrderShippingPanel({
             variant="outline"
             className="rounded-2xl border-zinc-200"
             onClick={() => reprintM.mutate()}
-            disabled={!hasLabel || busy}
+            disabled={!canReprint}
           >
-            {reprintM.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Printer className="mr-2 h-4 w-4" />}
+            {reprintM.isPending ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Printer className="mr-2 h-4 w-4" />
+            )}
             Reimprimir etiqueta
           </Button>
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
-<Button
-  type="button"
-  variant="outline"
-  className="rounded-2xl border-zinc-200"
-  disabled={busy || !canMarkPosted}
-  title={markPostedDisabledReason ?? undefined}
->
-  {postedM.isPending ? (
-    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-  ) : (
-    <Truck className="mr-2 h-4 w-4" />
-  )}
-  Marcar como postado
-</Button>
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-2xl border-zinc-200"
+                disabled={!canMarkPosted}
+                title={markPostedDisabledReason ?? undefined}
+              >
+                {postedM.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Truck className="mr-2 h-4 w-4" />
+                )}
+                Marcar como postado
+              </Button>
             </AlertDialogTrigger>
+
             <AlertDialogContent className="rounded-[28px]">
               <AlertDialogHeader>
                 <AlertDialogTitle>Marcar pedido como postado?</AlertDialogTitle>
@@ -523,35 +710,55 @@ export function OrderShippingPanel({
                   Depois de marcar como postado, esta ação não poderá ser desfeita por esta tela.
                 </AlertDialogDescription>
               </AlertDialogHeader>
+
               <AlertDialogFooter>
-                <AlertDialogCancel className="rounded-2xl">Cancelar</AlertDialogCancel>
-                <AlertDialogAction className="rounded-2xl" onClick={() => postedM.mutate()}>
+                <AlertDialogCancel className="rounded-2xl">
+                  Cancelar
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="rounded-2xl"
+                  onClick={() => postedM.mutate()}
+                >
                   Confirmar postagem
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
         </div>
-        
+
         {markPostedDisabledReason && shipmentStatus !== "POSTED" ? (
           <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-xs text-zinc-700">
             {markPostedDisabledReason}
           </div>
         ) : null}
 
-        {shipment?.prePostagemId || shipment?.labelFileKey || shipment?.diagnostics?.length ? (
-          <Accordion type="single" collapsible className="rounded-2xl border border-zinc-200 px-4">
+        {shipment?.prePostagemId ||
+        shipment?.labelFileKey ||
+        shipment?.diagnostics?.length ? (
+          <Accordion
+            type="single"
+            collapsible
+            className="rounded-2xl border border-zinc-200 px-4"
+          >
             <AccordionItem value="shipment-tech" className="border-0">
               <AccordionTrigger className="py-3 text-sm font-semibold text-zinc-900">
                 <span className="flex items-center gap-2">
                   <Wrench className="h-4 w-4" /> Detalhes técnicos
                 </span>
               </AccordionTrigger>
+
               <AccordionContent>
                 <div className="space-y-2 text-xs text-zinc-700">
-                  <div>prePostagemId: {shipment?.prePostagemId || "não informado"}</div>
-                  <div>labelFileKey: {shipment?.labelFileKey || "não informado"}</div>
-                  <div>labelFormat: {shipment?.labelFormat || "não informado"}</div>
+                  <div>
+                    prePostagemId: {shipment?.prePostagemId || "não informado"}
+                  </div>
+                  <div>
+                    labelFileKey: {shipment?.labelFileKey || "não informado"}
+                  </div>
+                  <div>
+                    labelFormat: {shipment?.labelFormat || "não informado"}
+                  </div>
+
                   {(shipment?.diagnostics ?? []).length ? (
                     <ul className="list-disc space-y-1 pl-5">
                       {(shipment?.diagnostics ?? []).map((item, idx) => (
@@ -585,8 +792,16 @@ function InfoCard({
 }) {
   return (
     <div className="rounded-2xl border border-zinc-200 bg-zinc-50/70 p-3">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">{label}</div>
-      <div className={`mt-2 break-all text-sm text-zinc-900 ${mono ? "font-mono" : ""}`}>{value}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+        {label}
+      </div>
+      <div
+        className={`mt-2 break-all text-sm text-zinc-900 ${
+          mono ? "font-mono" : ""
+        }`}
+      >
+        {value}
+      </div>
     </div>
   );
 }
