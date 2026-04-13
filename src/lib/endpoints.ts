@@ -43,14 +43,16 @@ export const endpoints = {
     refund: (orderId: string) => `/admin/orders/${orderId}/refund`,
   },
 
-    adminOrderShipping: {
-    byOrder: (orderId: string) => `/admin/orders/${orderId}/shipping`,
-    label: (orderId: string) => `/admin/orders/${orderId}/shipping/label`,
-    markPrinted: (orderId: string) => `/admin/orders/${orderId}/shipping/printed`,
-    markPosted: (orderId: string) => `/admin/orders/${orderId}/shipping/posted`,
-    generateLabel: (orderId: string) => `/admin/orders/${orderId}/shipping/correios/generate-label`,
-    reprintLabel: (orderId: string) => `/admin/orders/${orderId}/shipping/correios/reprint-label`,
-  },
+adminOrderShipping: {
+  byOrder: (orderId: string) => `/admin/orders/${orderId}/shipping`,
+  label: (orderId: string) => `/admin/orders/${orderId}/shipping/label`,
+  markPrinted: (orderId: string) => `/admin/orders/${orderId}/shipping/printed`,
+  markPosted: (orderId: string) => `/admin/orders/${orderId}/shipping/posted`,
+  generateLabel: (orderId: string) => `/admin/orders/${orderId}/shipping/correios/generate-label`,
+  reprintLabel: (orderId: string) => `/admin/orders/${orderId}/shipping/correios/reprint-label`,
+  refreshLabel: (orderId: string) =>
+    `/admin/orders/${orderId}/shipping/correios/refresh-label`,
+},
 
   adminCoupons: {
     list: "/admin/coupons",

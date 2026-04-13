@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AxiosError } from "axios";
 import { toast } from "sonner";
@@ -42,6 +42,7 @@ import {
 
 type ShipmentStatus =
   | "NOT_CREATED"
+  | "PRE_POST_CREATED"
   | "PRE_POSTED"
   | "LABEL_READY"
   | "POSTED"
@@ -117,7 +118,7 @@ function badgeClass(status: ShipmentStatus) {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
 
-  if (status === "PRE_POSTED") {
+  if (status === "PRE_POST_CREATED" || status === "PRE_POSTED") {
     return "border-amber-200 bg-amber-50 text-amber-700";
   }
 
@@ -130,6 +131,7 @@ function badgeClass(status: ShipmentStatus) {
 
 function shipmentLabel(status?: ShipmentStatus | null) {
   if (!status || status === "NOT_CREATED") return "Etiqueta ainda não gerada";
+  if (status === "PRE_POST_CREATED") return "Etiqueta em processamento";
   if (status === "PRE_POSTED") return "Pré-postagem criada";
   if (status === "LABEL_READY") return "Etiqueta pronta para impressão";
   if (status === "POSTED") return "Pedido marcado como postado";
@@ -218,12 +220,33 @@ function friendlyShipmentErrorMessage({
     return "Serviço dos Correios inválido para gerar a etiqueta deste pedido.";
   }
 
+    if (errorCode === "LABEL_ASYNC_PENDING") {
+    return "A pré-postagem foi criada e o Correios ainda está finalizando o rótulo.";
+  }
+
   if (!lastError) return null;
   return "Não foi possível processar a expedição deste pedido no momento.";
 }
 
+function isAsyncLabelPending(shipment?: ShipmentDetails | null) {
+  return (
+    shipment?.shipmentStatus === "PRE_POST_CREATED" &&
+    normalizeShippingErrorCode(shipment?.lastError) === "LABEL_ASYNC_PENDING"
+  );
+}
+
 async function fetchShipping(orderId: string): Promise<ShipmentDetails | null> {
   const { data } = await api.get(endpoints.adminOrderShipping.byOrder(orderId));
+  return normalizedShipment(data as ShipmentResponse);
+}
+
+async function refreshPendingShipping(
+  orderId: string
+): Promise<ShipmentDetails | null> {
+  const { data } = await api.post(
+    endpoints.adminOrderShipping.refreshLabel(orderId),
+    {}
+  );
   return normalizedShipment(data as ShipmentResponse);
 }
 
@@ -293,16 +316,17 @@ export function OrderShippingPanel({
 }) {
   const qc = useQueryClient();
 
-  const shippingQ = useQuery({
-    queryKey: ["admin-order-shipping", orderId],
-    queryFn: () => fetchShipping(orderId),
-    enabled: Boolean(orderId),
-    retry: false,
-    refetchOnWindowFocus: false,
-  });
+const shippingQ = useQuery({
+  queryKey: ["admin-order-shipping", orderId],
+  queryFn: () => fetchShipping(orderId),
+  enabled: Boolean(orderId),
+  retry: false,
+  refetchOnWindowFocus: false,
+});
 
   const shipment = shippingQ.data;
   const shipmentStatus = shipment?.shipmentStatus ?? "NOT_CREATED";
+  const asyncLabelPending = isAsyncLabelPending(shipment);
   const printableLabelAvailable = isPrintableLabel(shipment);
   const hasPartialShipmentRecord = Boolean(
     shipment &&
@@ -310,6 +334,7 @@ export function OrderShippingPanel({
       (shipment.prePostagemId ||
         shipment.labelFileKey ||
         shipment.generatedAt ||
+        shipmentStatus === "PRE_POST_CREATED" ||
         shipmentStatus === "PRE_POSTED" ||
         shipmentStatus === "LABEL_READY" ||
         shipmentStatus === "ERROR")
@@ -360,6 +385,13 @@ export function OrderShippingPanel({
         return;
       }
 
+            if (isAsyncLabelPending(nextShipment)) {
+        toast.success(
+          "Pré-postagem criada. O Correios está finalizando o rótulo e vamos atualizar automaticamente."
+        );
+        return;
+      }
+
       toast.success(
         "Solicitação recebida. Se a etiqueta não aparecer, atualize ou tente novamente."
       );
@@ -369,6 +401,23 @@ export function OrderShippingPanel({
       await syncShippingQueries();
     },
   });
+
+  const refreshPendingM = useMutation({
+  mutationFn: async () => {
+    return refreshPendingShipping(orderId);
+  },
+  onSuccess: async (nextShipment) => {
+    await syncShippingQueries();
+
+    if (isPrintableLabel(nextShipment)) {
+      toast.success("Etiqueta pronta para impressão.");
+    }
+  },
+  onError: async (err) => {
+    toast.error(classifyError(err));
+    await syncShippingQueries();
+  },
+});
 
   const reprintM = useMutation({
     mutationFn: async () => {
@@ -461,24 +510,42 @@ export function OrderShippingPanel({
     },
   });
 
-  const busy =
-    shippingQ.isFetching ||
-    generateM.isPending ||
-    reprintM.isPending ||
-    printM.isPending ||
-    postedM.isPending ||
-    printedM.isPending;
+  useEffect(() => {
+  if (!orderId || !asyncLabelPending) return;
 
-  const canGenerate = eligibility.ok && !busy;
+  const timer = window.setInterval(() => {
+    if (!refreshPendingM.isPending) {
+      refreshPendingM.mutate();
+    }
+  }, 10_000);
+
+  return () => window.clearInterval(timer);
+}, [orderId, asyncLabelPending, refreshPendingM]);
+
+const busy =
+  shippingQ.isFetching ||
+  generateM.isPending ||
+  refreshPendingM.isPending ||
+  reprintM.isPending ||
+  printM.isPending ||
+  postedM.isPending ||
+  printedM.isPending;
+
+  const canGenerate = eligibility.ok && !busy && !asyncLabelPending;
   const canPrint = printableLabelAvailable && !busy;
-  const canReprint = printableLabelAvailable && !busy;
+  const canReprint = printableLabelAvailable && !busy && !asyncLabelPending;
   const canMarkPosted =
     printableLabelAvailable &&
-    (shipmentStatus === "PRE_POSTED" || shipmentStatus === "LABEL_READY") &&
-    !busy;
+    (shipmentStatus === "PRE_POST_CREATED" ||
+      shipmentStatus === "PRE_POSTED" ||
+      shipmentStatus === "LABEL_READY") &&
+    !busy &&
+    !asyncLabelPending;
 
   const markPostedDisabledReason = (() => {
     if (shipmentStatus === "POSTED") return "Pedido já marcado como postado.";
+        if (asyncLabelPending)
+      return "Aguarde a finalização da etiqueta antes de marcar como postado.";
     if (!printableLabelAvailable)
       return "Gere uma etiqueta válida antes de marcar como postado.";
     if (!canMarkPosted)
@@ -495,9 +562,11 @@ export function OrderShippingPanel({
   const technicalErrorCode = normalizeShippingErrorCode(shipment?.lastError);
 
   const generateButtonLabel = (() => {
+    if (asyncLabelPending) return "Etiqueta em processamento";
     if (
       hasPartialShipmentRecord ||
       shipment?.lastError ||
+      shipmentStatus === "PRE_POST_CREATED" ||
       shipmentStatus === "PRE_POSTED" ||
       shipmentStatus === "ERROR"
     ) {
@@ -511,6 +580,9 @@ export function OrderShippingPanel({
     if (shippingQ.isLoading) return "Carregando dados de expedição...";
     if (shippingQ.isError) return "Não foi possível carregar a expedição.";
     if (!shipment) return "Etiqueta ainda não gerada.";
+    if (asyncLabelPending) {
+      return "A pré-postagem foi criada e o Correios ainda está finalizando o rótulo.";
+    }
 
     if (shipment?.lastError) {
       return (
@@ -551,20 +623,26 @@ export function OrderShippingPanel({
             </p>
           </div>
 
-          <Button
-            type="button"
-            variant="outline"
-            className="rounded-2xl border-zinc-200"
-            onClick={() => shippingQ.refetch()}
-            disabled={busy}
-          >
-            <RefreshCw
-              className={`mr-2 h-4 w-4 ${
-                shippingQ.isFetching ? "animate-spin" : ""
-              }`}
-            />
-            Atualizar expedição
-          </Button>
+<Button
+  type="button"
+  variant="outline"
+  className="rounded-2xl border-zinc-200"
+  onClick={() => {
+    if (asyncLabelPending) {
+      refreshPendingM.mutate();
+      return;
+    }
+    shippingQ.refetch();
+  }}
+  disabled={busy}
+>
+  <RefreshCw
+    className={`mr-2 h-4 w-4 ${
+      shippingQ.isFetching || refreshPendingM.isPending ? "animate-spin" : ""
+    }`}
+  />
+  Atualizar expedição
+</Button>
         </div>
       </CardHeader>
 
@@ -621,14 +699,22 @@ export function OrderShippingPanel({
           </div>
         ) : null}
 
-        {hasPartialShipmentRecord && !shipment?.lastError ? (
+        {hasPartialShipmentRecord && !shipment?.lastError && !asyncLabelPending ? (
           <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
             Há um registro parcial de expedição, mas nenhuma etiqueta válida foi encontrada
             para impressão. Você pode tentar gerar novamente.
           </div>
         ) : null}
 
-        {shipment?.lastError ? (
+        {asyncLabelPending ? (
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700">
+            <div className="font-semibold">Etiqueta em processamento</div>
+            <div>
+              A pré-postagem foi criada e o Correios ainda está finalizando o
+              rótulo. O painel atualiza automaticamente a cada 10 segundos.
+            </div>
+          </div>
+        ) : shipment?.lastError ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <div className="font-semibold">Último erro de expedição</div>
             <div>{friendlyLastError}</div>
@@ -646,6 +732,7 @@ export function OrderShippingPanel({
             className="rounded-2xl"
             onClick={() => generateM.mutate()}
             disabled={!canGenerate}
+           title={asyncLabelPending ? "Aguarde a etiqueta terminar de processar." : undefined}
           >
             {generateM.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -676,6 +763,7 @@ export function OrderShippingPanel({
             className="rounded-2xl border-zinc-200"
             onClick={() => reprintM.mutate()}
             disabled={!canReprint}
+            title={asyncLabelPending ? "Reimpressão disponível quando a etiqueta estiver pronta." : undefined}
           >
             {reprintM.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
