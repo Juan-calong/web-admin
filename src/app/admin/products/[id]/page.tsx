@@ -6,6 +6,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
   Save,
   Upload,
   Trash2,
@@ -37,6 +39,8 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+
+const EMPTY_IMAGES: ProductImage[] = [];
 
 type PromoAppliesTo = "SELLER" | "SALON" | "CUSTOMER" | "BOTH";
 type DiscountType = "PCT" | "FIXED" | "PRICE";
@@ -508,6 +512,7 @@ export default function EditProductPage() {
   const [lengthCm, setLengthCm] = useState("");
   const [packageVolumes, setPackageVolumes] = useState("1");
   const product = productQ.data ?? null;
+  const [manualImageOrder, setManualImageOrder] = useState<string[]>([]);
 
   useEffect(() => {
     if (!product) return;
@@ -675,19 +680,54 @@ export default function EditProductPage() {
     videoThumbnailUrl,
   ]);
 
-  const images = product?.images ?? [];
-    const imagesOrdered = useMemo(() => {
-    return [...images].sort((a, b) => {
-      const ap = a.isPrimary ? 1 : 0;
-      const bp = b.isPrimary ? 1 : 0;
-      if (bp !== ap) return bp - ap;
-      return (a.sort ?? 0) - (b.sort ?? 0);
-    });
-  }, [images]);
+const images = useMemo(
+  () => product?.images ?? EMPTY_IMAGES,
+  [product?.images]
+);
+
+const imagesById = useMemo(
+  () => new Map(images.map((img) => [img.id, img])),
+  [images]
+);
+
+const imagesOrderedByBackend = useMemo(() => {
+  return [...images].sort((a, b) => {
+    const ap = a.isPrimary ? 1 : 0;
+    const bp = b.isPrimary ? 1 : 0;
+
+    if (bp !== ap) return bp - ap;
+    return (a.sort ?? 0) - (b.sort ?? 0);
+  });
+}, [images]);
+
+const imagesOrdered = useMemo(() => {
+  if (!manualImageOrder.length) return imagesOrderedByBackend;
+
+  const orderedIds = manualImageOrder.filter((imageId) => imagesById.has(imageId));
+
+  const missingIds = imagesOrderedByBackend
+    .map((img) => img.id)
+    .filter((imageId) => !orderedIds.includes(imageId));
+
+  return [...orderedIds, ...missingIds]
+    .map((imageId) => imagesById.get(imageId))
+    .filter(Boolean) as ProductImage[];
+}, [imagesById, imagesOrderedByBackend, manualImageOrder]);
+
+useEffect(() => {
+  const nextOrder = imagesOrderedByBackend.map((img) => img.id);
+
+  setManualImageOrder((prev) => {
+    const isSame =
+      prev.length === nextOrder.length &&
+      prev.every((id, index) => id === nextOrder[index]);
+
+    return isSame ? prev : nextOrder;
+  });
+}, [imagesOrderedByBackend]);
+
   const primaryUrl =
-    images.find((x) => x.isPrimary)?.url ??
-    [...images].sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))[0]?.url ??
-    null;
+    imagesOrdered.find((x) => x.isPrimary)?.url ?? imagesOrdered[0]?.url ?? null;
 
   const saveM = useMutation({
     mutationFn: async () => {
@@ -852,20 +892,66 @@ export default function EditProductPage() {
   });
 
   const setPrimaryM = useMutation({
-    mutationFn: async (primaryImageId: string) => {
+    mutationFn: async ({
+      primaryImageId,
+      order,
+    }: {
+      primaryImageId?: string;
+      order: string[];
+    }) => {
+      const payload: { primaryImageId?: string; order: string[] } = { order };
+      if (primaryImageId) payload.primaryImageId = primaryImageId;
       await api.patch(
         endpoints.products.images.update(id),
-        { primaryImageId },
-        { headers: { "Idempotency-Key": `prod-img-primary:${id}:${primaryImageId}` } }
+        payload,
+        {
+          headers: {
+            "Idempotency-Key": `prod-img-update:${id}:${primaryImageId ?? "order"}:${order.join(",")}`,
+          },
+        }
       );
     },
-    onSuccess: async () => {
-      toast.success("Imagem primária atualizada.");
+    onSuccess: async (_result, variables) => {
+      toast.success(
+        variables.primaryImageId
+          ? "Imagem primária e ordem atualizadas."
+          : "Ordem das imagens atualizada."
+      );
       await qc.invalidateQueries({ queryKey: ["product", id] });
       await productQ.refetch();
     },
-    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Falha ao definir primária.")),
+    onError: async (err: unknown) => {
+      toast.error(apiErrorMessage(err, "Falha ao atualizar imagens."));
+      await productQ.refetch();
+    },
   });
+
+  
+  function persistImageOrder(order: string[], primaryImageId?: string) {
+    setManualImageOrder(order);
+    setPrimaryM.mutate({ order, primaryImageId });
+  }
+
+  function moveImage(imageId: string, direction: "up" | "down") {
+    const currentOrder = imagesOrdered.map((img) => img.id);
+    const currentIndex = currentOrder.indexOf(imageId);
+    if (currentIndex < 0) return;
+    const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= currentOrder.length) return;
+    const nextOrder = [...currentOrder];
+    [nextOrder[currentIndex], nextOrder[targetIndex]] = [
+      nextOrder[targetIndex],
+      nextOrder[currentIndex],
+    ];
+    persistImageOrder(nextOrder);
+  }
+
+  function setPrimaryImage(imageId: string) {
+    const currentOrder = imagesOrdered.map((img) => img.id);
+    const nextOrder = [imageId, ...currentOrder.filter((id) => id !== imageId)];
+    persistImageOrder(nextOrder, imageId);
+  }
+
 
   const videosQ = useQuery({
     queryKey: ["admin-product-videos", id],
@@ -2118,169 +2204,201 @@ onClick={() => {
             >
               <div className="grid gap-4 xl:grid-cols-2">
                 <div className="space-y-4">
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
-                    <div className="mb-3 text-sm font-semibold text-slate-900">
-                      Imagem principal
-                    </div>
+  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+    <div className="mb-3 text-sm font-semibold text-slate-900">
+      Imagem principal
+    </div>
 
-                    {primaryUrl ? (
-                      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                        <div className="aspect-[4/3] w-full bg-muted">
-                          <img
-                            src={primaryUrl}
-                            alt={name}
-                            className="h-full w-full object-cover"
-                          />
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="grid min-h-[180px] place-items-center rounded-2xl border border-dashed border-slate-300 bg-white text-sm text-slate-500">
-                        Nenhuma imagem ainda.
-                      </div>
-                    )}
-                  </div>
+    {primaryUrl ? (
+      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div className="aspect-[4/3] w-full bg-muted">
+          <img
+            src={primaryUrl}
+            alt={name}
+            className="h-full w-full object-cover"
+          />
+        </div>
+      </div>
+    ) : (
+      <div className="grid min-h-[180px] place-items-center rounded-2xl border border-dashed border-slate-300 bg-white text-sm text-slate-500">
+        Nenhuma imagem ainda.
+      </div>
+    )}
+  </div>
 
-                  <div className="rounded-3xl border border-slate-200 bg-white p-4">
-                    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="text-sm font-semibold text-slate-900">
-                        Enviar nova imagem
-                      </div>
+  <div className="rounded-3xl border border-slate-200 bg-white p-4">
+    <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-sm font-semibold text-slate-900">
+        Enviar nova imagem
+      </div>
 
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="rounded-2xl"
-                        onClick={() => productQ.refetch()}
-                        disabled={productQ.isFetching}
-                      >
-                        <RefreshCw
-                          className={cn(
-                            "mr-2 h-4 w-4",
-                            productQ.isFetching ? "animate-spin" : ""
-                          )}
-                        />
-                        Atualizar
-                      </Button>
-                    </div>
+      <Button
+        type="button"
+        variant="outline"
+        className="rounded-2xl"
+        onClick={() => productQ.refetch()}
+        disabled={productQ.isFetching}
+      >
+        <RefreshCw
+          className={cn("mr-2 h-4 w-4", productQ.isFetching && "animate-spin")}
+        />
+        Atualizar
+      </Button>
+    </div>
 
-                    <div className="space-y-3">
-                      <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-4">
-                        <input
-                          className="w-full text-sm"
-                          type="file"
-                          accept="image/*"
-                          multiple
-                          onChange={(e) => {
-                            setUploadErr(null);
-                            setFiles(Array.from(e.target.files ?? []));
-                          }}
-                        />
-                      </div>
+    <div className="space-y-3">
+      <Input
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+        className="rounded-2xl"
+      />
 
-                      <div className="text-xs text-slate-500 break-words">
-                        {files.length
-                          ? files.length === 1
-                            ? `Selecionado: ${files[0].name} (${Math.round(files[0].size / 1024)} KB)`
-                            : `${files.length} imagens selecionadas`
-                          : "Escolha uma ou mais imagens JPG/PNG/WEBP."}
-                      </div>
+      <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+        {files.length
+          ? `${files.length} arquivo(s) selecionado(s)`
+          : "Selecione uma ou mais imagens"}
+      </div>
 
-                      {uploadErr ? <div className="text-sm text-red-600">{uploadErr}</div> : null}
+      {uploadErr ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          {uploadErr}
+        </div>
+      ) : null}
 
-                      <div className="flex flex-col gap-2 sm:flex-row">
-                        <Button
-                          type="button"
-                          className="rounded-2xl bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
-                          onClick={() => uploadM.mutate()}
-                          disabled={!files.length || uploadM.isPending}
-                        >
-                          <Upload className="mr-2 h-4 w-4" />
-                          {uploadM.isPending ? "Enviando…" : "Upload"}
-                        </Button>
+      <Button
+        type="button"
+        className="w-full rounded-2xl bg-slate-900 text-white hover:bg-slate-800 hover:text-white"
+        onClick={() => uploadM.mutate()}
+        disabled={uploadM.isPending || !files.length}
+      >
+        {uploadM.isPending ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Upload className="mr-2 h-4 w-4" />
+        )}
+        {uploadM.isPending ? "Enviando..." : "Enviar imagem(s)"}
+      </Button>
+    </div>
+  </div>
 
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="rounded-2xl"
-                          onClick={() => setFiles([])}
-                          disabled={!files.length || uploadM.isPending}
-                        >
-                          Limpar
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
+  <div className="rounded-3xl border border-slate-200 bg-white p-4">
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <div>
+        <div className="text-sm font-semibold text-slate-900">
+          Imagens cadastradas
+        </div>
+        <div className="text-xs text-slate-500">
+          Reordene, defina a principal ou remova.
+        </div>
+      </div>
 
-                  {images.length ? (
-                    <div className="rounded-3xl border border-slate-200 bg-white p-4">
-                      <div className="mb-1 text-sm font-semibold text-slate-900">Galeria</div>
-                      <p className="mb-3 text-xs text-slate-500">
-                        Ordem exibida: imagem primária primeiro, depois campo de ordem atual.
-                        Este painel ainda não possui reordenação manual persistente.
-                      </p>
+      <Badge className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-700">
+        {imagesOrdered.length}
+      </Badge>
+    </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        {imagesOrdered.map((im) => {
-                          const isPrimary = Boolean(im.isPrimary);
-                          return (
-                            <div
-                              key={im.id}
-                              className="rounded-2xl border border-slate-200 bg-slate-50 p-2"
-                            >
-                              <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
-                                <div className="aspect-square">
-                                  <img
-                                    src={im.url}
-                                    alt=""
-                                    className="h-full w-full object-cover"
-                                  />
-                                </div>
+    {!imagesOrdered.length ? (
+      <div className="grid min-h-[140px] place-items-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-500">
+        Nenhuma imagem cadastrada.
+      </div>
+    ) : (
+      <div className="grid grid-cols-1 2xl:grid-cols-2 gap-3">
+        {imagesOrdered.map((im, index) => {
+          const isPrimary = Boolean(im.isPrimary);
+          const isFirst = index === 0;
+          const isLast = index === imagesOrdered.length - 1;
 
-                                {isPrimary ? (
-                                  <div className="absolute left-2 top-2 rounded-full bg-slate-900 px-2 py-1 text-[10px] text-white">
-                                    primária
-                                  </div>
-                                ) : null}
-                              </div>
-
-                              <div className="mt-2 flex flex-col gap-2">
-                                   <div className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">
-                                  Ordem atual: {im.sort ?? 0}
-                                </div>
-
-                                {!isPrimary ? (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    className="h-8 rounded-xl px-2 text-xs"
-                                    disabled={setPrimaryM.isPending}
-                                    onClick={() => setPrimaryM.mutate(im.id)}
-                                  >
-                                    <Star className="mr-1 h-3.5 w-3.5" />
-                                    Primária
-                                  </Button>
-                                ) : null}
-
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  className="h-8 rounded-xl px-2 text-xs"
-                                  disabled={deleteImgM.isPending || isPrimary}
-                                  onClick={() => {
-                                    if (confirm("Remover esta imagem?")) deleteImgM.mutate(im.id);
-                                  }}
-                                >
-                                  <Trash2 className="mr-1 h-3.5 w-3.5" />
-                                  Remover
-                                </Button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
+          return (
+            <div
+              key={im.id}
+              className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+            >
+              <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white">
+                <div className="aspect-square">
+                  <img
+                    src={im.url}
+                    alt={`${name} ${index + 1}`}
+                    className="h-full w-full object-cover"
+                  />
                 </div>
+
+                {isPrimary ? (
+                  <div className="absolute left-2 top-2 rounded-full bg-slate-900 px-2 py-1 text-[10px] font-medium text-white">
+                    Imagem primária
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="mt-3 flex flex-col gap-2">
+                <div className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">
+                  Posição: {index + 1}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-10 h-auto justify-start rounded-xl px-3 py-2 text-left text-xs whitespace-normal leading-tight"
+                    disabled={setPrimaryM.isPending || isFirst}
+                    onClick={() => moveImage(im.id, "up")}
+                  >
+                    <ArrowUp className="mr-2 h-3.5 w-3.5 shrink-0" />
+                    Mover para cima
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-10 h-auto justify-start rounded-xl px-3 py-2 text-left text-xs whitespace-normal leading-tight"
+                    disabled={setPrimaryM.isPending || isLast}
+                    onClick={() => moveImage(im.id, "down")}
+                  >
+                    <ArrowDown className="mr-2 h-3.5 w-3.5 shrink-0" />
+                    Mover para baixo
+                  </Button>
+                </div>
+
+                {!isPrimary ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="min-h-10 h-auto justify-start rounded-xl px-3 py-2 text-left text-xs whitespace-normal leading-tight"
+                    disabled={setPrimaryM.isPending}
+                    onClick={() => setPrimaryImage(im.id)}
+                  >
+                    <Star className="mr-2 h-3.5 w-3.5 shrink-0" />
+                    Definir como primária
+                  </Button>
+                ) : (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                    Esta é a imagem principal
+                  </div>
+                )}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="min-h-10 h-auto justify-start rounded-xl px-3 py-2 text-left text-xs whitespace-normal leading-tight"
+                  disabled={deleteImgM.isPending || setPrimaryM.isPending || isPrimary}
+                  onClick={() => {
+                    if (confirm("Remover esta imagem?")) {
+                      deleteImgM.mutate(im.id);
+                    }
+                  }}
+                >
+                  <Trash2 className="mr-2 h-3.5 w-3.5 shrink-0" />
+                  Remover
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+  </div>
+</div>
 
                 <div className="space-y-4">
                   <div className="rounded-3xl border border-slate-200 bg-white p-4">
