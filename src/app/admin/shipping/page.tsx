@@ -235,6 +235,7 @@ export default function AdminShippingPage() {
 
   const [localDeliveryEnabled, setLocalDeliveryEnabled] = useState(true);
   const [rows, setRows] = useState<CityRow[]>([]);
+  const [citySearch, setCitySearch] = useState("");
 
   const [correiosDiscountEnabled, setCorreiosDiscountEnabled] = useState(false);
   const [correiosDiscountMinSubtotal, setCorreiosDiscountMinSubtotal] =
@@ -411,6 +412,23 @@ export default function AdminShippingPage() {
     };
   }, [rows, correiosDiscountMinSubtotal, correiosDiscountMaxAmount]);
 
+    const filteredRows = useMemo(() => {
+    const search = citySearch.trim().toLowerCase();
+    if (!search) return rows;
+
+    return rows.filter((row) => {
+      const city = row.city.trim().toLowerCase();
+      const state = row.state.trim().toLowerCase();
+      const cityAndState = `${city}/${state}`;
+
+      return (
+        city.includes(search) ||
+        state.includes(search) ||
+        cityAndState.includes(search)
+      );
+    });
+  }, [rows, citySearch]);
+
   if (configQ.isLoading) {
     return (
       <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -568,8 +586,22 @@ export default function AdminShippingPage() {
               </Button>
             </div>
 
+                        <div className="grid gap-2">
+              <Label htmlFor="shipping-city-search">Buscar cidade</Label>
+              <Input
+                id="shipping-city-search"
+                className="h-11 rounded-2xl border-slate-200 bg-white"
+                value={citySearch}
+                onChange={(e) => setCitySearch(e.target.value)}
+                placeholder="Digite cidade ou UF (ex.: São Paulo ou SP)"
+              />
+              <p className="text-xs text-slate-500">
+                Filtro local em tempo real. Não altera os dados salvos.
+              </p>
+            </div>
+
             <div className="space-y-3">
-              {rows.map((row, index) => (
+                {filteredRows.map((row, index) => (
                 <div
                   key={row.clientId}
                   className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4"
@@ -667,7 +699,7 @@ export default function AdminShippingPage() {
                         inputMode="decimal"
                       />
                       <p className="text-xs text-slate-500">
-                        Deixe vazio para não exigir pedido mínimo nesta cidade.
+                        Regra 1: valor mínimo do pedido para habilitar entrega local nesta cidade.
                       </p>
                     </div>
 
@@ -687,7 +719,7 @@ export default function AdminShippingPage() {
                         inputMode="decimal"
                       />
                       <p className="text-xs text-slate-500">
-                        Deixe vazio para não aplicar frete grátis automático nesta cidade.
+                        Regra 2: valor do pedido que libera frete grátis nesta cidade.
                       </p>
                     </div>
 
@@ -780,6 +812,13 @@ export default function AdminShippingPage() {
                   </div>
                 </div>
               ))}
+
+            
+              {!filteredRows.length ? (
+                <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm text-slate-600">
+                  Nenhuma cidade encontrada para “{citySearch.trim()}”.
+                </div>
+              ) : null}
             </div>
 
             <div className="flex flex-wrap gap-2">

@@ -676,6 +676,14 @@ export default function EditProductPage() {
   ]);
 
   const images = product?.images ?? [];
+    const imagesOrdered = useMemo(() => {
+    return [...images].sort((a, b) => {
+      const ap = a.isPrimary ? 1 : 0;
+      const bp = b.isPrimary ? 1 : 0;
+      if (bp !== ap) return bp - ap;
+      return (a.sort ?? 0) - (b.sort ?? 0);
+    });
+  }, [images]);
   const primaryUrl =
     images.find((x) => x.isPrimary)?.url ??
     [...images].sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0))[0]?.url ??
@@ -2205,10 +2213,14 @@ onClick={() => {
 
                   {images.length ? (
                     <div className="rounded-3xl border border-slate-200 bg-white p-4">
-                      <div className="mb-3 text-sm font-semibold text-slate-900">Galeria</div>
+                      <div className="mb-1 text-sm font-semibold text-slate-900">Galeria</div>
+                      <p className="mb-3 text-xs text-slate-500">
+                        Ordem exibida: imagem primária primeiro, depois campo de ordem atual.
+                        Este painel ainda não possui reordenação manual persistente.
+                      </p>
 
                       <div className="grid grid-cols-2 gap-3">
-                        {images.map((im) => {
+                        {imagesOrdered.map((im) => {
                           const isPrimary = Boolean(im.isPrimary);
                           return (
                             <div
@@ -2232,6 +2244,10 @@ onClick={() => {
                               </div>
 
                               <div className="mt-2 flex flex-col gap-2">
+                                   <div className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600">
+                                  Ordem atual: {im.sort ?? 0}
+                                </div>
+
                                 {!isPrimary ? (
                                   <Button
                                     type="button"
