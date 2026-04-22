@@ -486,29 +486,55 @@ const shippingQ = useQuery({
   });
 
   const printM = useMutation({
-    mutationFn: async () => {
-      const response = await api.get(endpoints.adminOrderShipping.label(orderId), {
-        responseType: "blob",
-      });
+  mutationFn: async () => {
+    const currentLabelUrl = String(shipment?.labelUrl || "").trim();
+    const fallbackName = shipment?.labelFileKey || "etiqueta.pdf";
 
-      const blob = response.data as Blob;
-      if (!(blob instanceof Blob) || blob.size === 0) {
-        throw new Error("Etiqueta vazia ou inválida retornada pelo backend.");
-      }
+    const openHref = (href: string) => {
+      const a = document.createElement("a");
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    };
 
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    },
-    onSuccess: async () => {
-      toast.success("Etiqueta aberta para impressão no navegador.");
-      printedM.mutate();
-    },
-    onError: async (err) => {
-      toast.error(classifyError(err));
-      await syncShippingQueries();
-    },
-  });
+    // caso 1: backend já entregou data URL pronta do PDF
+    if (currentLabelUrl.startsWith("data:application/pdf")) {
+      openHref(currentLabelUrl);
+      return;
+    }
+
+    // caso 2: já é uma URL normal/blob
+    if (/^(https?:|blob:)/i.test(currentLabelUrl)) {
+      openHref(currentLabelUrl);
+      return;
+    }
+
+    // fallback: tenta endpoint antigo que devolve blob
+    const response = await api.get(endpoints.adminOrderShipping.label(orderId), {
+      responseType: "blob",
+    });
+
+    const blob = response.data as Blob;
+    if (!(blob instanceof Blob) || blob.size === 0) {
+      throw new Error("Etiqueta vazia ou inválida retornada pelo backend.");
+    }
+
+    const url = URL.createObjectURL(blob);
+    openHref(url);
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  },
+  onSuccess: async () => {
+    toast.success("Etiqueta aberta para impressão no navegador.");
+    printedM.mutate();
+  },
+  onError: async (err) => {
+    toast.error(classifyError(err));
+    await syncShippingQueries();
+  },
+});
 
   useEffect(() => {
   if (!orderId || !asyncLabelPending) return;
