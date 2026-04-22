@@ -485,34 +485,36 @@ const shippingQ = useQuery({
     },
   });
 
-  const printM = useMutation({
+const printM = useMutation({
   mutationFn: async () => {
     const currentLabelUrl = String(shipment?.labelUrl || "").trim();
-    const fallbackName = shipment?.labelFileKey || "etiqueta.pdf";
 
-    const openHref = (href: string) => {
-      const a = document.createElement("a");
-      a.href = href;
-      a.target = "_blank";
-      a.rel = "noopener noreferrer";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+    const openBlob = (blob: Blob) => {
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     };
 
     // caso 1: backend já entregou data URL pronta do PDF
     if (currentLabelUrl.startsWith("data:application/pdf")) {
-      openHref(currentLabelUrl);
+      const response = await fetch(currentLabelUrl);
+      const blob = await response.blob();
+
+      if (!(blob instanceof Blob) || blob.size === 0) {
+        throw new Error("Etiqueta PDF inválida.");
+      }
+
+      openBlob(blob);
       return;
     }
 
-    // caso 2: já é uma URL normal/blob
+    // caso 2: URL normal/http/blob
     if (/^(https?:|blob:)/i.test(currentLabelUrl)) {
-      openHref(currentLabelUrl);
+      window.open(currentLabelUrl, "_blank", "noopener,noreferrer");
       return;
     }
 
-    // fallback: tenta endpoint antigo que devolve blob
+    // fallback antigo do backend
     const response = await api.get(endpoints.adminOrderShipping.label(orderId), {
       responseType: "blob",
     });
@@ -522,9 +524,7 @@ const shippingQ = useQuery({
       throw new Error("Etiqueta vazia ou inválida retornada pelo backend.");
     }
 
-    const url = URL.createObjectURL(blob);
-    openHref(url);
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    openBlob(blob);
   },
   onSuccess: async () => {
     toast.success("Etiqueta aberta para impressão no navegador.");
