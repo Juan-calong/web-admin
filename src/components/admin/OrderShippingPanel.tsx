@@ -363,6 +363,9 @@ const shippingQ = useQuery({
     await qc.invalidateQueries({ queryKey: ["admin-order-details", orderId] });
     await qc.invalidateQueries({ queryKey: ["orders"] });
   }
+  async function syncShippingOnly() {
+  await qc.invalidateQueries({ queryKey: ["admin-order-shipping", orderId] });
+}
 
   const generateM = useMutation({
     mutationFn: async () => {
@@ -402,20 +405,22 @@ const shippingQ = useQuery({
     },
   });
 
-  const refreshPendingM = useMutation({
+const refreshPendingM = useMutation({
   mutationFn: async () => {
     return refreshPendingShipping(orderId);
   },
   onSuccess: async (nextShipment) => {
-    await syncShippingQueries();
+    await syncShippingOnly();
 
     if (isPrintableLabel(nextShipment)) {
       toast.success("Etiqueta pronta para impressão.");
+      await qc.invalidateQueries({ queryKey: ["admin-order-details", orderId] });
+      await qc.invalidateQueries({ queryKey: ["orders"] });
     }
   },
   onError: async (err) => {
     toast.error(classifyError(err));
-    await syncShippingQueries();
+    await syncShippingOnly();
   },
 });
 
@@ -536,17 +541,23 @@ const printM = useMutation({
   },
 });
 
-  useEffect(() => {
+useEffect(() => {
   if (!orderId || !asyncLabelPending) return;
 
   const timer = window.setInterval(() => {
-    if (!refreshPendingM.isPending) {
-      refreshPendingM.mutate();
+    if (!shippingQ.isFetching && !refreshPendingM.isPending) {
+      shippingQ.refetch();
     }
-  }, 10_000);
+  }, 15_000);
 
   return () => window.clearInterval(timer);
-}, [orderId, asyncLabelPending, refreshPendingM]);
+}, [
+  orderId,
+  asyncLabelPending,
+  shippingQ.isFetching,
+  shippingQ.refetch,
+  refreshPendingM.isPending,
+]);
 
 const busy =
   shippingQ.isFetching ||
@@ -735,10 +746,11 @@ const busy =
         {asyncLabelPending ? (
           <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700">
             <div className="font-semibold">Etiqueta em processamento</div>
-            <div>
-              A pré-postagem foi criada e o Correios ainda está finalizando o
-              rótulo. O painel atualiza automaticamente a cada 10 segundos.
-            </div>
+<div>
+  A pré-postagem foi criada e o Correios ainda está finalizando o
+  rótulo. O painel sincroniza o status local automaticamente e você pode usar
+  “Atualizar expedição” para reconsultar o Correios.
+</div>
           </div>
         ) : shipment?.lastError ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
