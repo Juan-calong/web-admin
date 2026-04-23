@@ -229,9 +229,11 @@ function friendlyShipmentErrorMessage({
 }
 
 function isAsyncLabelPending(shipment?: ShipmentDetails | null) {
+  const code = normalizeShippingErrorCode(shipment?.lastError);
+
   return (
     shipment?.shipmentStatus === "PRE_POST_CREATED" &&
-    normalizeShippingErrorCode(shipment?.lastError) === "LABEL_ASYNC_PENDING"
+    (code === "LABEL_ASYNC_PENDING" || code === "PREPOST_DCE_PENDING")
   );
 }
 
