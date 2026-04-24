@@ -77,6 +77,46 @@ type LocalStatusFilter =
   | "DELIVERED"
   | "DELIVERY_PROBLEM";
 
+  type AdminLocalDeliveryTodayResponse = {
+  date: string;
+  timezone?: string;
+  weekday?: string;
+  weekdayLabel?: string;
+  cities?: Array<{
+    city: string;
+    state: string;
+    ordersCount: number;
+    pendingSeparation: number;
+    packed: number;
+    outForDelivery: number;
+    delivered: number;
+    problem: number;
+    orderIds?: string[];
+  }>;
+  totals?: {
+    citiesCount: number;
+    ordersCount: number;
+    pendingSeparation: number;
+    packed: number;
+    outForDelivery: number;
+    delivered: number;
+    problem: number;
+  };
+  orders?: Array<{
+    id: string;
+    code?: string | null;
+    createdAt?: string | null;
+    customerName?: string | null;
+    city?: string | null;
+    state?: string | null;
+    paymentStatus?: string | null;
+    adminApprovalStatus?: string | null;
+    deliveryType?: string | null;
+    localDeliveryStatus?: string | null;
+  }>;
+};
+
+
 function fmtDate(iso?: string) {
   if (!iso) return "Não informado";
   try {
@@ -94,6 +134,13 @@ function brl(v?: string | number) {
     style: "currency",
     currency: "BRL",
   }).format(n);
+}
+
+function formatDateLabel(date?: string) {
+  if (!date) return "Data não informada";
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return date;
+  return parsed.toLocaleDateString("pt-BR");
 }
 
 function idempotencyKey(orderId: string, action: string) {
@@ -292,8 +339,9 @@ export default function AdminOrdersPage() {
   const [deliveryFilter, setDeliveryFilter] = useState<
     "ALL" | "LOCAL" | "CORREIOS" | "UNKNOWN"
   >("ALL");
-    const [localStatusFilter, setLocalStatusFilter] =
+  const [localStatusFilter, setLocalStatusFilter] =
     useState<LocalStatusFilter>("ALL");
+  const [onlyTodayLocalDelivery, setOnlyTodayLocalDelivery] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(() => new Set());
   const [recentActions, setRecentActions] = useState<
     Record<string, { action: "approve" | "reject"; at: number; order: Order }>
@@ -309,6 +357,17 @@ export default function AdminOrdersPage() {
     refetchInterval: 30000,
     refetchOnWindowFocus: true,
     staleTime: 15000,
+  });
+
+    const localTodayQ = useQuery({
+    queryKey: ["admin-local-delivery-today"],
+    queryFn: async () => {
+      const { data } = await api.get(endpoints.adminLocalDelivery.today);
+      return data as AdminLocalDeliveryTodayResponse;
+    },
+    retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
   });
 
   const pending = useMemo(() => {
@@ -376,12 +435,23 @@ export default function AdminOrdersPage() {
         ? approvedRecent
         : rejectedRecent;
 
+          const todayOrderIds = useMemo(
+    () => new Set((localTodayQ.data?.orders ?? []).map((order) => order.id)),
+    [localTodayQ.data?.orders]
+  );
+
+  function matchesTodayFilter(order: Order) {
+    if (!onlyTodayLocalDelivery) return true;
+    return todayOrderIds.has(order.id);
+  }
+
   const displayedOrders = useMemo(
     () =>
       currentTabOrders
         .filter((order) => matchesDeliveryFilter(order, deliveryFilter))
-        .filter((order) => matchesLocalStatusFilter(order, localStatusFilter)),
-    [currentTabOrders, deliveryFilter, localStatusFilter]
+        .filter((order) => matchesLocalStatusFilter(order, localStatusFilter))
+        .filter((order) => matchesTodayFilter(order)),
+    [currentTabOrders, deliveryFilter, localStatusFilter, onlyTodayLocalDelivery, todayOrderIds]
   );
 
         const displayedOrderIds = useMemo(
@@ -448,6 +518,39 @@ export default function AdminOrdersPage() {
 
   function clearSelection() {
     setSelectedOrderIds(new Set());
+  }
+
+   const loadedOrders = useMemo(() => ordersQ.data ?? [], [ordersQ.data]);
+
+  function selectTodayOrders(status?: "PACKED" | "PENDING_SEPARATION") {
+    const todayOrders = localTodayQ.data?.orders ?? [];
+    const loadedById = new Map(loadedOrders.map((order) => [order.id, order]));
+    const todayIds = new Set(todayOrders.map((order) => order.id));
+    const eligibleLoadedOrders = loadedOrders.filter((order) => {
+      if (!todayIds.has(order.id)) return false;
+      if (onlyTodayLocalDelivery && !todayOrderIds.has(order.id)) return false;
+      if (!status) return true;
+      const resolvedStatus = resolveLocalDeliveryStatus(order);
+      if (status === "PACKED") return resolvedStatus === "PACKED";
+      return !resolvedStatus || resolvedStatus === "PENDING_SEPARATION";
+    });
+    const nextIds = eligibleLoadedOrders.map((order) => order.id);
+
+    setSelectedOrderIds(new Set(nextIds));
+
+    if (todayOrders.length > nextIds.length) {
+      const missingCount = todayOrders.filter((order) => !loadedById.has(order.id)).length;
+      if (missingCount > 0) {
+        toast.warning("Alguns pedidos de hoje não estão na lista carregada.");
+      }
+    }
+  }
+
+  function handleViewTodayOrders() {
+    setOnlyTodayLocalDelivery(true);
+    setDeliveryFilter("LOCAL");
+    setLocalStatusFilter("ALL");
+    setActiveTab("approved");
   }
 
     function handleDeliveryFilterChange(
@@ -614,6 +717,143 @@ if (!selectedLocalOrderIds.length) {
         </div>
 
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="space-y-4">
+            <Card className="rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
+              <CardHeader className="border-b border-zinc-100 pb-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-xl font-bold text-zinc-950">
+                      Entregas locais de hoje
+                    </CardTitle>
+                    <CardDescription className="text-sm text-zinc-500">
+                      Hoje:{" "}
+                      {localTodayQ.data
+                        ? `${localTodayQ.data.weekdayLabel ?? localTodayQ.data.date} • ${formatDateLabel(localTodayQ.data.date)}`
+                        : "—"}
+                    </CardDescription>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="rounded-2xl"
+                    onClick={() => localTodayQ.refetch()}
+                    disabled={localTodayQ.isFetching}
+                  >
+                    <RefreshCw
+                      className={cn("mr-2 h-4 w-4", localTodayQ.isFetching && "animate-spin")}
+                    />
+                    Atualizar painel
+                  </Button>
+                </div>
+              </CardHeader>
+
+              <CardContent className="space-y-3 p-4 sm:p-5">
+                {localTodayQ.isLoading ? (
+                  <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-5 text-sm text-zinc-600">
+                    Carregando entregas de hoje...
+                  </div>
+                ) : localTodayQ.isError ? (
+                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700">
+                    <p>Não foi possível carregar entregas locais de hoje.</p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="mt-3 rounded-xl border-red-200 bg-white"
+                      onClick={() => localTodayQ.refetch()}
+                    >
+                      Atualizar
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid gap-2 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-3 text-sm sm:grid-cols-2">
+                      <p className="font-semibold text-zinc-900">
+                        {(localTodayQ.data?.totals?.ordersCount ?? 0).toString()} pedidos em{" "}
+                        {(localTodayQ.data?.totals?.citiesCount ?? 0).toString()} cidade(s)
+                      </p>
+                      <div className="grid grid-cols-2 gap-1 text-xs text-zinc-700">
+                        <span>Aguardando: {localTodayQ.data?.totals?.pendingSeparation ?? 0}</span>
+                        <span>Empacotados: {localTodayQ.data?.totals?.packed ?? 0}</span>
+                        <span>Em rota: {localTodayQ.data?.totals?.outForDelivery ?? 0}</span>
+                        <span>Entregues: {localTodayQ.data?.totals?.delivered ?? 0}</span>
+                        <span>Problema: {localTodayQ.data?.totals?.problem ?? 0}</span>
+                      </div>
+                    </div>
+
+                    {(localTodayQ.data?.totals?.ordersCount ?? 0) === 0 ? (
+                      <p className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+                        Nenhuma entrega local prevista para hoje.
+                      </p>
+                    ) : null}
+
+                    {(localTodayQ.data?.cities?.length ?? 0) > 0 ? (
+                      <div className="rounded-xl border border-zinc-200/80 bg-white px-3 py-2 text-sm">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Cidades
+                        </p>
+                        <div className="space-y-1 text-zinc-700">
+                          {(localTodayQ.data?.cities ?? []).map((city) => (
+                            <p key={`${city.city}-${city.state}`}>
+                              {city.city}/{city.state} — {city.ordersCount} pedido(s)
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {(localTodayQ.data?.cities?.length ?? 0) > 0 &&
+                    (localTodayQ.data?.totals?.ordersCount ?? 0) === 0 ? (
+                      <p className="text-sm text-zinc-600">
+                        Não há pedidos locais pendentes para essas cidades.
+                      </p>
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" size="sm" className="rounded-2xl" onClick={handleViewTodayOrders}>
+                        Ver pedidos de hoje
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="rounded-2xl"
+                        onClick={() => selectTodayOrders()}
+                        disabled={localTodayQ.isLoading || localTodayQ.isError}
+                      >
+                        Selecionar pedidos de hoje
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="rounded-2xl"
+                        onClick={() => selectTodayOrders("PACKED")}
+                        disabled={localTodayQ.isLoading || localTodayQ.isError}
+                      >
+                        Selecionar empacotados de hoje
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="rounded-2xl"
+                        onClick={() => selectTodayOrders("PENDING_SEPARATION")}
+                        disabled={localTodayQ.isLoading || localTodayQ.isError}
+                      >
+                        Selecionar aguardando separação
+                      </Button>
+                    </div>
+
+                    <p className="text-xs text-zinc-500">
+                      Nenhuma atualização é automática. Revise e confirme as ações em lote.
+                    </p>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
           <Card className="rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
             <CardHeader className="border-b border-zinc-100 pb-4">
               <CardTitle className="text-xl font-bold text-zinc-950">
@@ -785,6 +1025,18 @@ if (!selectedLocalOrderIds.length) {
                 <p className="mt-2 text-xs text-zinc-500">
                   Exibindo {displayedOrders.length} pedido(s) neste filtro.
                 </p>
+                                {onlyTodayLocalDelivery ? (
+                  <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700">
+                    <span>Filtro: entregas de hoje ativo</span>
+                    <button
+                      type="button"
+                      className="font-semibold underline"
+                      onClick={() => setOnlyTodayLocalDelivery(false)}
+                    >
+                      Limpar filtro de hoje
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
                             <div className="mb-3 rounded-xl border border-zinc-200/80 bg-zinc-50/80 px-3 py-2">
@@ -1155,6 +1407,7 @@ if (!selectedLocalOrderIds.length) {
               )}
             </CardContent>
           </Card>
+       </div>
 
           <Card className="rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
             <CardHeader className="border-b border-zinc-100 pb-4">

@@ -57,6 +57,11 @@ adminOrderShipping: {
     `/admin/orders/${orderId}/shipping/correios/refresh-label`,
 },
 
+adminLocalDelivery: {
+  today: "/admin/local-delivery/today",
+},
+
+
   adminCoupons: {
     list: "/admin/coupons",
     byId: (id: string) => `/admin/coupons/${id}`,
