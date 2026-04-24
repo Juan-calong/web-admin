@@ -48,6 +48,10 @@ type Order = {
   total?: string | number;
   salonName?: string;
   customerName?: string;
+  deliveryType?: "LOCAL" | "CORREIOS" | "UNKNOWN" | string | null;
+  shippingCarrier?: string | null;
+  shippingServiceCode?: string | null;
+  shippingServiceName?: string | null;
 };
 
 function fmtDate(iso?: string) {
@@ -141,6 +145,65 @@ function getStatusMeta(value?: string | null) {
     soft: "bg-zinc-50/80",
   };
 }
+
+function normalizeDeliveryValue(value?: string | null) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[-\s]+/g, "_")
+    .toUpperCase();
+}
+
+function resolveDeliveryType(order: Order): "LOCAL" | "CORREIOS" | "UNKNOWN" {
+  const candidates = [
+    order.deliveryType,
+    order.shippingCarrier,
+    order.shippingServiceName,
+    order.shippingServiceCode,
+  ];
+
+  for (const candidate of candidates) {
+    const normalized = normalizeDeliveryValue(candidate);
+    if (!normalized) continue;
+
+    if (
+      ["LOCAL", "ENTREGA_LOCAL", "LOCAL_DELIVERY"].some(
+        (token) => normalized === token || normalized.includes(token)
+      )
+    ) {
+      return "LOCAL";
+    }
+
+    if (normalized === "CORREIOS" || normalized.includes("CORREIOS")) {
+      return "CORREIOS";
+    }
+  }
+
+  return "UNKNOWN";
+}
+
+function getDeliveryBadgeMeta(deliveryType: "LOCAL" | "CORREIOS" | "UNKNOWN") {
+  if (deliveryType === "LOCAL") {
+    return {
+      label: "Entrega local",
+      classes:
+        "border-emerald-200/80 bg-emerald-50/90 text-emerald-700 ring-emerald-200",
+    };
+  }
+
+  if (deliveryType === "CORREIOS") {
+    return {
+      label: "Correios",
+      classes: "border-sky-200/80 bg-sky-50/90 text-sky-700 ring-sky-200",
+    };
+  }
+
+  return {
+    label: "Entrega não identificada",
+    classes: "border-zinc-200/80 bg-zinc-50/90 text-zinc-700 ring-zinc-200",
+  };
+}
+
 
 function StatusBadge({
   label,
@@ -373,6 +436,8 @@ export default function AdminOrdersPage() {
                     const total = brl(o.total);
                     const busyThis = decideM.isPending && actingOrderId === o.id;
                     const orderStatus = o.orderStatus ?? o.status ?? null;
+                    const deliveryType = resolveDeliveryType(o);
+                    const deliveryBadge = getDeliveryBadgeMeta(deliveryType);
 
                     return (
                       <div
@@ -412,6 +477,17 @@ export default function AdminOrdersPage() {
                               <StatusBadge label="Pagamento" value={o.paymentStatus} />
                               <StatusBadge label="Pedido" value={orderStatus} />
                               <StatusBadge label="Admin" value={o.adminApprovalStatus} />
+                                <span
+                                className={cn(
+                                  "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
+                                  deliveryBadge.classes
+                                )}
+                              >
+                                <span className="uppercase tracking-[0.14em] text-[10px] text-zinc-500">
+                                  Entrega
+                                </span>
+                                <span>{deliveryBadge.label}</span>
+                              </span>
                               <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] text-zinc-600">
                                 <Clock3 className="h-3.5 w-3.5" />
                                 {activeTab === "pending"
