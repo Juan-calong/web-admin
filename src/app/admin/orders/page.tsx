@@ -1,6 +1,5 @@
 "use client";
-
-import { useMemo, useState, type ComponentType } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -9,12 +8,7 @@ import {
   ArrowRight,
   CheckCircle2,
   XCircle,
-  Store,
-  UserRound,
-  Wallet,
   Clock3,
-  Package2,
-  ShieldCheck,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -151,76 +145,24 @@ function getStatusMeta(value?: string | null) {
 function StatusBadge({
   label,
   value,
-  icon: Icon,
 }: {
   label: string;
   value?: string | null;
-  icon: ComponentType<{ className?: string }>;
 }) {
   const meta = getStatusMeta(value);
 
   return (
-    <div
+    <span
       className={cn(
-        "flex items-center justify-between gap-3 rounded-2xl border px-3 py-3",
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
         meta.border,
-        meta.soft
+        meta.soft,
+        meta.chip
       )}
     >
-      <div className="min-w-0">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
-          {label}
-        </div>
-        <div
-          className={cn(
-            "mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset",
-            meta.chip
-          )}
-        >
-          {prettyStatus(value)}
-        </div>
-      </div>
-
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white text-zinc-700 shadow-sm">
-        <Icon className="h-4 w-4" />
-      </div>
-    </div>
-  );
-}
-
-function MiniInfo({
-  icon: Icon,
-  label,
-  value,
-  strong = false,
-}: {
-  icon: ComponentType<{ className?: string }>;
-  label: string;
-  value?: string | number | null;
-  strong?: boolean;
-}) {
-  const hasValue =
-    value !== undefined && value !== null && String(value).trim() !== "";
-
-  return (
-    <div className="rounded-2xl border border-zinc-200/80 bg-white px-4 py-3 shadow-sm">
-      <div className="mb-2 flex items-center gap-2 text-zinc-500">
-        <Icon className="h-4 w-4" />
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em]">
-          {label}
-        </span>
-      </div>
-
-      <div
-        className={cn(
-          "break-words text-sm text-zinc-900",
-          !hasValue && "text-zinc-400",
-          strong && "text-lg font-black"
-        )}
-      >
-        {hasValue ? String(value) : "Não informado"}
-      </div>
-    </div>
+           <span className="uppercase tracking-[0.14em] text-[10px] text-zinc-500">{label}</span>
+      <span>{prettyStatus(value)}</span>
+    </span>
   );
 }
 
@@ -435,37 +377,43 @@ export default function AdminOrdersPage() {
                     return (
                       <div
                         key={o.id}
-                        className="overflow-hidden rounded-[28px] border border-zinc-200/80 bg-zinc-50/85 shadow-sm"
-                      >
-                        <div className="h-1 w-full bg-gradient-to-r from-zinc-950 via-zinc-700 to-zinc-400" />
+                        className="rounded-2xl border border-zinc-200/80 bg-zinc-50/85 p-3 shadow-sm"                      >
+                        <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                          <div className="min-w-0 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h2 className="text-sm font-black tracking-tight text-zinc-950">
+                                Pedido #{o.id.slice(0, 8)}
+                              </h2>
+                              <span className="text-xs text-zinc-500">Criado em {fmtDate(o.createdAt)}</span>
 
-                        <div className="space-y-4 p-4">
-                          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h2 className="text-lg font-black tracking-tight text-zinc-950">
-                                  Pedido #{o.id.slice(0, 8)}
-                                </h2>
+                              {busyThis ? (
+                                <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-white">
+                                  Processando…
+                                </span>
+                              ) : null}
+                            </div>
 
-                                {busyThis ? (
-                                  <span className="rounded-full bg-zinc-900 px-2.5 py-1 text-[11px] font-semibold text-white">
-                                    Processando…
-                                  </span>
-                                ) : null}
+                            <div className="grid gap-1 text-sm text-zinc-700 sm:grid-cols-3 sm:gap-3">
+                              <div className="min-w-0 truncate">
+                                <span className="text-zinc-500">Cliente:</span>{" "}
+                                <span className="font-medium text-zinc-900">{o.customerName ?? "Não informado"}</span>
                               </div>
-
-                              <div className="mt-1 text-sm text-zinc-500">
-                                Criado em {fmtDate(o.createdAt)}
+                              <div className="min-w-0 truncate">
+                                <span className="text-zinc-500">Salão:</span>{" "}
+                                <span className="font-medium text-zinc-900">{o.salonName ?? "Não informado"}</span>
                               </div>
-
-                              <div className="mt-1 break-all font-mono text-[12px] text-zinc-400">
-                                ID completo: {o.id}
+                              <div className="min-w-0">
+                                <span className="text-zinc-500">Total:</span>{" "}
+                                <span className="font-bold text-zinc-950">{total ?? "Não informado"}</span>
                               </div>
                             </div>
 
-                            <div className="flex shrink-0 items-center gap-2 rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-600 shadow-sm">
-                              <Clock3 className="h-4 w-4" />
-                              <span>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <StatusBadge label="Pagamento" value={o.paymentStatus} />
+                              <StatusBadge label="Pedido" value={orderStatus} />
+                              <StatusBadge label="Admin" value={o.adminApprovalStatus} />
+                              <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] text-zinc-600">
+                                <Clock3 className="h-3.5 w-3.5" />
                                 {activeTab === "pending"
                                   ? "Pronto para decisão"
                                   : activeTab === "approved"
@@ -475,41 +423,18 @@ export default function AdminOrdersPage() {
                             </div>
                           </div>
 
-                          <div className="grid gap-3 md:grid-cols-3">
-                            <MiniInfo icon={Store} label="Salão" value={o.salonName ?? null} />
-                            <MiniInfo icon={UserRound} label="Cliente" value={o.customerName ?? null} />
-                            <MiniInfo icon={Wallet} label="Total" value={total ?? null} strong />
-                          </div>
-
-                          <div className="grid gap-3 lg:grid-cols-3">
-                            <StatusBadge
-                              label="Pagamento"
-                              value={o.paymentStatus}
-                              icon={Wallet}
-                            />
-                            <StatusBadge
-                              label="Pedido"
-                              value={orderStatus}
-                              icon={Package2}
-                            />
-                            <StatusBadge
-                              label="Aprovação do admin"
-                              value={o.adminApprovalStatus}
-                              icon={ShieldCheck}
-                            />
-                          </div>
-
-                          <div className="grid gap-2 sm:grid-cols-3">
+                          <div className="grid gap-2 sm:grid-cols-3 lg:w-auto lg:min-w-[360px]">
                             {activeTab === "pending" ? (
                               <>
                                 <AlertDialog>
                                   <AlertDialogTrigger asChild>
                                     <Button
                                       variant="outline"
-                                      className="h-10 rounded-2xl border-zinc-200 bg-white"
+                                      size="sm"
+                                      className="h-8 rounded-xl border-zinc-200 bg-white px-3 text-xs"
                                       disabled={decideM.isPending}
                                     >
-                                      <XCircle className="mr-2 h-4 w-4" />
+                                      <XCircle className="mr-1.5 h-3.5 w-3.5" />
                                       Reprovar
                                     </Button>
                                   </AlertDialogTrigger>
@@ -541,10 +466,11 @@ export default function AdminOrdersPage() {
                                 <AlertDialog>
                                   <AlertDialogTrigger asChild>
                                     <Button
-                                      className="h-10 rounded-2xl"
+                                      size="sm"
+                                      className="h-8 rounded-xl px-3 text-xs"
                                       disabled={decideM.isPending}
                                     >
-                                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                                      <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
                                       Aprovar
                                     </Button>
                                   </AlertDialogTrigger>
@@ -574,40 +500,36 @@ export default function AdminOrdersPage() {
                                 </AlertDialog>
                               </>
                             ) : activeTab === "approved" ? (
-                              <>
+                              <div className="sm:col-span-3">
                                 <Link href={`/admin/orders/${o.id}`} className="block">
                                   <Button
-                                    variant="outline"
-                                    className="h-10 w-full rounded-2xl border-zinc-200 bg-white"
+                                    size="sm"
+                                    className="h-8 w-full rounded-xl px-3 text-xs"
                                     disabled={decideM.isPending}
                                   >
                                     Abrir pedido
-                                    <ArrowRight className="ml-2 h-4 w-4" />
+                                    <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
                                   </Button>
                                 </Link>
-                                <Link href={`/admin/orders/${o.id}`} className="block">
-                                  <Button className="h-10 w-full rounded-2xl" disabled={decideM.isPending}>
-                                    Ir para expedição
-                                    <ArrowRight className="ml-2 h-4 w-4" />
-                                  </Button>
-                                </Link>
-                              </>
+                              </div>
                             ) : (
-                              <div className="sm:col-span-2 rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-sm text-zinc-600">
-                                Pedido reprovado recentemente. Abra o detalhe para revisar contexto e histórico.
+                              <div className="sm:col-span-2 rounded-xl border border-zinc-200/80 bg-white px-3 py-1.5 text-xs text-zinc-600">                                Pedido reprovado recentemente. Abra o detalhe para revisar contexto e histórico.
                               </div>
                             )}
 
-                            <Link href={`/admin/orders/${o.id}`} className="block">
-                              <Button
-                                variant="outline"
-                                className="h-10 w-full rounded-2xl border-zinc-200 bg-white"
-                                disabled={decideM.isPending}
-                              >
-                                {activeTab === "pending" ? "Abrir detalhe" : "Abrir pedido"}
-                                <ArrowRight className="ml-2 h-4 w-4" />
-                              </Button>
-                            </Link>
+                            {activeTab !== "approved" ? (
+                              <Link href={`/admin/orders/${o.id}`} className="block">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-8 w-full rounded-xl border-zinc-200 bg-white px-3 text-xs"
+                                  disabled={decideM.isPending}
+                                >
+                                  {activeTab === "pending" ? "Abrir detalhe" : "Abrir pedido"}
+                                  <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                                </Button>
+                              </Link>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -629,15 +551,27 @@ export default function AdminOrdersPage() {
             </CardHeader>
 
             <CardContent className="space-y-3 p-4 sm:p-5">
-              <MiniInfo icon={Clock3} label="Pendentes" value={String(pending.length)} strong />
-              <MiniInfo icon={CheckCircle2} label="Aprovados recentes" value={String(approvedRecent.length)} />
-              <MiniInfo icon={XCircle} label="Reprovados recentes" value={String(rejectedRecent.length)} />
-              <MiniInfo icon={Wallet} label="Total em análise" value={pendingTotal} strong />
-              <MiniInfo
-                icon={ShieldCheck}
-                label="Critério"
-                value="PAID + admin PENDING (Pendentes)"
-              />
+              <div className="rounded-2xl border border-zinc-200/80 bg-zinc-50 p-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-500">Pendentes</span>
+                  <span className="font-bold text-zinc-950">{pending.length}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-zinc-500">Aprovados recentes</span>
+                  <span className="font-semibold text-zinc-900">{approvedRecent.length}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-zinc-500">Reprovados recentes</span>
+                  <span className="font-semibold text-zinc-900">{rejectedRecent.length}</span>
+                </div>
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-zinc-500">Total em análise</span>
+                  <span className="font-bold text-zinc-950">{pendingTotal}</span>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-xs text-zinc-600">
+                Critério de Pendentes: paymentStatus = PAID e adminApprovalStatus = PENDING.
+              </div>
             </CardContent>
           </Card>
         </div>
