@@ -69,6 +69,14 @@ type Order = {
   localDeliveryLastNote?: string | null;
 };
 
+type LocalStatusFilter =
+  | "ALL"
+  | "PENDING_SEPARATION"
+  | "PACKED"
+  | "OUT_FOR_DELIVERY"
+  | "DELIVERED"
+  | "DELIVERY_PROBLEM";
+
 function fmtDate(iso?: string) {
   if (!iso) return "Não informado";
   try {
@@ -240,6 +248,20 @@ function matchesDeliveryFilter(
   return resolveDeliveryType(order) === filter;
 }
 
+function resolveLocalDeliveryStatus(order: Order) {
+  if (resolveDeliveryType(order) !== "LOCAL") return null;
+
+  return order.localDeliveryStatus || "PENDING_SEPARATION";
+}
+
+function matchesLocalStatusFilter(order: Order, filter: LocalStatusFilter) {
+  if (filter === "ALL") return true;
+
+  if (resolveDeliveryType(order) !== "LOCAL") return false;
+
+  return resolveLocalDeliveryStatus(order) === filter;
+}
+
 function StatusBadge({
   label,
   value,
@@ -270,6 +292,8 @@ export default function AdminOrdersPage() {
   const [deliveryFilter, setDeliveryFilter] = useState<
     "ALL" | "LOCAL" | "CORREIOS" | "UNKNOWN"
   >("ALL");
+    const [localStatusFilter, setLocalStatusFilter] =
+    useState<LocalStatusFilter>("ALL");
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(() => new Set());
   const [recentActions, setRecentActions] = useState<
     Record<string, { action: "approve" | "reject"; at: number; order: Order }>
@@ -345,19 +369,6 @@ export default function AdminOrdersPage() {
     return brl(total) ?? "R$ 0,00";
   }, [pending]);
 
-  const pendingFiltered = useMemo(
-    () => pending.filter((order) => matchesDeliveryFilter(order, deliveryFilter)),
-    [pending, deliveryFilter]
-  );
-  const approvedRecentFiltered = useMemo(
-    () => approvedRecent.filter((order) => matchesDeliveryFilter(order, deliveryFilter)),
-    [approvedRecent, deliveryFilter]
-  );
-  const rejectedRecentFiltered = useMemo(
-    () => rejectedRecent.filter((order) => matchesDeliveryFilter(order, deliveryFilter)),
-    [rejectedRecent, deliveryFilter]
-  );
-
   const currentTabOrders =
     activeTab === "pending"
       ? pending
@@ -365,12 +376,13 @@ export default function AdminOrdersPage() {
         ? approvedRecent
         : rejectedRecent;
 
-  const displayedOrders =
-    activeTab === "pending"
-      ? pendingFiltered
-      : activeTab === "approved"
-        ? approvedRecentFiltered
-        : rejectedRecentFiltered;
+  const displayedOrders = useMemo(
+    () =>
+      currentTabOrders
+        .filter((order) => matchesDeliveryFilter(order, deliveryFilter))
+        .filter((order) => matchesLocalStatusFilter(order, localStatusFilter)),
+    [currentTabOrders, deliveryFilter, localStatusFilter]
+  );
 
         const displayedOrderIds = useMemo(
     () => displayedOrders.map((order) => order.id),
@@ -436,6 +448,15 @@ export default function AdminOrdersPage() {
 
   function clearSelection() {
     setSelectedOrderIds(new Set());
+  }
+
+    function handleDeliveryFilterChange(
+    filter: "ALL" | "LOCAL" | "CORREIOS" | "UNKNOWN"
+  ) {
+    setDeliveryFilter(filter);
+    if (filter === "CORREIOS") {
+      setLocalStatusFilter("ALL");
+    }
   }
 
   useEffect(() => {
@@ -644,7 +665,7 @@ if (!selectedLocalOrderIds.length) {
                     size="sm"
                     variant={deliveryFilter === "ALL" ? "default" : "outline"}
                     className="rounded-2xl"
-                    onClick={() => setDeliveryFilter("ALL")}
+                    onClick={() => handleDeliveryFilterChange("ALL")}
                   >
                     Todos
                   </Button>
@@ -653,7 +674,7 @@ if (!selectedLocalOrderIds.length) {
                     size="sm"
                     variant={deliveryFilter === "LOCAL" ? "default" : "outline"}
                     className="rounded-2xl"
-                    onClick={() => setDeliveryFilter("LOCAL")}
+                    onClick={() => handleDeliveryFilterChange("LOCAL")}
                   >
                     Entrega local
                   </Button>
@@ -662,7 +683,7 @@ if (!selectedLocalOrderIds.length) {
                     size="sm"
                     variant={deliveryFilter === "CORREIOS" ? "default" : "outline"}
                     className="rounded-2xl"
-                    onClick={() => setDeliveryFilter("CORREIOS")}
+                    onClick={() => handleDeliveryFilterChange("CORREIOS")}
                   >
                     Correios
                   </Button>
@@ -671,11 +692,96 @@ if (!selectedLocalOrderIds.length) {
                     size="sm"
                     variant={deliveryFilter === "UNKNOWN" ? "default" : "outline"}
                     className="rounded-2xl"
-                    onClick={() => setDeliveryFilter("UNKNOWN")}
+                    onClick={() => handleDeliveryFilterChange("UNKNOWN")}
                   >
                     Não identificado
                   </Button>
                 </div>
+                              </div>
+
+              <div className="mb-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Status local
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={localStatusFilter === "ALL" ? "default" : "outline"}
+                    className="rounded-2xl"
+                    onClick={() => setLocalStatusFilter("ALL")}
+                    disabled={deliveryFilter === "CORREIOS"}
+                  >
+                    Todos
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      localStatusFilter === "PENDING_SEPARATION"
+                        ? "default"
+                        : "outline"
+                    }
+                    className="rounded-2xl"
+                    onClick={() => setLocalStatusFilter("PENDING_SEPARATION")}
+                    disabled={deliveryFilter === "CORREIOS"}
+                  >
+                    Aguardando separação
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={localStatusFilter === "PACKED" ? "default" : "outline"}
+                    className="rounded-2xl"
+                    onClick={() => setLocalStatusFilter("PACKED")}
+                    disabled={deliveryFilter === "CORREIOS"}
+                  >
+                    Empacotado
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      localStatusFilter === "OUT_FOR_DELIVERY"
+                        ? "default"
+                        : "outline"
+                    }
+                    className="rounded-2xl"
+                    onClick={() => setLocalStatusFilter("OUT_FOR_DELIVERY")}
+                    disabled={deliveryFilter === "CORREIOS"}
+                  >
+                    Saiu para entrega
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={localStatusFilter === "DELIVERED" ? "default" : "outline"}
+                    className="rounded-2xl"
+                    onClick={() => setLocalStatusFilter("DELIVERED")}
+                    disabled={deliveryFilter === "CORREIOS"}
+                  >
+                    Entregue
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={
+                      localStatusFilter === "DELIVERY_PROBLEM"
+                        ? "default"
+                        : "outline"
+                    }
+                    className="rounded-2xl"
+                    onClick={() => setLocalStatusFilter("DELIVERY_PROBLEM")}
+                    disabled={deliveryFilter === "CORREIOS"}
+                  >
+                    Problema
+                  </Button>
+                </div>
+                {deliveryFilter === "CORREIOS" ? (
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Status local se aplica apenas a pedidos de entrega local.
+                  </p>
+                ) : null}
                 <p className="mt-2 text-xs text-zinc-500">
                   Exibindo {displayedOrders.length} pedido(s) neste filtro.
                 </p>
@@ -840,7 +946,7 @@ if (!selectedLocalOrderIds.length) {
                       : "Ainda não há pedidos em Reprovados recentemente."}                </div>
               ) : displayedOrders.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
-                  Nenhum pedido encontrado para este tipo de entrega neste filtro.
+                  Nenhum pedido encontrado para os filtros selecionados.
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -850,8 +956,8 @@ if (!selectedLocalOrderIds.length) {
                     const orderStatus = o.orderStatus ?? o.status ?? null;
                     const deliveryType = resolveDeliveryType(o);
                     const deliveryBadge = getDeliveryBadgeMeta(deliveryType);
-                      const localDeliveryLabel = getLocalDeliveryStatusLabel(
-                      o.localDeliveryStatus
+                    const localDeliveryLabel = getLocalDeliveryStatusLabel(
+                      resolveLocalDeliveryStatus(o)
                     );
                     const localBadgeLabel =
                       deliveryType === "LOCAL"
