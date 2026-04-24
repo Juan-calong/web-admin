@@ -41,6 +41,7 @@ adminOrders: {
   decide: (orderId: string) => `/admin/orders/${orderId}`,
   details: (orderId: string) => `/admin/orders/${orderId}`,
   refund: (orderId: string) => `/admin/orders/${orderId}/refund`,
+  localDeliveryBulkStatus: "/admin/orders/local-delivery/bulk-status",
   localDeliveryDocuments: (orderId: string) =>
     `/admin/orders/${orderId}/local-delivery-documents`,
 },

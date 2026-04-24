@@ -53,6 +53,20 @@ type Order = {
   shippingCarrier?: string | null;
   shippingServiceCode?: string | null;
   shippingServiceName?: string | null;
+    localDeliveryStatus?:
+    | "PENDING_SEPARATION"
+    | "PACKED"
+    | "OUT_FOR_DELIVERY"
+    | "DELIVERED"
+    | "DELIVERY_PROBLEM"
+    | string
+    | null;
+  localDeliveryUpdatedAt?: string | null;
+  localDeliveryPackedAt?: string | null;
+  localDeliveryOutForDeliveryAt?: string | null;
+  localDeliveryDeliveredAt?: string | null;
+  localDeliveryProblemAt?: string | null;
+  localDeliveryLastNote?: string | null;
 };
 
 function fmtDate(iso?: string) {
@@ -204,6 +218,19 @@ function getDeliveryBadgeMeta(deliveryType: "LOCAL" | "CORREIOS" | "UNKNOWN") {
     classes: "border-zinc-200/80 bg-zinc-50/90 text-zinc-700 ring-zinc-200",
   };
 }
+
+function getLocalDeliveryStatusLabel(status?: string | null) {
+  const normalized = String(status ?? "").toUpperCase();
+
+  if (normalized === "PENDING_SEPARATION") return "Aguardando separação";
+  if (normalized === "PACKED") return "Empacotado";
+  if (normalized === "OUT_FOR_DELIVERY") return "Saiu para entrega";
+  if (normalized === "DELIVERED") return "Entregue";
+  if (normalized === "DELIVERY_PROBLEM") return "Problema na entrega";
+
+  return null;
+}
+
 
 function matchesDeliveryFilter(
   order: Order,
@@ -357,21 +384,24 @@ export default function AdminOrdersPage() {
     displayedOrderIds.length > 0 && displayedOrderIds.every((id) => selectedOrderIds.has(id));
   const someDisplayedSelected = displayedOrderIds.some((id) => selectedOrderIds.has(id));
 
-    const selectedLocalDisplayedOrders = useMemo(
-    () =>
-      displayedOrders.filter(
-        (order) =>
-          selectedOrderIds.has(order.id) && resolveDeliveryType(order) === "LOCAL"
-      ),
+  const selectedDisplayedOrders = useMemo(
+    () => displayedOrders.filter((order) => selectedOrderIds.has(order.id)),
     [displayedOrders, selectedOrderIds]
   );
-  const selectedNonLocalCount = useMemo(
+  const selectedLocalDisplayedOrders = useMemo(
     () =>
-      displayedOrders.filter(
-        (order) =>
-          selectedOrderIds.has(order.id) && resolveDeliveryType(order) !== "LOCAL"
-      ).length,
-    [displayedOrders, selectedOrderIds]
+      selectedDisplayedOrders.filter(
+        (order) => resolveDeliveryType(order) === "LOCAL"
+      ),
+    [selectedDisplayedOrders]
+  );
+  const selectedLocalOrderIds = useMemo(
+    () => selectedLocalDisplayedOrders.map((order) => order.id),
+    [selectedLocalDisplayedOrders]
+  );
+  const selectedNonLocalCount = useMemo(
+    () => selectedDisplayedOrders.length - selectedLocalDisplayedOrders.length,
+    [selectedDisplayedOrders, selectedLocalDisplayedOrders]
   );
 
   function toggleOrderSelection(orderId: string) {
@@ -478,9 +508,7 @@ export default function AdminOrdersPage() {
   });
 
   function handleOpenSelectedLocalDocuments() {
-    const localOrderIds = selectedLocalDisplayedOrders.map((order) => order.id);
-
-    if (!localOrderIds.length) {
+if (!selectedLocalOrderIds.length) {
       toast.error("Selecione pelo menos um pedido de entrega local.");
       return;
     }
@@ -489,7 +517,54 @@ export default function AdminOrdersPage() {
       toast.warning("Pedidos que não são entrega local foram ignorados.");
     }
 
-    localBatchPdfM.mutate(localOrderIds);
+    localBatchPdfM.mutate(selectedLocalOrderIds);
+  }
+
+  const localDeliveryBulkStatusM = useMutation({
+    mutationFn: async (vars: {
+      orderIds: string[];
+      status: "PACKED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "DELIVERY_PROBLEM";
+      note?: string;
+    }) => {
+      const { data } = await api.post(
+        endpoints.adminOrders.localDeliveryBulkStatus,
+        vars
+      );
+      return data as { updated?: number; skipped?: number };
+    },
+    onSuccess: async (data) => {
+      toast.success(`Status local atualizado: ${data.updated ?? 0} pedido(s).`);
+
+      if ((data.skipped ?? 0) > 0) {
+        toast.warning(`${data.skipped} pedido(s) foram ignorados.`);
+      }
+
+      await qc.invalidateQueries({ queryKey: ["orders"] });
+      await ordersQ.refetch();
+    },
+    onError: (err) => {
+      toast.error(
+        apiErrorMessage(err, "Não foi possível atualizar os pedidos locais.")
+      );
+    },
+  });
+
+  function handleBulkLocalDeliveryStatus(
+    status: "PACKED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "DELIVERY_PROBLEM"
+  ) {
+    if (!selectedLocalOrderIds.length) {
+      toast.error("Selecione pelo menos um pedido de entrega local.");
+      return;
+    }
+
+    if (selectedNonLocalCount > 0) {
+      toast.warning("Pedidos que não são entrega local serão ignorados.");
+    }
+
+    localDeliveryBulkStatusM.mutate({
+      orderIds: selectedLocalOrderIds,
+      status,
+    });
   }
   const actingOrderId = (decideM.variables as { orderId?: string } | undefined)?.orderId;
 
@@ -646,6 +721,106 @@ export default function AdminOrdersPage() {
                     </>
                   ) : null}
                 </div>
+                                {selectedVisibleCount > 0 ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
+                      onClick={() => handleBulkLocalDeliveryStatus("PACKED")}
+                      disabled={
+                        selectedLocalOrderIds.length === 0 ||
+                        localDeliveryBulkStatusM.isPending
+                      }
+                    >
+                      Marcar empacotado
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
+                      onClick={() => handleBulkLocalDeliveryStatus("OUT_FOR_DELIVERY")}
+                      disabled={
+                        selectedLocalOrderIds.length === 0 ||
+                        localDeliveryBulkStatusM.isPending
+                      }
+                    >
+                      Saiu para entrega
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
+                          disabled={
+                            selectedLocalOrderIds.length === 0 ||
+                            localDeliveryBulkStatusM.isPending
+                          }
+                        >
+                          Marcar entregue
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="rounded-[28px]">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Marcar pedidos selecionados como entregues?
+                          </AlertDialogTitle>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="rounded-2xl">
+                            Cancelar
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            className="rounded-2xl"
+                            onClick={() => handleBulkLocalDeliveryStatus("DELIVERED")}
+                          >
+                            Confirmar
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
+                          disabled={
+                            selectedLocalOrderIds.length === 0 ||
+                            localDeliveryBulkStatusM.isPending
+                          }
+                        >
+                          Problema
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="rounded-[28px]">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Marcar pedidos selecionados com problema na entrega?
+                          </AlertDialogTitle>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="rounded-2xl">
+                            Cancelar
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            className="rounded-2xl"
+                            onClick={() =>
+                              handleBulkLocalDeliveryStatus("DELIVERY_PROBLEM")
+                            }
+                          >
+                            Confirmar
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                ) : null}
               </div>
 
               {ordersQ.isLoading ? (
@@ -675,6 +850,13 @@ export default function AdminOrdersPage() {
                     const orderStatus = o.orderStatus ?? o.status ?? null;
                     const deliveryType = resolveDeliveryType(o);
                     const deliveryBadge = getDeliveryBadgeMeta(deliveryType);
+                      const localDeliveryLabel = getLocalDeliveryStatusLabel(
+                      o.localDeliveryStatus
+                    );
+                    const localBadgeLabel =
+                      deliveryType === "LOCAL"
+                        ? localDeliveryLabel ?? "Aguardando separação"
+                        : null;
 
                     return (
                       <div
@@ -732,6 +914,14 @@ export default function AdminOrdersPage() {
                                 </span>
                                 <span>{deliveryBadge.label}</span>
                               </span>
+                                {localBadgeLabel ? (
+                                <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200/80 bg-violet-50/90 px-2 py-0.5 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">
+                                  <span className="uppercase tracking-[0.14em] text-[10px] text-violet-500">
+                                    Local
+                                  </span>
+                                  <span>{localBadgeLabel}</span>
+                                </span>
+                              ) : null}
                               <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] text-zinc-600">
                                 <Clock3 className="h-3.5 w-3.5" />
                                 {activeTab === "pending"
