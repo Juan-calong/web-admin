@@ -59,6 +59,8 @@ adminOrderShipping: {
 
 adminLocalDelivery: {
   today: "/admin/local-delivery/today",
+  exceptions: "/admin/local-delivery/exceptions",
+  exceptionById: (id: string) => `/admin/local-delivery/exceptions/${id}`,
 },
 
 
