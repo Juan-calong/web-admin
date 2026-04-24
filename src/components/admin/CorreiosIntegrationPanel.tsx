@@ -298,7 +298,7 @@ export function CorreiosIntegrationPanel() {
               disabled={statusQ.isFetching || verifyM.isPending}
             >
               {statusQ.isFetching ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Atualizar status
+              Atualizar
             </Button>
 
             <Button

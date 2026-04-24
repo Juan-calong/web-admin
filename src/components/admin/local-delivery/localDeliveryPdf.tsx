@@ -321,6 +321,7 @@ function UnifiedLocalDeliveryDocument({
               Total de itens: {totals.itemsQuantity}
             </Text>
           </View>
+          
 
           <View style={unifiedStyles.compactSection} wrap={false}>
             <Text style={unifiedStyles.sectionTitle}>Conferência</Text>
