@@ -63,6 +63,7 @@ type ShipmentDetails = {
   labelUrl?: string | null;
   labelFileKey?: string | null;
   labelFormat?: string | null;
+  isGenerating?: boolean | null;
   generatedAt?: string | null;
   printedAt?: string | null;
   postedAt?: string | null;
@@ -80,10 +81,21 @@ type Eligibility = {
   reason: string;
 };
 
+type ShipmentVisualState =
+  | "NOT_CREATED"
+  | "GENERATING"
+  | "PENDING"
+  | "LABEL_READY"
+  | "POSTED"
+  | "CANCELED"
+  | "ERROR";
+
 function fmtDate(value?: string | null) {
   if (!value) return "Não informado";
+
   const dt = new Date(value);
   if (Number.isNaN(dt.getTime())) return "Data inválida";
+
   return dt.toLocaleString("pt-BR");
 }
 
@@ -104,39 +116,109 @@ function normalizedShipment(
 
 function isCanceledOrder(orderStatus?: string | null) {
   const v = String(orderStatus ?? "").toUpperCase();
+
   return ["CANCELED", "CANCELLED", "REJECTED", "REFUNDED"].includes(v);
+}
+
+function normalizeShippingErrorCode(raw?: string | null) {
+  if (!raw) return "";
+
+  const direct = String(raw).trim().toUpperCase();
+  const match = direct.match(/[A-Z_]{3,}/);
+
+  return (match?.[0] ?? direct).trim();
+}
+
+function containsShipmentCode(raw: string | null | undefined, code: string) {
+  return String(raw ?? "").toUpperCase().includes(code);
+}
+
+function hasPendingProcessingCode(shipment?: ShipmentDetails | null) {
+  return (
+    containsShipmentCode(shipment?.lastError, "PREPOST_DCE_PENDING") ||
+    containsShipmentCode(shipment?.lastError, "LABEL_ASYNC_PENDING")
+  );
 }
 
 function isPrintableLabel(shipment?: ShipmentDetails | null) {
   return Boolean(
-    shipment?.labelUrl || (shipment?.labelFileKey && shipment?.generatedAt)
+    shipment?.shipmentStatus === "LABEL_READY" ||
+      shipment?.labelUrl ||
+      shipment?.labelFileKey
   );
 }
 
-function badgeClass(status: ShipmentStatus) {
-  if (status === "POSTED" || status === "LABEL_READY") {
+function getShipmentVisualState(
+  shipment?: ShipmentDetails | null
+): ShipmentVisualState {
+  const status = shipment?.shipmentStatus ?? "NOT_CREATED";
+
+  if (!shipment || status === "NOT_CREATED") return "NOT_CREATED";
+
+  if (status === "POSTED" || shipment.postedAt) return "POSTED";
+
+  if (isPrintableLabel(shipment)) return "LABEL_READY";
+
+  if (shipment.isGenerating === true) return "GENERATING";
+
+  if (hasPendingProcessingCode(shipment)) return "PENDING";
+
+  if (status === "ERROR") return "ERROR";
+
+  if (status === "CANCELED") return "CANCELED";
+
+  if (
+    status === "PRE_POST_CREATED" ||
+    status === "PRE_POSTED" ||
+    Boolean(shipment.prePostagemId && !isPrintableLabel(shipment))
+  ) {
+    return "PENDING";
+  }
+
+  return "NOT_CREATED";
+}
+
+function badgeClass(state: ShipmentVisualState) {
+  if (state === "POSTED" || state === "LABEL_READY") {
     return "border-emerald-200 bg-emerald-50 text-emerald-700";
   }
 
-  if (status === "PRE_POST_CREATED" || status === "PRE_POSTED") {
+  if (state === "GENERATING" || state === "PENDING") {
     return "border-amber-200 bg-amber-50 text-amber-700";
   }
 
-  if (status === "ERROR" || status === "CANCELED") {
+  if (state === "ERROR" || state === "CANCELED") {
     return "border-rose-200 bg-rose-50 text-rose-700";
   }
 
   return "border-slate-200 bg-slate-100 text-slate-700";
 }
 
-function shipmentLabel(status?: ShipmentStatus | null) {
-  if (!status || status === "NOT_CREATED") return "Etiqueta ainda não gerada";
-  if (status === "PRE_POST_CREATED") return "Etiqueta em processamento";
-  if (status === "PRE_POSTED") return "Pré-postagem criada";
-  if (status === "LABEL_READY") return "Etiqueta pronta para impressão";
-  if (status === "POSTED") return "Pedido marcado como postado";
-  if (status === "CANCELED") return "Expedição cancelada";
+function shipmentLabel(state: ShipmentVisualState) {
+  if (state === "NOT_CREATED") return "Etiqueta ainda não gerada";
+  if (state === "GENERATING") return "Geração em andamento";
+  if (state === "PENDING") return "Aguardando Correios";
+  if (state === "LABEL_READY") return "Etiqueta pronta para impressão";
+  if (state === "POSTED") return "Pedido postado";
+  if (state === "CANCELED") return "Expedição cancelada";
+
   return "Erro na expedição";
+}
+
+function summaryBoxClass(state: ShipmentVisualState) {
+  if (state === "LABEL_READY" || state === "POSTED") {
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  }
+
+  if (state === "GENERATING" || state === "PENDING") {
+    return "border-amber-200 bg-amber-50 text-amber-800";
+  }
+
+  if (state === "ERROR" || state === "CANCELED") {
+    return "border-red-200 bg-red-50 text-red-700";
+  }
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
 function classifyError(err: unknown) {
@@ -147,24 +229,21 @@ function classifyError(err: unknown) {
     const status = axiosErr.response?.status;
 
     if (status === 401) return "Sua sessão expirou ou não está autorizada.";
-    if (status === 403)
+    if (status === 403) {
       return "Seu usuário não tem permissão para operar expedição.";
-    if (status === 409)
+    }
+    if (status === 409) {
       return "A etiqueta não está disponível para este pedido no momento.";
-    if (status === 422)
+    }
+    if (status === 422) {
       return "Não foi possível concluir esta etapa da expedição.";
-    if (status && status >= 500)
+    }
+    if (status && status >= 500) {
       return "Serviço indisponível no momento. Tente novamente.";
+    }
   }
 
   return msg;
-}
-
-function normalizeShippingErrorCode(raw?: string | null) {
-  if (!raw) return "";
-  const direct = String(raw).trim().toUpperCase();
-  const match = direct.match(/[A-Z_]{3,}/);
-  return (match?.[0] ?? direct).trim();
 }
 
 function isLocalDelivery({
@@ -220,21 +299,17 @@ function friendlyShipmentErrorMessage({
     return "Serviço dos Correios inválido para gerar a etiqueta deste pedido.";
   }
 
-    if (errorCode === "LABEL_ASYNC_PENDING") {
+  if (errorCode === "LABEL_ASYNC_PENDING") {
     return "A pré-postagem foi criada e o Correios ainda está finalizando o rótulo.";
   }
 
+  if (errorCode === "PREPOST_DCE_PENDING") {
+    return "A pré-postagem está aguardando processamento da DC-e pelos Correios.";
+  }
+
   if (!lastError) return null;
+
   return "Não foi possível processar a expedição deste pedido no momento.";
-}
-
-function isAsyncLabelPending(shipment?: ShipmentDetails | null) {
-  const code = normalizeShippingErrorCode(shipment?.lastError);
-
-  return (
-    shipment?.shipmentStatus === "PRE_POST_CREATED" &&
-    (code === "LABEL_ASYNC_PENDING" || code === "PREPOST_DCE_PENDING")
-  );
 }
 
 async function fetchShipping(orderId: string): Promise<ShipmentDetails | null> {
@@ -249,6 +324,7 @@ async function refreshPendingShipping(
     endpoints.adminOrderShipping.refreshLabel(orderId),
     {}
   );
+
   return normalizedShipment(data as ShipmentResponse);
 }
 
@@ -318,18 +394,25 @@ export function OrderShippingPanel({
 }) {
   const qc = useQueryClient();
 
-const shippingQ = useQuery({
-  queryKey: ["admin-order-shipping", orderId],
-  queryFn: () => fetchShipping(orderId),
-  enabled: Boolean(orderId),
-  retry: false,
-  refetchOnWindowFocus: false,
-});
+  const shippingQ = useQuery({
+    queryKey: ["admin-order-shipping", orderId],
+    queryFn: () => fetchShipping(orderId),
+    enabled: Boolean(orderId),
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
 
   const shipment = shippingQ.data;
   const shipmentStatus = shipment?.shipmentStatus ?? "NOT_CREATED";
-  const asyncLabelPending = isAsyncLabelPending(shipment);
+  const visualState = getShipmentVisualState(shipment);
+
+  const isGeneratingLabel = visualState === "GENERATING";
+  const isPendingLabel = visualState === "PENDING";
+  const isErrorLabel = visualState === "ERROR";
+  const asyncLabelPending = isPendingLabel;
+
   const printableLabelAvailable = isPrintableLabel(shipment);
+
   const hasPartialShipmentRecord = Boolean(
     shipment &&
       !printableLabelAvailable &&
@@ -365,9 +448,10 @@ const shippingQ = useQuery({
     await qc.invalidateQueries({ queryKey: ["admin-order-details", orderId] });
     await qc.invalidateQueries({ queryKey: ["orders"] });
   }
+
   async function syncShippingOnly() {
-  await qc.invalidateQueries({ queryKey: ["admin-order-shipping", orderId] });
-}
+    await qc.invalidateQueries({ queryKey: ["admin-order-shipping", orderId] });
+  }
 
   const generateM = useMutation({
     mutationFn: async () => {
@@ -380,6 +464,7 @@ const shippingQ = useQuery({
           },
         }
       );
+
       return normalizedShipment(data as ShipmentResponse);
     },
     onSuccess: async (nextShipment) => {
@@ -390,9 +475,16 @@ const shippingQ = useQuery({
         return;
       }
 
-            if (isAsyncLabelPending(nextShipment)) {
+      const nextState = getShipmentVisualState(nextShipment);
+
+      if (nextState === "GENERATING") {
+        toast.success("Geração da etiqueta iniciada.");
+        return;
+      }
+
+      if (nextState === "PENDING") {
         toast.success(
-          "Pré-postagem criada. O Correios está finalizando o rótulo e vamos atualizar automaticamente."
+          "Pré-postagem criada. O Correios está finalizando o rótulo."
         );
         return;
       }
@@ -407,24 +499,46 @@ const shippingQ = useQuery({
     },
   });
 
-const refreshPendingM = useMutation({
-  mutationFn: async () => {
-    return refreshPendingShipping(orderId);
-  },
-  onSuccess: async (nextShipment) => {
-    await syncShippingOnly();
+  const refreshPendingM = useMutation({
+    mutationFn: async () => {
+      return refreshPendingShipping(orderId);
+    },
+    onSuccess: async (nextShipment) => {
+      await syncShippingOnly();
 
-    if (isPrintableLabel(nextShipment)) {
-      toast.success("Etiqueta pronta para impressão.");
-      await qc.invalidateQueries({ queryKey: ["admin-order-details", orderId] });
-      await qc.invalidateQueries({ queryKey: ["orders"] });
-    }
-  },
-  onError: async (err) => {
-    toast.error(classifyError(err));
-    await syncShippingOnly();
-  },
-});
+      if (isPrintableLabel(nextShipment)) {
+        toast.success("Etiqueta pronta para impressão.");
+        await qc.invalidateQueries({
+          queryKey: ["admin-order-details", orderId],
+        });
+        await qc.invalidateQueries({ queryKey: ["orders"] });
+        return;
+      }
+
+      const nextState = getShipmentVisualState(nextShipment);
+
+      if (nextState === "GENERATING") {
+        toast.success("A geração da etiqueta ainda está em andamento.");
+        return;
+      }
+
+      if (nextState === "PENDING") {
+        toast.success("Etiqueta ainda aguardando processamento dos Correios.");
+        return;
+      }
+
+      if (nextState === "ERROR") {
+        toast.error("A expedição ainda está com erro. Veja os detalhes abaixo.");
+        return;
+      }
+
+      toast.success("Expedição atualizada.");
+    },
+    onError: async (err) => {
+      toast.error(classifyError(err));
+      await syncShippingOnly();
+    },
+  });
 
   const reprintM = useMutation({
     mutationFn: async () => {
@@ -437,6 +551,7 @@ const refreshPendingM = useMutation({
           },
         }
       );
+
       return normalizedShipment(data as ShipmentResponse);
     },
     onSuccess: async (nextShipment) => {
@@ -492,103 +607,122 @@ const refreshPendingM = useMutation({
     },
   });
 
-const printM = useMutation({
-  mutationFn: async () => {
-    const currentLabelUrl = String(shipment?.labelUrl || "").trim();
+  const printM = useMutation({
+    mutationFn: async () => {
+      const currentLabelUrl = String(shipment?.labelUrl || "").trim();
 
-    const openBlob = (blob: Blob) => {
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    };
+      const openBlob = (blob: Blob) => {
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank", "noopener,noreferrer");
+        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      };
 
-    // caso 1: backend já entregou data URL pronta do PDF
-    if (currentLabelUrl.startsWith("data:application/pdf")) {
-      const response = await fetch(currentLabelUrl);
-      const blob = await response.blob();
+      if (currentLabelUrl.startsWith("data:application/pdf")) {
+        const response = await fetch(currentLabelUrl);
+        const blob = await response.blob();
+
+        if (!(blob instanceof Blob) || blob.size === 0) {
+          throw new Error("Etiqueta PDF inválida.");
+        }
+
+        openBlob(blob);
+        return;
+      }
+
+      if (/^(https?:|blob:)/i.test(currentLabelUrl)) {
+        window.open(currentLabelUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      const response = await api.get(endpoints.adminOrderShipping.label(orderId), {
+        responseType: "blob",
+      });
+
+      const blob = response.data as Blob;
 
       if (!(blob instanceof Blob) || blob.size === 0) {
-        throw new Error("Etiqueta PDF inválida.");
+        throw new Error("Etiqueta vazia ou inválida retornada pelo backend.");
       }
 
       openBlob(blob);
-      return;
-    }
+    },
+    onSuccess: async () => {
+      toast.success("Etiqueta aberta para impressão no navegador.");
+      printedM.mutate();
+    },
+    onError: async (err) => {
+      toast.error(classifyError(err));
+      await syncShippingQueries();
+    },
+  });
 
-    // caso 2: URL normal/http/blob
-    if (/^(https?:|blob:)/i.test(currentLabelUrl)) {
-      window.open(currentLabelUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
+  useEffect(() => {
+    if (!orderId || (!isPendingLabel && !isGeneratingLabel)) return;
 
-    // fallback antigo do backend
-    const response = await api.get(endpoints.adminOrderShipping.label(orderId), {
-      responseType: "blob",
-    });
+    const timer = window.setInterval(() => {
+      if (!shippingQ.isFetching && !refreshPendingM.isPending) {
+        shippingQ.refetch();
+      }
+    }, 15_000);
 
-    const blob = response.data as Blob;
-    if (!(blob instanceof Blob) || blob.size === 0) {
-      throw new Error("Etiqueta vazia ou inválida retornada pelo backend.");
-    }
+    return () => window.clearInterval(timer);
+  }, [
+    orderId,
+    isPendingLabel,
+    isGeneratingLabel,
+    shippingQ.isFetching,
+    shippingQ.refetch,
+    refreshPendingM.isPending,
+  ]);
 
-    openBlob(blob);
-  },
-  onSuccess: async () => {
-    toast.success("Etiqueta aberta para impressão no navegador.");
-    printedM.mutate();
-  },
-  onError: async (err) => {
-    toast.error(classifyError(err));
-    await syncShippingQueries();
-  },
-});
+  const busy =
+    shippingQ.isFetching ||
+    generateM.isPending ||
+    refreshPendingM.isPending ||
+    reprintM.isPending ||
+    printM.isPending ||
+    postedM.isPending ||
+    printedM.isPending;
 
-useEffect(() => {
-  if (!orderId || !asyncLabelPending) return;
+  const canGenerate =
+    eligibility.ok &&
+    !busy &&
+    !isGeneratingLabel &&
+    !isPendingLabel &&
+    !printableLabelAvailable &&
+    shipmentStatus !== "POSTED";
 
-  const timer = window.setInterval(() => {
-    if (!shippingQ.isFetching && !refreshPendingM.isPending) {
-      shippingQ.refetch();
-    }
-  }, 15_000);
-
-  return () => window.clearInterval(timer);
-}, [
-  orderId,
-  asyncLabelPending,
-  shippingQ.isFetching,
-  shippingQ.refetch,
-  refreshPendingM.isPending,
-]);
-
-const busy =
-  shippingQ.isFetching ||
-  generateM.isPending ||
-  refreshPendingM.isPending ||
-  reprintM.isPending ||
-  printM.isPending ||
-  postedM.isPending ||
-  printedM.isPending;
-
-  const canGenerate = eligibility.ok && !busy && !asyncLabelPending;
   const canPrint = printableLabelAvailable && !busy;
-  const canReprint = printableLabelAvailable && !busy && !asyncLabelPending;
+
+  const canReprint =
+    printableLabelAvailable && !busy && !isGeneratingLabel && !isPendingLabel;
+
   const canMarkPosted =
     printableLabelAvailable &&
-    (shipmentStatus === "PRE_POST_CREATED" ||
-      shipmentStatus === "PRE_POSTED" ||
-      shipmentStatus === "LABEL_READY") &&
+    shipmentStatus !== "POSTED" &&
     !busy &&
-    !asyncLabelPending;
+    !isGeneratingLabel &&
+    !isPendingLabel;
 
   const markPostedDisabledReason = (() => {
     if (shipmentStatus === "POSTED") return "Pedido já marcado como postado.";
-        if (asyncLabelPending)
+
+    if (isGeneratingLabel) {
+      return "Aguarde a geração da etiqueta antes de marcar como postado.";
+    }
+
+    if (isPendingLabel) {
       return "Aguarde a finalização da etiqueta antes de marcar como postado.";
-    if (!printableLabelAvailable)
+    }
+
+    if (!printableLabelAvailable) {
       return "Gere uma etiqueta válida antes de marcar como postado.";
-    if (!canMarkPosted)
-      return "A postagem só pode ser confirmada após pré-postagem ou etiqueta pronta.";
+    }
+
+    if (!canMarkPosted) {
+      return "A postagem só pode ser confirmada após a etiqueta estar pronta.";
+    }
+
     return null;
   })();
 
@@ -601,50 +735,54 @@ const busy =
   const technicalErrorCode = normalizeShippingErrorCode(shipment?.lastError);
 
   const generateButtonLabel = (() => {
-    if (asyncLabelPending) return "Etiqueta em processamento";
-    if (
-      hasPartialShipmentRecord ||
-      shipment?.lastError ||
-      shipmentStatus === "PRE_POST_CREATED" ||
-      shipmentStatus === "PRE_POSTED" ||
-      shipmentStatus === "ERROR"
-    ) {
-      return "Tentar gerar novamente";
+    if (isGeneratingLabel) return "Geração em andamento";
+    if (isPendingLabel) return "Aguardando Correios";
+
+    if (isErrorLabel || !shipment || shipmentStatus === "NOT_CREATED") {
+      return "Tentar gerar agora";
     }
 
     return "Gerar etiqueta";
   })();
 
+  const shouldUseRefreshEndpoint = Boolean(
+    shipment?.prePostagemId ||
+      isPendingLabel ||
+      isErrorLabel ||
+      isGeneratingLabel
+  );
+
   const summaryMessage = (() => {
     if (shippingQ.isLoading) return "Carregando dados de expedição...";
     if (shippingQ.isError) return "Não foi possível carregar a expedição.";
-    if (!shipment) return "Etiqueta ainda não gerada.";
-    if (asyncLabelPending) {
-      return "A pré-postagem foi criada e o Correios ainda está finalizando o rótulo.";
+
+    if (visualState === "NOT_CREATED") {
+      return "Etiqueta ainda não gerada. O worker pode gerar automaticamente quando estiver ativo, ou você pode tentar gerar manualmente.";
     }
 
-    if (shipment?.lastError) {
-      return (
-        friendlyLastError ??
-        "Não foi possível processar a expedição deste pedido no momento."
-      );
+    if (visualState === "GENERATING") {
+      return "Geração da etiqueta em andamento. Aguarde alguns instantes e atualize a expedição.";
     }
 
-    if (shipmentStatus === "POSTED") return "Pedido marcado como postado.";
+    if (visualState === "PENDING") {
+      return "Etiqueta aguardando processamento dos Correios. O worker pode tentar atualizar automaticamente.";
+    }
 
-    if (printableLabelAvailable && shipmentStatus === "LABEL_READY") {
+    if (visualState === "LABEL_READY") {
       return "Etiqueta pronta para impressão.";
     }
 
-    if (printableLabelAvailable) {
-      return "Etiqueta disponível para impressão.";
+    if (visualState === "POSTED") {
+      return "Pedido marcado como postado.";
     }
 
-    if (hasPartialShipmentRecord) {
-      return "Existe um registro parcial de expedição, mas ainda não há etiqueta disponível para impressão.";
+    if (visualState === "ERROR") {
+      return friendlyLastError ?? "Houve um problema na geração da etiqueta.";
     }
 
-    if (!eligibility.ok) return eligibility.reason;
+    if (visualState === "CANCELED") {
+      return "Expedição cancelada.";
+    }
 
     return "Painel de expedição sincronizado.";
   })();
@@ -662,26 +800,29 @@ const busy =
             </p>
           </div>
 
-<Button
-  type="button"
-  variant="outline"
-  className="rounded-2xl border-zinc-200"
-  onClick={() => {
-    if (asyncLabelPending) {
-      refreshPendingM.mutate();
-      return;
-    }
-    shippingQ.refetch();
-  }}
-  disabled={busy}
->
-  <RefreshCw
-    className={`mr-2 h-4 w-4 ${
-      shippingQ.isFetching || refreshPendingM.isPending ? "animate-spin" : ""
-    }`}
-  />
-  Atualizar expedição
-</Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="rounded-2xl border-zinc-200"
+            onClick={() => {
+              if (shouldUseRefreshEndpoint) {
+                refreshPendingM.mutate();
+                return;
+              }
+
+              shippingQ.refetch();
+            }}
+            disabled={busy}
+          >
+            <RefreshCw
+              className={`mr-2 h-4 w-4 ${
+                shippingQ.isFetching || refreshPendingM.isPending
+                  ? "animate-spin"
+                  : ""
+              }`}
+            />
+            Atualizar expedição
+          </Button>
         </div>
       </CardHeader>
 
@@ -697,33 +838,54 @@ const busy =
             label="Transportadora"
             value={shipment?.provider ?? "CORREIOS"}
           />
+
           <InfoCard
             label="Status da expedição"
             value={
               <Badge
                 className={`rounded-full border px-2.5 py-0.5 ${badgeClass(
-                  shipmentStatus
+                  visualState
                 )}`}
               >
-                {shipmentLabel(shipmentStatus)}
+                {shipmentLabel(visualState)}
               </Badge>
             }
           />
+
           <InfoCard
             label="Código de rastreio"
             value={shipment?.trackingCode || "Não informado"}
             mono
           />
+
           <InfoCard
             label="Serviço"
-            value={shipment?.serviceName || shipment?.serviceCode || "Não informado"}
+            value={
+              shipment?.serviceName || shipment?.serviceCode || "Não informado"
+            }
           />
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
-          <InfoCard label="Data de geração" value={fmtDate(shipment?.generatedAt)} />
-          <InfoCard label="Data de impressão" value={fmtDate(shipment?.printedAt)} />
-          <InfoCard label="Data de postagem" value={fmtDate(shipment?.postedAt)} />
+          <InfoCard
+            label="Data de geração"
+            value={fmtDate(shipment?.generatedAt)}
+          />
+
+          <InfoCard
+            label="Data de impressão"
+            value={fmtDate(shipment?.printedAt)}
+          />
+
+          <InfoCard
+            label="Data de postagem"
+            value={fmtDate(shipment?.postedAt)}
+          />
+        </div>
+
+        <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm text-sky-800">
+          Quando o worker automático estiver ativo, a etiqueta será gerada sem
+          precisar clicar em Gerar etiqueta.
         </div>
 
         {!eligibility.ok && !printableLabelAvailable ? (
@@ -740,24 +902,34 @@ const busy =
 
         {hasPartialShipmentRecord && !shipment?.lastError && !asyncLabelPending ? (
           <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
-            Há um registro parcial de expedição, mas nenhuma etiqueta válida foi encontrada
-            para impressão. Você pode tentar gerar novamente.
+            Há um registro parcial de expedição, mas nenhuma etiqueta válida foi
+            encontrada para impressão. Você pode tentar gerar novamente.
           </div>
         ) : null}
 
-        {asyncLabelPending ? (
-          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700">
-            <div className="font-semibold">Etiqueta em processamento</div>
-<div>
-  A pré-postagem foi criada e o Correios ainda está finalizando o
-  rótulo. O painel sincroniza o status local automaticamente e você pode usar
-  “Atualizar expedição” para reconsultar o Correios.
-</div>
+        {isGeneratingLabel ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="font-semibold">
+              Geração da etiqueta em andamento
+            </div>
+            <div>Aguarde alguns instantes e use “Atualizar expedição”.</div>
           </div>
-        ) : shipment?.lastError ? (
+        ) : isPendingLabel ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className="font-semibold">
+              Etiqueta aguardando processamento dos Correios
+            </div>
+            <div>
+              A pré-postagem foi criada e o Correios ainda está finalizando o
+              rótulo. O painel sincroniza o status local automaticamente e você
+              pode usar “Atualizar expedição” para reconsultar o Correios.
+            </div>
+          </div>
+        ) : isErrorLabel ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <div className="font-semibold">Último erro de expedição</div>
             <div>{friendlyLastError}</div>
+
             {technicalErrorCode ? (
               <div className="mt-1 text-xs text-red-600/80">
                 Código técnico: {technicalErrorCode}
@@ -772,7 +944,11 @@ const busy =
             className="rounded-2xl"
             onClick={() => generateM.mutate()}
             disabled={!canGenerate}
-           title={asyncLabelPending ? "Aguarde a etiqueta terminar de processar." : undefined}
+            title={
+              isGeneratingLabel || isPendingLabel
+                ? "Aguarde a etiqueta terminar de processar."
+                : undefined
+            }
           >
             {generateM.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -803,7 +979,11 @@ const busy =
             className="rounded-2xl border-zinc-200"
             onClick={() => reprintM.mutate()}
             disabled={!canReprint}
-            title={asyncLabelPending ? "Reimpressão disponível quando a etiqueta estiver pronta." : undefined}
+            title={
+              isGeneratingLabel || isPendingLabel
+                ? "Reimpressão disponível quando a etiqueta estiver pronta."
+                : undefined
+            }
           >
             {reprintM.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -835,7 +1015,8 @@ const busy =
               <AlertDialogHeader>
                 <AlertDialogTitle>Marcar pedido como postado?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  Depois de marcar como postado, esta ação não poderá ser desfeita por esta tela.
+                  Depois de marcar como postado, esta ação não poderá ser
+                  desfeita por esta tela.
                 </AlertDialogDescription>
               </AlertDialogHeader>
 
@@ -880,9 +1061,11 @@ const busy =
                   <div>
                     prePostagemId: {shipment?.prePostagemId || "não informado"}
                   </div>
+
                   <div>
                     labelFileKey: {shipment?.labelFileKey || "não informado"}
                   </div>
+
                   <div>
                     labelFormat: {shipment?.labelFormat || "não informado"}
                   </div>
@@ -900,7 +1083,11 @@ const busy =
           </Accordion>
         ) : null}
 
-        <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+        <div
+          className={`flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm ${summaryBoxClass(
+            visualState
+          )}`}
+        >
           <CircleDot className="h-4 w-4" />
           {summaryMessage}
         </div>
@@ -923,6 +1110,7 @@ function InfoCard({
       <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
         {label}
       </div>
+
       <div
         className={`mt-2 break-all text-sm text-zinc-900 ${
           mono ? "font-mono" : ""

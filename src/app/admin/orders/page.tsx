@@ -20,6 +20,7 @@ import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
 import { openLocalDeliveryUnifiedBatchPdf } from "@/components/admin/local-delivery/localDeliveryPdf";
+import { openCorreiosBatchLabelsPdf } from "@/components/admin/correios/correiosBatchPdf";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -525,6 +526,24 @@ export default function AdminOrdersPage() {
     [selectedDisplayedOrders, selectedLocalDisplayedOrders]
   );
 
+  const selectedCorreiosDisplayedOrders = useMemo(
+  () =>
+    selectedDisplayedOrders.filter(
+      (order) => resolveDeliveryType(order) === "CORREIOS"
+    ),
+  [selectedDisplayedOrders]
+);
+
+const selectedCorreiosOrderIds = useMemo(
+  () => selectedCorreiosDisplayedOrders.map((order) => order.id),
+  [selectedCorreiosDisplayedOrders]
+);
+
+const selectedNonCorreiosCount = useMemo(
+  () => selectedDisplayedOrders.length - selectedCorreiosDisplayedOrders.length,
+  [selectedDisplayedOrders, selectedCorreiosDisplayedOrders]
+);
+
   function toggleOrderSelection(orderId: string) {
     setSelectedOrderIds((prev) => {
       const next = new Set(prev);
@@ -689,6 +708,31 @@ export default function AdminOrdersPage() {
       ),
   });
 
+  const correiosBatchPdfM = useMutation({
+  mutationFn: async (orderIds: string[]) =>
+    openCorreiosBatchLabelsPdf(orderIds),
+  onSuccess: (result) => {
+    if (result.opened <= 0) {
+      toast.error("Nenhuma etiqueta Correios pronta para impressão.");
+      return;
+    }
+
+    toast.success(
+      `Etiquetas Correios abertas para impressão: ${result.opened} pedido(s).`
+    );
+
+    if (result.skipped.length > 0 || result.invalid.length > 0) {
+      toast.warning(
+        "Algumas etiquetas ainda não estão prontas ou foram ignoradas."
+      );
+    }
+  },
+  onError: (err) =>
+    toast.error(
+      apiErrorMessage(err, "Não foi possível abrir as etiquetas Correios.")
+    ),
+});
+
   function handleOpenSelectedLocalDocuments() {
 if (!selectedLocalOrderIds.length) {
       toast.error("Selecione pelo menos um pedido de entrega local.");
@@ -701,6 +745,19 @@ if (!selectedLocalOrderIds.length) {
 
     localBatchPdfM.mutate(selectedLocalOrderIds);
   }
+
+  function handleOpenSelectedCorreiosLabels() {
+  if (!selectedCorreiosOrderIds.length) {
+    toast.error("Selecione pelo menos um pedido Correios.");
+    return;
+  }
+
+  if (selectedNonCorreiosCount > 0) {
+    toast.warning("Pedidos que não são Correios foram ignorados.");
+  }
+
+  correiosBatchPdfM.mutate(selectedCorreiosOrderIds);
+}
 
   const localDeliveryBulkStatusM = useMutation({
     mutationFn: async (vars: {
@@ -1525,6 +1582,18 @@ if (!selectedLocalOrderIds.length) {
                           ? "Gerando PDF…"
                           : "Abrir documentos locais"}
                       </Button>
+                      <Button
+  type="button"
+  size="sm"
+  variant="outline"
+  className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
+  onClick={handleOpenSelectedCorreiosLabels}
+  disabled={correiosBatchPdfM.isPending || selectedVisibleCount === 0}
+>
+  {correiosBatchPdfM.isPending
+    ? "Abrindo etiquetas…"
+    : "Abrir etiquetas Correios"}
+</Button>
                       <Button
                         type="button"
                         size="sm"
