@@ -369,7 +369,9 @@ export default function AdminOrdersPage() {
   const [onlyTodayLocalDelivery, setOnlyTodayLocalDelivery] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(() => new Set());
   const [globalPauseReason, setGlobalPauseReason] = useState("");
+  const [isGlobalPauseDialogOpen, setIsGlobalPauseDialogOpen] = useState(false);
   const [cityPauseReason, setCityPauseReason] = useState("");
+  const [isCityPauseDialogOpen, setIsCityPauseDialogOpen] = useState(false);
   const [cityDialogTarget, setCityDialogTarget] = useState<{ city: string; state: string } | null>(
     null
   );
@@ -734,29 +736,11 @@ if (!selectedLocalOrderIds.length) {
       const { data } = await api.post(endpoints.adminLocalDelivery.exceptions, body);
       return data;
     },
-    onSuccess: async () => {
-      toast.success("Exceção de entrega local salva.");
-      await localTodayQ.refetch();
-      await ordersQ.refetch();
-    },
-    onError: (err) => {
-      toast.error(
-        apiErrorMessage(err, "Não foi possível salvar a exceção de entrega local.")
-      );
-    },
   });
 
   const deleteLocalDeliveryExceptionM = useMutation({
     mutationFn: async (id: string) => {
       await api.delete(endpoints.adminLocalDelivery.exceptionById(id));
-    },
-    onSuccess: async () => {
-      toast.success("Exceção removida.");
-      await localTodayQ.refetch();
-      await ordersQ.refetch();
-    },
-    onError: (err) => {
-      toast.error(apiErrorMessage(err, "Não foi possível remover a exceção."));
     },
   });
 
@@ -779,29 +763,73 @@ if (!selectedLocalOrderIds.length) {
   }
    const isGlobalPaused = Boolean(localTodayQ.data?.globalException);
 
-  function handlePauseToday() {
+  async function handlePauseToday() {
     if (!localTodayQ.data?.date) return;
-    createLocalDeliveryExceptionM.mutate({
-      date: localTodayQ.data.date,
-      scope: "ALL",
-      action: "PAUSED",
-      reason: globalPauseReason.trim() || undefined,
-    });
-    setGlobalPauseReason("");
+   const reason = globalPauseReason.trim();
+    if (!reason) {
+      toast.error("Informe o motivo da pausa.");
+      return;
+    }
+
+    try {
+      await createLocalDeliveryExceptionM.mutateAsync({
+        date: localTodayQ.data.date,
+        scope: "ALL",
+        action: "PAUSED",
+        reason,
+      });
+      toast.success("Entregas locais de hoje pausadas.");
+      await localTodayQ.refetch();
+      await ordersQ.refetch();
+      setGlobalPauseReason("");
+      setIsGlobalPauseDialogOpen(false);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Não foi possível pausar as entregas locais."));
+    }
   }
 
-  function handlePauseCity() {
+  async function handlePauseCity() {
     if (!localTodayQ.data?.date || !cityDialogTarget) return;
-    createLocalDeliveryExceptionM.mutate({
-      date: localTodayQ.data.date,
-      scope: "CITY",
-      action: "PAUSED",
-      city: cityDialogTarget.city,
-      state: cityDialogTarget.state,
-      reason: cityPauseReason.trim() || undefined,
-    });
-    setCityPauseReason("");
-    setCityDialogTarget(null);
+    const reason = cityPauseReason.trim();
+
+    if (!cityDialogTarget.city || !cityDialogTarget.state) {
+      toast.error("Cidade inválida para pausa.");
+      return;
+    }
+    if (!reason) {
+      toast.error("Informe o motivo da pausa.");
+      return;
+    }
+
+    try {
+      await createLocalDeliveryExceptionM.mutateAsync({
+        date: localTodayQ.data.date,
+        scope: "CITY",
+        action: "PAUSED",
+        city: cityDialogTarget.city,
+        state: cityDialogTarget.state,
+        reason,
+      });
+      toast.success("Cidade pausada para entregas de hoje.");
+      await localTodayQ.refetch();
+      setCityPauseReason("");
+      setCityDialogTarget(null);
+      setIsCityPauseDialogOpen(false);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Não foi possível pausar a cidade."));
+    }
+  }
+
+  async function handleRemovePause(exceptionId: string) {
+    if (!exceptionId) return;
+    try {
+      await deleteLocalDeliveryExceptionM.mutateAsync(exceptionId);
+      toast.success("Pausa removida.");
+      await localTodayQ.refetch();
+      await ordersQ.refetch();
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Não foi possível remover a pausa."));
+    }
   }
   const actingOrderId = (decideM.variables as { orderId?: string } | undefined)?.orderId;
 
@@ -913,11 +941,7 @@ if (!selectedLocalOrderIds.length) {
                             variant="outline"
                             size="sm"
                             className="mt-2 rounded-xl border-amber-300 bg-white"
-                            onClick={() =>
-                              deleteLocalDeliveryExceptionM.mutate(
-                                localTodayQ.data?.globalException?.id ?? ""
-                              )
-                            }
+                            onClick={() => handleRemovePause(localTodayQ.data?.globalException?.id ?? "")}
                             disabled={deleteLocalDeliveryExceptionM.isPending}
                           >
                             Remover pausa
@@ -931,7 +955,17 @@ if (!selectedLocalOrderIds.length) {
                         Controle do dia
                       </p>
                       <div className="flex flex-wrap gap-2">
-                        <AlertDialog>
+                        <AlertDialog
+                          open={isGlobalPauseDialogOpen}
+                          onOpenChange={(open) => {
+                            setIsGlobalPauseDialogOpen(open);
+                            if (!open) {
+                              setGlobalPauseReason("");
+                            } else {
+                              setGlobalPauseReason("");
+                            }
+                          }}
+                        >
                           <AlertDialogTrigger asChild>
                             <Button
                               type="button"
@@ -951,10 +985,16 @@ if (!selectedLocalOrderIds.length) {
                                 hoje da sugestão operacional.
                               </AlertDialogDescription>
                             </AlertDialogHeader>
+                              <div className="space-y-1">
+                              <p className="text-sm font-medium text-zinc-900">
+                                Motivo da pausa <span className="text-red-600">*</span>
+                              </p>
+                              <p className="text-xs text-zinc-500">Campo obrigatório.</p>
+                            </div>
                             <Textarea
                               value={globalPauseReason}
                               onChange={(event) => setGlobalPauseReason(event.target.value)}
-                              placeholder="Motivo (obrigatório)"
+                              placeholder="Ex: chuva forte, feriado, entregador indisponível"
                             />
                             <AlertDialogFooter>
                               <AlertDialogCancel className="rounded-2xl">
@@ -963,7 +1003,10 @@ if (!selectedLocalOrderIds.length) {
                               <AlertDialogAction
                                 className="rounded-2xl"
                                 onClick={handlePauseToday}
-                                disabled={createLocalDeliveryExceptionM.isPending}
+                                disabled={
+                                  createLocalDeliveryExceptionM.isPending ||
+                                  globalPauseReason.trim().length === 0
+                                }
                               >
                                 Confirmar pausa
                               </AlertDialogAction>
@@ -1019,16 +1062,31 @@ if (!selectedLocalOrderIds.length) {
                                       variant="outline"
                                       className="h-6 rounded-lg border-amber-300 bg-white px-2 text-[11px]"
                                       disabled={deleteLocalDeliveryExceptionM.isPending}
-                                      onClick={() =>
-                                        deleteLocalDeliveryExceptionM.mutate(city.exception?.id ?? "")
-                                      }
+                                      onClick={() => handleRemovePause(city.exception?.id ?? "")}
                                     >
                                       Remover pausa
                                     </Button>
                                   ) : null}
                                 </div>
                               ) : (
-                                <AlertDialog>
+                                <AlertDialog
+                                  open={
+                                    isCityPauseDialogOpen &&
+                                    cityDialogTarget?.city === city.city &&
+                                    cityDialogTarget?.state === city.state
+                                  }
+                                  onOpenChange={(open) => {
+                                    if (open) {
+                                      setCityDialogTarget({ city: city.city, state: city.state });
+                                      setCityPauseReason("");
+                                      setIsCityPauseDialogOpen(true);
+                                      return;
+                                    }
+                                    setCityPauseReason("");
+                                    setCityDialogTarget(null);
+                                    setIsCityPauseDialogOpen(false);
+                                  }}
+                                >
                                   <AlertDialogTrigger asChild>
                                     <Button
                                       type="button"
@@ -1052,13 +1110,19 @@ if (!selectedLocalOrderIds.length) {
                                         entregas desta cidade da sugestão operacional de hoje.
                                       </AlertDialogDescription>
                                     </AlertDialogHeader>
+                                      <div className="space-y-1">
+                                      <p className="text-sm font-medium text-zinc-900">
+                                        Motivo da pausa <span className="text-red-600">*</span>
+                                      </p>
+                                      <p className="text-xs text-zinc-500">Campo obrigatório.</p>
+                                    </div>
                                     <Textarea
                                       value={cityDialogTarget?.city === city.city &&
                                       cityDialogTarget?.state === city.state
                                         ? cityPauseReason
                                         : ""}
                                       onChange={(event) => setCityPauseReason(event.target.value)}
-                                      placeholder="Motivo (opcional)"
+                                      placeholder="Ex: chuva forte, feriado, entregador indisponível"
                                     />
                                     <AlertDialogFooter>
                                       <AlertDialogCancel
@@ -1066,6 +1130,7 @@ if (!selectedLocalOrderIds.length) {
                                         onClick={() => {
                                           setCityPauseReason("");
                                           setCityDialogTarget(null);
+                                          setIsCityPauseDialogOpen(false);
                                         }}
                                       >
                                         Cancelar
@@ -1073,7 +1138,10 @@ if (!selectedLocalOrderIds.length) {
                                       <AlertDialogAction
                                         className="rounded-2xl"
                                         onClick={handlePauseCity}
-                                        disabled={createLocalDeliveryExceptionM.isPending}
+                                          disabled={
+                                          createLocalDeliveryExceptionM.isPending ||
+                                          cityPauseReason.trim().length === 0
+                                        }
                                       >
                                         Confirmar pausa
                                       </AlertDialogAction>
@@ -1413,7 +1481,13 @@ if (!selectedLocalOrderIds.length) {
                           </AlertDialogTitle>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel className="rounded-2xl">
+                          <AlertDialogCancel
+                            className="rounded-2xl"
+                            onClick={() => {
+                              setGlobalPauseReason("");
+                              setIsGlobalPauseDialogOpen(false);
+                              }}
+                              >
                             Cancelar
                           </AlertDialogCancel>
                           <AlertDialogAction
