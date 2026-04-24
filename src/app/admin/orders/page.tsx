@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -212,7 +212,6 @@ function matchesDeliveryFilter(
   return resolveDeliveryType(order) === filter;
 }
 
-
 function StatusBadge({
   label,
   value,
@@ -240,12 +239,14 @@ function StatusBadge({
 export default function AdminOrdersPage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
-    const [deliveryFilter, setDeliveryFilter] = useState<
+  const [deliveryFilter, setDeliveryFilter] = useState<
     "ALL" | "LOCAL" | "CORREIOS" | "UNKNOWN"
   >("ALL");
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(() => new Set());
   const [recentActions, setRecentActions] = useState<
     Record<string, { action: "approve" | "reject"; at: number; order: Order }>
   >({});
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
   const ordersQ = useQuery({
     queryKey: ["orders", { take: 100 }],
     queryFn: async () => {
@@ -316,7 +317,7 @@ export default function AdminOrdersPage() {
     return brl(total) ?? "R$ 0,00";
   }, [pending]);
 
-    const pendingFiltered = useMemo(
+  const pendingFiltered = useMemo(
     () => pending.filter((order) => matchesDeliveryFilter(order, deliveryFilter)),
     [pending, deliveryFilter]
   );
@@ -342,6 +343,74 @@ export default function AdminOrdersPage() {
       : activeTab === "approved"
         ? approvedRecentFiltered
         : rejectedRecentFiltered;
+
+        const displayedOrderIds = useMemo(
+    () => displayedOrders.map((order) => order.id),
+    [displayedOrders]
+  );
+  const selectedVisibleCount = useMemo(
+    () => displayedOrderIds.filter((id) => selectedOrderIds.has(id)).length,
+    [displayedOrderIds, selectedOrderIds]
+  );
+  const allDisplayedSelected =
+    displayedOrderIds.length > 0 && displayedOrderIds.every((id) => selectedOrderIds.has(id));
+  const someDisplayedSelected = displayedOrderIds.some((id) => selectedOrderIds.has(id));
+
+  function toggleOrderSelection(orderId: string) {
+    setSelectedOrderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(orderId)) {
+        next.delete(orderId);
+      } else {
+        next.add(orderId);
+      }
+      return next;
+    });
+  }
+
+  function toggleSelectDisplayedOrders() {
+    setSelectedOrderIds((prev) => {
+      const next = new Set(prev);
+
+      if (allDisplayedSelected) {
+        for (const id of displayedOrderIds) {
+          next.delete(id);
+        }
+      } else {
+        for (const id of displayedOrderIds) {
+          next.add(id);
+        }
+      }
+
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedOrderIds(new Set());
+  }
+
+  useEffect(() => {
+    const visible = new Set(displayedOrderIds);
+
+    setSelectedOrderIds((prev) => {
+      const next = new Set<string>();
+
+      for (const id of prev) {
+        if (visible.has(id)) {
+          next.add(id);
+        }
+      }
+
+      if (next.size === prev.size) return prev;
+      return next;
+    });
+  }, [displayedOrderIds]);
+
+  useEffect(() => {
+    if (!selectAllRef.current) return;
+    selectAllRef.current.indeterminate = !allDisplayedSelected && someDisplayedSelected;
+  }, [allDisplayedSelected, someDisplayedSelected]);
 
   const decideM = useMutation({
     mutationFn: async (vars: { orderId: string; action: "approve" | "reject" }) => {
@@ -495,6 +564,39 @@ export default function AdminOrdersPage() {
                 </p>
               </div>
 
+                            <div className="mb-3 rounded-xl border border-zinc-200/80 bg-zinc-50/80 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 sm:text-sm">
+                  <label className="inline-flex items-center gap-2 text-zinc-800">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-zinc-300"
+                      checked={allDisplayedSelected}
+                      onChange={toggleSelectDisplayedOrders}
+                      disabled={displayedOrderIds.length === 0}
+                    />
+                    <span>Selecionar todos exibidos</span>
+                  </label>
+                  <span className="text-zinc-500">{selectedVisibleCount} selecionados</span>
+                  {selectedVisibleCount > 0 ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
+                        onClick={clearSelection}
+                      >
+                        Limpar seleção
+                      </Button>
+                      <span className="text-xs text-zinc-500">
+                        Ações em lote serão adicionadas na próxima etapa.
+                      </span>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+
               {ordersQ.isLoading ? (
                 <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-5 text-sm text-zinc-600">
                   Carregando pedidos…
@@ -530,6 +632,13 @@ export default function AdminOrdersPage() {
                         <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
                           <div className="min-w-0 space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
+                                <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-zinc-300"
+                                checked={selectedOrderIds.has(o.id)}
+                                onChange={() => toggleOrderSelection(o.id)}
+                                aria-label={`Selecionar pedido ${o.id}`}
+                              />
                               <h2 className="text-sm font-black tracking-tight text-zinc-950">
                                 Pedido #{o.id.slice(0, 8)}
                               </h2>
