@@ -204,6 +204,14 @@ function getDeliveryBadgeMeta(deliveryType: "LOCAL" | "CORREIOS" | "UNKNOWN") {
   };
 }
 
+function matchesDeliveryFilter(
+  order: Order,
+  filter: "ALL" | "LOCAL" | "CORREIOS" | "UNKNOWN"
+) {
+  if (filter === "ALL") return true;
+  return resolveDeliveryType(order) === filter;
+}
+
 
 function StatusBadge({
   label,
@@ -232,6 +240,9 @@ function StatusBadge({
 export default function AdminOrdersPage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
+    const [deliveryFilter, setDeliveryFilter] = useState<
+    "ALL" | "LOCAL" | "CORREIOS" | "UNKNOWN"
+  >("ALL");
   const [recentActions, setRecentActions] = useState<
     Record<string, { action: "approve" | "reject"; at: number; order: Order }>
   >({});
@@ -304,6 +315,33 @@ export default function AdminOrdersPage() {
 
     return brl(total) ?? "R$ 0,00";
   }, [pending]);
+
+    const pendingFiltered = useMemo(
+    () => pending.filter((order) => matchesDeliveryFilter(order, deliveryFilter)),
+    [pending, deliveryFilter]
+  );
+  const approvedRecentFiltered = useMemo(
+    () => approvedRecent.filter((order) => matchesDeliveryFilter(order, deliveryFilter)),
+    [approvedRecent, deliveryFilter]
+  );
+  const rejectedRecentFiltered = useMemo(
+    () => rejectedRecent.filter((order) => matchesDeliveryFilter(order, deliveryFilter)),
+    [rejectedRecent, deliveryFilter]
+  );
+
+  const currentTabOrders =
+    activeTab === "pending"
+      ? pending
+      : activeTab === "approved"
+        ? approvedRecent
+        : rejectedRecent;
+
+  const displayedOrders =
+    activeTab === "pending"
+      ? pendingFiltered
+      : activeTab === "approved"
+        ? approvedRecentFiltered
+        : rejectedRecentFiltered;
 
   const decideM = useMutation({
     mutationFn: async (vars: { orderId: string; action: "approve" | "reject" }) => {
@@ -380,7 +418,7 @@ export default function AdminOrdersPage() {
             </CardHeader>
 
             <CardContent className="p-4 sm:p-5">
-                            <div className="mb-4 flex flex-wrap gap-2">
+                <div className="mb-4 flex flex-wrap gap-2">
                 <Button
                   type="button"
                   size="sm"
@@ -410,6 +448,53 @@ export default function AdminOrdersPage() {
                 </Button>
               </div>
 
+                            <div className="mb-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Tipo de entrega
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={deliveryFilter === "ALL" ? "default" : "outline"}
+                    className="rounded-2xl"
+                    onClick={() => setDeliveryFilter("ALL")}
+                  >
+                    Todos
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={deliveryFilter === "LOCAL" ? "default" : "outline"}
+                    className="rounded-2xl"
+                    onClick={() => setDeliveryFilter("LOCAL")}
+                  >
+                    Entrega local
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={deliveryFilter === "CORREIOS" ? "default" : "outline"}
+                    className="rounded-2xl"
+                    onClick={() => setDeliveryFilter("CORREIOS")}
+                  >
+                    Correios
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={deliveryFilter === "UNKNOWN" ? "default" : "outline"}
+                    className="rounded-2xl"
+                    onClick={() => setDeliveryFilter("UNKNOWN")}
+                  >
+                    Não identificado
+                  </Button>
+                </div>
+                <p className="mt-2 text-xs text-zinc-500">
+                  Exibindo {displayedOrders.length} pedido(s) neste filtro.
+                </p>
+              </div>
+
               {ordersQ.isLoading ? (
                 <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-5 text-sm text-zinc-600">
                   Carregando pedidos…
@@ -418,21 +503,20 @@ export default function AdminOrdersPage() {
                 <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700">
                   {apiErrorMessage(ordersQ.error, "Erro ao carregar pedidos.")}
                 </div>
-              ) : activeTab === "pending" && pending.length === 0 ? (
+              ) : currentTabOrders.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
-                  Nenhum pedido pendente no momento. Confira as abas de Aprovados/Reprovados recentes para rastrear movimentações.
-                </div>
-              ) : activeTab === "approved" && approvedRecent.length === 0 ? (
+                  {activeTab === "pending"
+                    ? "Nenhum pedido pendente no momento. Confira as abas de Aprovados/Reprovados recentes para rastrear movimentações."
+                    : activeTab === "approved"
+                      ? "Ainda não há pedidos em Aprovados recentemente."
+                      : "Ainda não há pedidos em Reprovados recentemente."}                </div>
+              ) : displayedOrders.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
-                  Ainda não há pedidos em Aprovados recentemente.
-                </div>
-              ) : activeTab === "rejected" && rejectedRecent.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
-                  Ainda não há pedidos em Reprovados recentemente.
+                  Nenhum pedido encontrado para este tipo de entrega neste filtro.
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {(activeTab === "pending" ? pending : activeTab === "approved" ? approvedRecent : rejectedRecent).map((o) => {
+                  {displayedOrders.map((o) => {
                     const total = brl(o.total);
                     const busyThis = decideM.isPending && actingOrderId === o.id;
                     const orderStatus = o.orderStatus ?? o.status ?? null;
