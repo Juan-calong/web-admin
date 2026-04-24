@@ -83,8 +83,39 @@ function text(value?: string | number | null) {
   return v || "Não informado";
 }
 
+function optionalText(value?: string | number | null) {
+  const v = String(value ?? "").trim();
+  return v || "";
+}
+
 function mmToPt(mm: number) {
   return mm * 2.8346456693;
+}
+
+function formatPrintedDate(value?: string | null) {
+  const raw = String(value ?? "").trim();
+  if (!raw) {
+    return "Não informado";
+  }
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    return raw;
+  }
+
+  const hasTime = /\d{2}:\d{2}/.test(raw);
+
+  if (!hasTime) {
+    return new Intl.DateTimeFormat("pt-BR").format(date);
+  }
+
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 async function fetchLocalDeliveryDocuments(orderId: string) {
@@ -105,128 +136,136 @@ function openPdfBlob(blob: Blob) {
 }
 
 const unifiedStyles = StyleSheet.create({
-page: {
-  width: mmToPt(100),
-  height: mmToPt(150),
-  padding: 7,
-  fontFamily: "Helvetica",
-  fontSize: 8,
-  color: "#000000",
-  backgroundColor: "#ffffff",
-},
-
-  box: {
-    borderWidth: 1,
-    borderColor: "#000000",
-    minHeight: "100%",
+  page: {
+    width: mmToPt(80),
+    height: mmToPt(100),
+    paddingTop: 6,
+    paddingHorizontal: 6,
+    paddingBottom: 5,
+    fontFamily: "Helvetica",
+    fontSize: 7.4,
+    color: "#000000",
+    backgroundColor: "#ffffff",
   },
 
   header: {
-    paddingVertical: 7,
-    paddingHorizontal: 7,
-    borderBottomWidth: 1.5,
-    borderBottomColor: "#000000",
-    textAlign: "center",
+    alignItems: "center",
+    marginBottom: 2,
   },
 
-  title: {
+  headerTitle: {
     fontSize: 15,
     fontFamily: "Helvetica-Bold",
-    textAlign: "center",
-    letterSpacing: 0.3,
+    letterSpacing: 0.8,
+    lineHeight: 1.05,
   },
 
-  brand: {
-    marginTop: 2,
-    fontSize: 8.5,
+  headerSubtitle: {
+    marginTop: 1,
+    fontSize: 6.8,
     fontFamily: "Helvetica-Bold",
-    textAlign: "center",
+    letterSpacing: 1,
   },
 
-section: {
-  paddingVertical: 5,
-  paddingHorizontal: 7,
-  borderBottomWidth: 1,
-  borderBottomColor: "#000000",
-},
+  separatorStrong: {
+    borderBottomWidth: 1.5,
+    borderBottomColor: "#000000",
+    marginVertical: 3,
+  },
 
-compactSection: {
-  paddingVertical: 4,
-  paddingHorizontal: 7,
-  borderBottomWidth: 1,
-  borderBottomColor: "#000000",
-},
+  separator: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#000000",
+    marginVertical: 2.5,
+  },
 
-  sectionTitle: {
-    fontSize: 7.5,
+  block: {
+    marginBottom: 1,
+  },
+
+  blockTitle: {
+    fontSize: 6.8,
     fontFamily: "Helvetica-Bold",
     textTransform: "uppercase",
-    marginBottom: 3,
-    letterSpacing: 0.2,
+    letterSpacing: 0.3,
+    marginBottom: 1.5,
   },
 
   orderNumber: {
-    fontSize: 12,
+    fontSize: 10.5,
     fontFamily: "Helvetica-Bold",
-    lineHeight: 1.15,
+    lineHeight: 1.1,
+    marginBottom: 1,
   },
 
   customerName: {
-    fontSize: 12,
+    fontSize: 9.3,
+    fontFamily: "Helvetica-Bold",
+    lineHeight: 1.15,
+    marginBottom: 1,
+  },
+
+  phone: {
+    fontSize: 8.8,
     fontFamily: "Helvetica-Bold",
     lineHeight: 1.15,
   },
 
-line: {
-  fontSize: 8,
-  lineHeight: 1.25,
-},
+  line: {
+    fontSize: 7.4,
+    lineHeight: 1.2,
+    marginBottom: 0.7,
+  },
 
-strongLine: {
-  fontSize: 8.5,
-  fontFamily: "Helvetica-Bold",
-  lineHeight: 1.25,
-},
+  productsTitle: {
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.35,
+    marginBottom: 2,
+  },
 
   itemRow: {
     flexDirection: "row",
-    gap: 4,
-    marginBottom: 2.5,
+    alignItems: "flex-start",
+    marginBottom: 2,
+  },
+
+  itemText: {
+    flex: 1,
+    fontSize: 7,
+    lineHeight: 1.2,
+    textTransform: "uppercase",
+    marginRight: 4,
   },
 
   checkbox: {
-    width: 14,
-    fontSize: 8.5,
+    width: 12,
+    fontSize: 8,
+    fontFamily: "Helvetica-Bold",
+    textAlign: "right",
+  },
+
+  totals: {
+    marginTop: 1,
+    fontSize: 7.2,
     fontFamily: "Helvetica-Bold",
   },
 
-itemText: {
-  flex: 1,
-  fontSize: 7.8,
-  lineHeight: 1.2,
-},
-
-total: {
-  marginTop: 4,
-  paddingTop: 4,
-  borderTopWidth: 1,
-  borderTopColor: "#000000",
-  fontSize: 8.5,
-  fontFamily: "Helvetica-Bold",
-},
-
-  signatureGrid: {
-    flexDirection: "row",
-    gap: 6,
-    marginTop: 5,
+  compactFields: {
+    marginTop: 1,
+    gap: 1.5,
   },
 
-  signatureBox: {
-    flex: 1,
-    borderTopWidth: 1,
-    borderTopColor: "#000000",
-    paddingTop: 3,
-    fontSize: 7.5,
+  footerLine: {
+    fontSize: 7,
+    fontFamily: "Helvetica-Bold",
+  },
+
+  footerSmallText: {
+    marginTop: 1,
+    fontSize: 6.4,
+    lineHeight: 1.2,
   },
 });
 
@@ -240,92 +279,82 @@ function LocalDeliveryPage({ docs }: { docs: LocalDeliveryDocuments }) {
   const address = separation.address ?? label.address;
   const deliveryNotes = separation.deliveryNotes ?? label.deliveryNotes;
 
+    const addressLine1 = [optionalText(address?.street), optionalText(address?.number)]
+    .filter(Boolean)
+    .join(", ");
+  const addressLine2 = optionalText(address?.complement);
+  const cityState = [optionalText(address?.city), optionalText(address?.state)]
+    .filter(Boolean)
+    .join(" - ");
+
+  const shouldUseCompactReceipt = items.length > 6 || Boolean(deliveryNotes);
+
   return (
-    <Page size={[mmToPt(100), mmToPt(150)]} style={unifiedStyles.page}>
-      <View style={unifiedStyles.box}>
-          <View style={unifiedStyles.header} wrap={false}>
-            <Text style={unifiedStyles.title}>ENTREGA LOCAL</Text>
-            <Text style={unifiedStyles.brand}>{label.brand || "KEYFI"}</Text>
+    <Page size={[mmToPt(80), mmToPt(100)]} style={unifiedStyles.page}>
+      <View style={unifiedStyles.header} wrap={false}>
+        <Text style={unifiedStyles.headerTitle}>KEYFI</Text>
+        <Text style={unifiedStyles.headerSubtitle}>PROFESSIONAL</Text>
+      </View>
+
+      <View style={unifiedStyles.separatorStrong} />
+      <View style={unifiedStyles.block} wrap={false}>
+        <Text style={unifiedStyles.blockTitle}>Pedido</Text>
+        <Text style={unifiedStyles.orderNumber}>{text(label.orderNumber)}</Text>
+        <Text style={unifiedStyles.line}>DATA: {formatPrintedDate(label.printedDate)}</Text>
+      </View>
+
+        <View style={unifiedStyles.separator} />
+
+      <View style={unifiedStyles.block} wrap={false}>
+        <Text style={unifiedStyles.blockTitle}>Cliente</Text>
+        <Text style={unifiedStyles.customerName}>{text(customer?.name)}</Text>
+        <Text style={unifiedStyles.blockTitle}>Telefone</Text>
+        <Text style={unifiedStyles.phone}>{text(customer?.phone)}</Text>
+      </View>
+
+      <View style={unifiedStyles.separator} />
+
+      <View style={unifiedStyles.block} wrap={false}>
+        <Text style={unifiedStyles.blockTitle}>Endereço de entrega</Text>
+        <Text style={unifiedStyles.line}>{addressLine1 || "Não informado"}</Text>
+        {addressLine2 ? <Text style={unifiedStyles.line}>{addressLine2}</Text> : null}
+        <Text style={unifiedStyles.line}>{text(address?.neighborhood)}</Text>
+        <Text style={unifiedStyles.line}>{cityState || "Não informado"}</Text>
+        <Text style={unifiedStyles.line}>CEP: {text(address?.zipCode)}</Text>
+      </View>
+      <View style={unifiedStyles.separatorStrong} />
+
+      <View style={unifiedStyles.block}>
+        <Text style={unifiedStyles.productsTitle}>Produtos</Text>
+
+        {items.map((item) => (
+          <View key={item.id} style={unifiedStyles.itemRow}>
+            <Text style={unifiedStyles.itemText}>
+              {item.quantity}x {item.name}
+            </Text>
+            <Text style={unifiedStyles.checkbox}>[ ]</Text>
           </View>
+         ))}
 
-          <View style={unifiedStyles.compactSection} wrap={false}>
-            <Text style={unifiedStyles.sectionTitle}>Pedido</Text>
-            <Text style={unifiedStyles.orderNumber}>
-              {text(label.orderNumber)}
+        <Text style={unifiedStyles.totals}>TOTAL DE ITENS: {totals.itemsQuantity}</Text>
+      </View>
+
+      <View style={unifiedStyles.separator} />
+
+      <View style={unifiedStyles.compactFields} wrap={false}>
+        <Text style={unifiedStyles.footerLine}>SEPARADO ________</Text>
+        <Text style={unifiedStyles.footerLine}>CONFERIDO _______</Text>
+        {shouldUseCompactReceipt ? (
+          <Text style={unifiedStyles.footerLine}>RECEBIDO/ASSINATURA __________________</Text>
+        ) : (
+          <>
+            <Text style={unifiedStyles.footerLine}>COMPROVANTE DE ENTREGA</Text>
+            <Text style={unifiedStyles.footerSmallText}>
+              Recebi o pedido em perfeitas condições.
             </Text>
-            <Text style={unifiedStyles.line}>
-              Data: {text(label.printedDate)}
-            </Text>
-          </View>
-
-          <View style={unifiedStyles.compactSection} wrap={false}>
-            <Text style={unifiedStyles.sectionTitle}>Cliente</Text>
-            <Text style={unifiedStyles.customerName}>
-              {text(customer?.name)}
-            </Text>
-            <Text style={unifiedStyles.strongLine}>
-              Telefone: {text(customer?.phone)}
-            </Text>
-          </View>
-
-          <View style={unifiedStyles.section} wrap={false}>
-            <Text style={unifiedStyles.sectionTitle}>Endereço</Text>
-            <Text style={unifiedStyles.line}>
-              {text(address?.street)}, {text(address?.number)}
-            </Text>
-
-            {address?.complement ? (
-              <Text style={unifiedStyles.line}>
-                Complemento: {address.complement}
-              </Text>
-            ) : null}
-
-            <Text style={unifiedStyles.line}>
-              Bairro: {text(address?.neighborhood)}
-            </Text>
-            <Text style={unifiedStyles.line}>
-              {text(address?.city)} - {text(address?.state)}
-            </Text>
-            <Text style={unifiedStyles.line}>
-              CEP: {text(address?.zipCode)}
-            </Text>
-          </View>
-
-          {deliveryNotes ? (
-            <View style={unifiedStyles.compactSection} wrap={false}>
-              <Text style={unifiedStyles.sectionTitle}>Observação</Text>
-              <Text style={unifiedStyles.line}>{deliveryNotes}</Text>
-            </View>
-          ) : null}
-
-          <View style={unifiedStyles.section}>
-            <Text style={unifiedStyles.sectionTitle}>
-              Produtos para separar
-            </Text>
-
-            {items.map((item) => (
-              <View key={item.id} style={unifiedStyles.itemRow}>
-                <Text style={unifiedStyles.checkbox}>[ ]</Text>
-<Text style={unifiedStyles.itemText}>
-  {item.quantity}x {item.name}
-</Text>
-              </View>
-            ))}
-
-            <Text style={unifiedStyles.total}>
-              Total de itens: {totals.itemsQuantity}
-            </Text>
-          </View>
-          
-
-          <View style={unifiedStyles.compactSection} wrap={false}>
-            <Text style={unifiedStyles.sectionTitle}>Conferência</Text>
-
-            <View style={unifiedStyles.signatureGrid}>
-              <Text style={unifiedStyles.signatureBox}>Separado por</Text>
-              <Text style={unifiedStyles.signatureBox}>Conferido por</Text>
-            </View>
-          </View>
+            <Text style={unifiedStyles.footerLine}>ASSINATURA __________________</Text>
+          </>
+        )}
       </View>
     </Page>
   );
