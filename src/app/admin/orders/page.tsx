@@ -9,6 +9,10 @@ import {
   CheckCircle2,
   XCircle,
   Clock3,
+  ChevronDown,
+  ChevronUp,
+  MapPin,
+  AlertTriangle,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -38,6 +42,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 
 type Order = {
   id: string;
@@ -367,6 +372,8 @@ export default function AdminOrdersPage() {
   const [localStatusFilter, setLocalStatusFilter] =
     useState<LocalStatusFilter>("ALL");
   const [onlyTodayLocalDelivery, setOnlyTodayLocalDelivery] = useState(false);
+  const [todayPanelOpen, setTodayPanelOpen] = useState(false);
+  const [todayCitySearch, setTodayCitySearch] = useState("");
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(() => new Set());
   const [globalPauseReason, setGlobalPauseReason] = useState("");
   const [isGlobalPauseDialogOpen, setIsGlobalPauseDialogOpen] = useState(false);
@@ -761,7 +768,15 @@ if (!selectedLocalOrderIds.length) {
       status,
     });
   }
-   const isGlobalPaused = Boolean(localTodayQ.data?.globalException);
+  const isGlobalPaused = Boolean(localTodayQ.data?.globalException);
+  const todayCities = localTodayQ.data?.cities ?? [];
+  const normalizedTodayCitySearch = todayCitySearch.trim().toLowerCase();
+  const visibleTodayCities = useMemo(() => {
+    if (!normalizedTodayCitySearch) return todayCities;
+    return todayCities.filter((city) =>
+      `${city.city}/${city.state}`.toLowerCase().includes(normalizedTodayCitySearch)
+    );
+  }, [todayCities, normalizedTodayCitySearch]);
 
   async function handlePauseToday() {
     if (!localTodayQ.data?.date) return;
@@ -833,6 +848,52 @@ if (!selectedLocalOrderIds.length) {
   }
   const actingOrderId = (decideM.variables as { orderId?: string } | undefined)?.orderId;
 
+    const baseFilterClass =
+    "rounded-xl border px-3 text-xs sm:text-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50";
+  const tabClass = (isActive: boolean) =>
+    cn(
+      baseFilterClass,
+      isActive
+        ? "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800"
+        : "border-zinc-200 bg-white text-zinc-700"
+    );
+  const deliveryClass = (
+    isActive: boolean,
+    tone: "neutral" | "local" | "correios" | "unknown"
+  ) =>
+    cn(
+      baseFilterClass,
+      !isActive && "border-zinc-200 bg-white text-zinc-700",
+      isActive &&
+        (tone === "local"
+          ? "border-violet-200 bg-violet-50 text-violet-800"
+          : tone === "correios"
+            ? "border-amber-200 bg-amber-50 text-amber-800"
+            : tone === "unknown"
+              ? "border-slate-200 bg-slate-100 text-slate-800"
+              : "border-zinc-300 bg-zinc-100 text-zinc-900")
+    );
+  const localStatusClass = (
+    isActive: boolean,
+    tone: "all" | "pending" | "packed" | "route" | "delivered" | "problem"
+  ) =>
+    cn(
+      baseFilterClass,
+      !isActive && "border-zinc-200 bg-white text-zinc-700",
+      isActive &&
+        (tone === "pending"
+          ? "border-amber-200 bg-amber-50 text-amber-900"
+          : tone === "packed"
+            ? "border-sky-200 bg-sky-50 text-sky-900"
+            : tone === "route"
+              ? "border-violet-200 bg-violet-50 text-violet-900"
+              : tone === "delivered"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                : tone === "problem"
+                  ? "border-red-200 bg-red-50 text-red-900"
+                  : "border-zinc-300 bg-zinc-100 text-zinc-900")
+    );
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#fafafa_0%,#ffffff_45%,#f4f4f5_100%)]">
       <div className="mx-auto w-full max-w-[1600px] space-y-5 px-3 py-4 sm:px-4 lg:px-6 lg:py-6">
@@ -860,350 +921,407 @@ if (!selectedLocalOrderIds.length) {
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
           <div className="space-y-4">
             <Card className="rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
-              <CardHeader className="border-b border-zinc-100 pb-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-xl font-bold text-zinc-950">
-                      Entregas locais de hoje
-                    </CardTitle>
-                    <CardDescription className="text-sm text-zinc-500">
-                      Hoje:{" "}
-                      {localTodayQ.data
-                        ? `${localTodayQ.data.weekdayLabel ?? localTodayQ.data.date} • ${formatDateLabel(localTodayQ.data.date)}`
-                        : "—"}
-                    </CardDescription>
+              <CardHeader className="border-b border-zinc-100 pb-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-2">
+                    <div>
+                      <CardTitle className="text-xl font-bold text-zinc-950">
+                        Entregas locais de hoje
+                      </CardTitle>
+                      <CardDescription className="text-sm text-zinc-500">
+                        Hoje:{" "}
+                        {localTodayQ.data
+                          ? `${localTodayQ.data.weekdayLabel ?? localTodayQ.data.date} • ${formatDateLabel(localTodayQ.data.date)}`
+                          : "—"}
+                      </CardDescription>
+                    </div>
+                    <p className="text-sm font-semibold text-zinc-900">
+                      {(localTodayQ.data?.totals?.ordersCount ?? 0).toString()} pedidos em{" "}
+                      {(localTodayQ.data?.totals?.citiesCount ?? 0).toString()} cidade(s)
+                    </p>
+                    <div className="grid grid-cols-2 gap-1 text-[11px] font-medium sm:grid-cols-4">
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-amber-800">
+                        Aguardando: {localTodayQ.data?.totals?.pendingSeparation ?? 0}
+                      </span>
+                      <span className="rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-sky-800">
+                        Empacotados: {localTodayQ.data?.totals?.packed ?? 0}
+                      </span>
+                      <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-violet-800">
+                        Em rota: {localTodayQ.data?.totals?.outForDelivery ?? 0}
+                      </span>
+                      <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-red-800">
+                        Problema: {localTodayQ.data?.totals?.problem ?? 0}
+                      </span>
+                    </div>
                   </div>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="rounded-2xl"
-                    onClick={() => localTodayQ.refetch()}
-                    disabled={localTodayQ.isFetching}
+                    className="rounded-xl border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                    onClick={() => setTodayPanelOpen((prev) => !prev)}
                   >
-                    <RefreshCw
-                      className={cn("mr-2 h-4 w-4", localTodayQ.isFetching && "animate-spin")}
-                    />
-                    Atualizar painel
+                    {todayPanelOpen ? (
+                      <ChevronUp className="mr-1.5 h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="mr-1.5 h-4 w-4" />
+                    )}
+                    {todayPanelOpen ? "Recolher" : "Expandir"}
                   </Button>
                 </div>
               </CardHeader>
 
-              <CardContent className="space-y-3 p-4 sm:p-5">
-                {localTodayQ.isLoading ? (
-                  <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-5 text-sm text-zinc-600">
-                    Carregando entregas de hoje...
-                  </div>
-                ) : localTodayQ.isError ? (
-                  <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700">
-                    <p>Não foi possível carregar entregas locais de hoje.</p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="mt-3 rounded-xl border-red-200 bg-white"
-                      onClick={() => localTodayQ.refetch()}
-                    >
-                      Atualizar
-                    </Button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid gap-2 rounded-2xl border border-zinc-200/80 bg-zinc-50/80 p-3 text-sm sm:grid-cols-2">
-                      <p className="font-semibold text-zinc-900">
-                        {(localTodayQ.data?.totals?.ordersCount ?? 0).toString()} pedidos em{" "}
-                        {(localTodayQ.data?.totals?.citiesCount ?? 0).toString()} cidade(s)
-                      </p>
-                      <div className="grid grid-cols-2 gap-1 text-xs text-zinc-700">
-                        <span>Aguardando: {localTodayQ.data?.totals?.pendingSeparation ?? 0}</span>
-                        <span>Empacotados: {localTodayQ.data?.totals?.packed ?? 0}</span>
-                        <span>Em rota: {localTodayQ.data?.totals?.outForDelivery ?? 0}</span>
-                        <span>Entregues: {localTodayQ.data?.totals?.delivered ?? 0}</span>
-                        <span>Problema: {localTodayQ.data?.totals?.problem ?? 0}</span>
-                      </div>
+              {todayPanelOpen ? (
+                <CardContent className="space-y-3 p-4 sm:p-5">
+                  {localTodayQ.isLoading ? (
+                    <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-5 text-sm text-zinc-600">
+                      Carregando entregas de hoje...
                     </div>
+                  ) : localTodayQ.isError ? (
+                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-5 text-sm text-red-700">
+                      <p>Não foi possível carregar entregas locais de hoje.</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="mt-3 rounded-xl border-red-200 bg-white"
+                        onClick={() => localTodayQ.refetch()}
+                      >
+                        Atualizar
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="rounded-xl border border-zinc-200/80 bg-zinc-50/80 p-3">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Resumo do dia
+                        </p>
+                        <div className="grid gap-2 text-xs sm:grid-cols-3 lg:grid-cols-6">
+                          <div className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5">Pedidos: {localTodayQ.data?.totals?.ordersCount ?? 0}</div>
+                          <div className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5">Cidades: {localTodayQ.data?.totals?.citiesCount ?? 0}</div>
+                          <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900">Aguardando: {localTodayQ.data?.totals?.pendingSeparation ?? 0}</div>
+                          <div className="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1.5 text-sky-900">Empacotados: {localTodayQ.data?.totals?.packed ?? 0}</div>
+                          <div className="rounded-lg border border-violet-200 bg-violet-50 px-2 py-1.5 text-violet-900">Em rota: {localTodayQ.data?.totals?.outForDelivery ?? 0}</div>
+                          <div className="rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 text-red-900">Problema: {localTodayQ.data?.totals?.problem ?? 0}</div>
+                        </div>
+                      </div>
+                      {isGlobalPaused ? (
+                        <div className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+                          <p className="font-semibold">
+                            <AlertTriangle className="mr-1 inline h-4 w-4" />
+                            Entregas locais de hoje pausadas
+                            {localTodayQ.data?.globalException?.reason
+                              ? `: ${localTodayQ.data.globalException.reason}`
+                              : "."}
+                          </p>
+                          <p className="mt-1 text-xs">
+                            As entregas locais de hoje estão pausadas. Remova a pausa para voltar a
+                            sugerir pedidos.
+                          </p>
+                          {localTodayQ.data?.globalException?.id ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="mt-2 rounded-xl border-red-300 bg-white text-red-700 hover:bg-red-100"
+                              onClick={() => handleRemovePause(localTodayQ.data?.globalException?.id ?? "")}
+                              disabled={deleteLocalDeliveryExceptionM.isPending}
+                            >
+                              Remover pausa
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
 
-                                       {isGlobalPaused ? (
-                      <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                        <p className="font-semibold">
-                          Entregas locais de hoje pausadas
-                          {localTodayQ.data?.globalException?.reason
-                            ? `: ${localTodayQ.data.globalException.reason}`
-                            : "."}
+                      <div className="rounded-xl border border-zinc-200/80 bg-white px-3 py-2 text-sm">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Controle do dia
                         </p>
-                        <p className="mt-1 text-xs">
-                          As entregas locais de hoje estão pausadas. Remova a pausa para voltar a
-                          sugerir pedidos.
-                        </p>
-                        {localTodayQ.data?.globalException?.id ? (
+                        <div className="flex flex-wrap gap-2">
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="mt-2 rounded-xl border-amber-300 bg-white"
-                            onClick={() => handleRemovePause(localTodayQ.data?.globalException?.id ?? "")}
-                            disabled={deleteLocalDeliveryExceptionM.isPending}
+                            className="rounded-xl border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100"
+                            onClick={() => localTodayQ.refetch()}
+                            disabled={localTodayQ.isFetching}
                           >
-                            Remover pausa
-                          </Button>
-                        ) : null}
-                      </div>
-                    ) : null}
-
-                    <div className="rounded-xl border border-zinc-200/80 bg-white px-3 py-2 text-sm">
-                      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                        Controle do dia
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <AlertDialog
-                          open={isGlobalPauseDialogOpen}
-                          onOpenChange={(open) => {
-                            setIsGlobalPauseDialogOpen(open);
-                            if (!open) {
-                              setGlobalPauseReason("");
-                            } else {
-                              setGlobalPauseReason("");
-                            }
-                          }}
-                        >
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              className="rounded-xl"
-                              disabled={isGlobalPaused}
-                            >
-                              Pausar entregas de hoje
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent className="rounded-[28px]">
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>Pausar entregas locais de hoje?</AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Isso não altera status dos pedidos. Apenas remove as entregas de
-                                hoje da sugestão operacional.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                              <div className="space-y-1">
-                              <p className="text-sm font-medium text-zinc-900">
-                                Motivo da pausa <span className="text-red-600">*</span>
-                              </p>
-                              <p className="text-xs text-zinc-500">Campo obrigatório.</p>
-                            </div>
-                            <Textarea
-                              value={globalPauseReason}
-                              onChange={(event) => setGlobalPauseReason(event.target.value)}
-                              placeholder="Ex: chuva forte, feriado, entregador indisponível"
+                            <RefreshCw
+                              className={cn("mr-2 h-4 w-4", localTodayQ.isFetching && "animate-spin")}
                             />
-                            <AlertDialogFooter>
-                              <AlertDialogCancel className="rounded-2xl">
-                                Cancelar
-                              </AlertDialogCancel>
-                              <AlertDialogAction
-                                className="rounded-2xl"
-                                onClick={handlePauseToday}
-                                disabled={
-                                  createLocalDeliveryExceptionM.isPending ||
-                                  globalPauseReason.trim().length === 0
-                                }
+                            Atualizar painel
+                          </Button>
+                          <AlertDialog
+                            open={isGlobalPauseDialogOpen}
+                            onOpenChange={(open) => {
+                              setIsGlobalPauseDialogOpen(open);
+                              if (!open) {
+                                setGlobalPauseReason("");
+                              } else {
+                                setGlobalPauseReason("");
+                              }
+                            }}
+                          >
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                className="rounded-xl border-red-200 text-red-700 hover:bg-red-50"
+                                disabled={isGlobalPaused}
                               >
-                                Confirmar pausa
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                        <Button type="button" size="sm" variant="outline" className="rounded-xl" disabled>
-                          Adiar cidade (V2.5B)
-                        </Button>
-                      </div>
-                    </div>
-
-
-                    {(localTodayQ.data?.totals?.ordersCount ?? 0) === 0 ? (
-                      <p className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
-                        Nenhuma entrega local prevista para hoje.
-                      </p>
-                    ) : null}
-
-                    {(localTodayQ.data?.cities?.length ?? 0) > 0 ? (
-                      <div className="rounded-xl border border-zinc-200/80 bg-white px-3 py-2 text-sm">
-                        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                          Cidades
-                        </p>
-                        <div className="space-y-2 text-zinc-700">
-                          {(localTodayQ.data?.cities ?? []).map((city) => (
-                            <div
-                              key={`${city.city}-${city.state}`}
-                              className="rounded-lg border border-zinc-200/70 px-2 py-1.5"
-                            >
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <p>
-                                  {city.city}/{city.state} — {city.ordersCount} pedido(s)
+                                Pausar entregas de hoje
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="rounded-[28px]">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Pausar entregas locais de hoje?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Isso não altera status dos pedidos. Apenas remove as entregas de
+                                  hoje da sugestão operacional.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium text-zinc-900">
+                                  Motivo da pausa <span className="text-red-600">*</span>
                                 </p>
-                                {city.blocked ? (
-                                  <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                                    {city.exception?.action === "RESCHEDULED" ? "Adiada" : "Pausada"}
-                                  </span>
-                                ) : null}
+                                <p className="text-xs text-zinc-500">Campo obrigatório.</p>
                               </div>
-                              {city.blocked ? (
-                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-amber-900">
-                                  <span>
-                                    {city.exception?.action === "RESCHEDULED"
-                                      ? `Adiada para ${city.exception?.newDate ?? "nova data"}`
-                                      : "Pausada"}
-                                    {city.exception?.reason ? `: ${city.exception.reason}` : ""}
-                                  </span>
-                                  {city.exception?.id ? (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-6 rounded-lg border-amber-300 bg-white px-2 text-[11px]"
-                                      disabled={deleteLocalDeliveryExceptionM.isPending}
-                                      onClick={() => handleRemovePause(city.exception?.id ?? "")}
-                                    >
-                                      Remover pausa
-                                    </Button>
-                                  ) : null}
-                                </div>
-                              ) : (
-                                <AlertDialog
-                                  open={
-                                    isCityPauseDialogOpen &&
-                                    cityDialogTarget?.city === city.city &&
-                                    cityDialogTarget?.state === city.state
+                              <Textarea
+                                value={globalPauseReason}
+                                onChange={(event) => setGlobalPauseReason(event.target.value)}
+                                placeholder="Ex: chuva forte, feriado, entregador indisponível"
+                              />
+                              <AlertDialogFooter>
+                                <AlertDialogCancel className="rounded-2xl">
+                                  Cancelar
+                                </AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="rounded-2xl"
+                                  onClick={handlePauseToday}
+                                  disabled={
+                                    createLocalDeliveryExceptionM.isPending ||
+                                    globalPauseReason.trim().length === 0
                                   }
-                                  onOpenChange={(open) => {
-                                    if (open) {
-                                      setCityDialogTarget({ city: city.city, state: city.state });
-                                      setCityPauseReason("");
-                                      setIsCityPauseDialogOpen(true);
-                                      return;
-                                    }
-                                    setCityPauseReason("");
-                                    setCityDialogTarget(null);
-                                    setIsCityPauseDialogOpen(false);
-                                  }}
                                 >
-                                  <AlertDialogTrigger asChild>
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      variant="outline"
-                                      className="mt-1 h-6 rounded-lg px-2 text-[11px]"
-                                      onClick={() =>
-                                        setCityDialogTarget({ city: city.city, state: city.state })
-                                      }
-                                    >
-                                      Pausar cidade
-                                    </Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent className="rounded-[28px]">
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>
-                                        Pausar cidade {city.city}/{city.state}?
-                                      </AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Isso não altera status dos pedidos. Apenas remove as
-                                        entregas desta cidade da sugestão operacional de hoje.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                      <div className="space-y-1">
-                                      <p className="text-sm font-medium text-zinc-900">
-                                        Motivo da pausa <span className="text-red-600">*</span>
-                                      </p>
-                                      <p className="text-xs text-zinc-500">Campo obrigatório.</p>
-                                    </div>
-                                    <Textarea
-                                      value={cityDialogTarget?.city === city.city &&
-                                      cityDialogTarget?.state === city.state
-                                        ? cityPauseReason
-                                        : ""}
-                                      onChange={(event) => setCityPauseReason(event.target.value)}
-                                      placeholder="Ex: chuva forte, feriado, entregador indisponível"
-                                    />
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel
-                                        className="rounded-2xl"
-                                        onClick={() => {
-                                          setCityPauseReason("");
-                                          setCityDialogTarget(null);
-                                          setIsCityPauseDialogOpen(false);
-                                        }}
-                                      >
-                                        Cancelar
-                                      </AlertDialogCancel>
-                                      <AlertDialogAction
-                                        className="rounded-2xl"
-                                        onClick={handlePauseCity}
-                                          disabled={
-                                          createLocalDeliveryExceptionM.isPending ||
-                                          cityPauseReason.trim().length === 0
-                                        }
-                                      >
-                                        Confirmar pausa
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              )}
-                            </div>
-                          ))}
+                                  Confirmar pausa
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                          <Button type="button" size="sm" variant="outline" className="rounded-xl" disabled>
+                            Adiar cidade (V2.5B)
+                          </Button>
                         </div>
                       </div>
-                    ) : null}
 
-                    {(localTodayQ.data?.cities?.length ?? 0) > 0 &&
-                    (localTodayQ.data?.totals?.ordersCount ?? 0) === 0 ? (
-                      <p className="text-sm text-zinc-600">
-                        Não há pedidos locais pendentes para essas cidades.
+                      {(localTodayQ.data?.totals?.ordersCount ?? 0) === 0 ? (
+                        <p className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-600">
+                          Nenhuma entrega local prevista para hoje.
+                        </p>
+                      ) : null}
+
+                      {(localTodayQ.data?.cities?.length ?? 0) > 0 ? (
+                        <div className="rounded-xl border border-zinc-200/80 bg-white px-3 py-2 text-sm">
+                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                              Cidades
+                            </p>
+                            <div className="w-full sm:w-72">
+                              <Input
+                                value={todayCitySearch}
+                                onChange={(event) => setTodayCitySearch(event.target.value)}
+                                placeholder="Buscar cidade..."
+                                className="h-8 rounded-lg border-zinc-200 text-xs"
+                                aria-label="Buscar cidade nas entregas locais de hoje"
+                              />
+                            </div>
+                          </div>
+                          <div className="max-h-64 space-y-2 overflow-y-auto pr-1 text-zinc-700">
+                            {visibleTodayCities.map((city) => (
+                              <div
+                                key={`${city.city}-${city.state}`}
+                                className="rounded-lg border border-zinc-200/70 px-2 py-1.5"
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm">
+                                  <p className="font-medium text-zinc-800">
+                                    <MapPin className="mr-1 inline h-3.5 w-3.5 text-zinc-400" />
+                                    {city.city}/{city.state} • {city.ordersCount} pedido(s)
+                                  </p>
+                                  {city.blocked ? (
+                                    <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+                                      {city.exception?.action === "RESCHEDULED" ? "Adiada" : "Pausada"}
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {city.blocked ? (
+                                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-red-900">
+                                    <span>
+                                      {city.exception?.action === "RESCHEDULED"
+                                        ? `Adiada para ${city.exception?.newDate ?? "nova data"}`
+                                        : "Pausada"}
+                                      {city.exception?.reason ? `: ${city.exception.reason}` : ""}
+                                    </span>
+                                    {city.exception?.id ? (
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="h-6 rounded-lg border-red-300 bg-white px-2 text-[11px] text-red-700 hover:bg-red-50"
+                                        disabled={deleteLocalDeliveryExceptionM.isPending}
+                                        onClick={() => handleRemovePause(city.exception?.id ?? "")}
+                                      >
+                                        Remover pausa
+                                      </Button>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <AlertDialog
+                                    open={
+                                      isCityPauseDialogOpen &&
+                                      cityDialogTarget?.city === city.city &&
+                                      cityDialogTarget?.state === city.state
+                                    }
+                                    onOpenChange={(open) => {
+                                      if (open) {
+                                        setCityDialogTarget({ city: city.city, state: city.state });
+                                        setCityPauseReason("");
+                                        setIsCityPauseDialogOpen(true);
+                                        return;
+                                      }
+                                      setCityPauseReason("");
+                                      setCityDialogTarget(null);
+                                      setIsCityPauseDialogOpen(false);
+                                    }}
+                                  >
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="mt-1 h-6 rounded-lg border-violet-200 bg-violet-50 px-2 text-[11px] text-violet-700 hover:bg-violet-100"
+                                        onClick={() =>
+                                          setCityDialogTarget({ city: city.city, state: city.state })
+                                        }
+                                      >
+                                        Pausar cidade
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent className="rounded-[28px]">
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>
+                                          Pausar cidade {city.city}/{city.state}?
+                                        </AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          Isso não altera status dos pedidos. Apenas remove as
+                                          entregas desta cidade da sugestão operacional de hoje.
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <div className="space-y-1">
+                                        <p className="text-sm font-medium text-zinc-900">
+                                          Motivo da pausa <span className="text-red-600">*</span>
+                                        </p>
+                                        <p className="text-xs text-zinc-500">Campo obrigatório.</p>
+                                      </div>
+                                      <Textarea
+                                        value={cityDialogTarget?.city === city.city &&
+                                        cityDialogTarget?.state === city.state
+                                          ? cityPauseReason
+                                          : ""}
+                                        onChange={(event) => setCityPauseReason(event.target.value)}
+                                        placeholder="Ex: chuva forte, feriado, entregador indisponível"
+                                      />
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel
+                                          className="rounded-2xl"
+                                          onClick={() => {
+                                            setCityPauseReason("");
+                                            setCityDialogTarget(null);
+                                            setIsCityPauseDialogOpen(false);
+                                          }}
+                                        >
+                                          Cancelar
+                                        </AlertDialogCancel>
+                                        <AlertDialogAction
+                                          className="rounded-2xl"
+                                          onClick={handlePauseCity}
+                                          disabled={
+                                            createLocalDeliveryExceptionM.isPending ||
+                                            cityPauseReason.trim().length === 0
+                                          }
+                                        >
+                                          Confirmar pausa
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                )}
+                              </div>
+                            ))}
+                            {visibleTodayCities.length === 0 ? (
+                              <p className="rounded-lg border border-dashed border-zinc-200 px-3 py-2 text-xs text-zinc-500">
+                                Nenhuma cidade encontrada.
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                        ) : null}
+
+                      {(localTodayQ.data?.cities?.length ?? 0) > 0 &&
+                      (localTodayQ.data?.totals?.ordersCount ?? 0) === 0 ? (
+                        <p className="text-sm text-zinc-600">
+                          Não há pedidos locais pendentes para essas cidades.
+                        </p>
+                      ) : null}
+
+                      <div className="rounded-xl border border-zinc-200/80 bg-white px-3 py-2">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                          Ações rápidas
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" size="sm" className="rounded-2xl" onClick={handleViewTodayOrders}>
+                            Ver pedidos de hoje
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-2xl"
+                            onClick={() => selectTodayOrders()}
+                            disabled={localTodayQ.isLoading || localTodayQ.isError || isGlobalPaused}
+                          >
+                            Selecionar pedidos de hoje
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-2xl"
+                            onClick={() => selectTodayOrders("PACKED")}
+                            disabled={localTodayQ.isLoading || localTodayQ.isError || isGlobalPaused}
+                          >
+                            Selecionar empacotados de hoje
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="rounded-2xl"
+                            onClick={() => selectTodayOrders("PENDING_SEPARATION")}
+                            disabled={localTodayQ.isLoading || localTodayQ.isError || isGlobalPaused}
+                          >
+                            Selecionar aguardando separação
+                          </Button>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-zinc-500">
+                        Nenhuma atualização é automática. Revise e confirme as ações em lote.
                       </p>
-                    ) : null}
-
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" size="sm" className="rounded-2xl" onClick={handleViewTodayOrders}>
-                        Ver pedidos de hoje
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="rounded-2xl"
-                        onClick={() => selectTodayOrders()}
-                        disabled={localTodayQ.isLoading || localTodayQ.isError || isGlobalPaused}
-                      >
-                        Selecionar pedidos de hoje
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="rounded-2xl"
-                        onClick={() => selectTodayOrders("PACKED")}
-                        disabled={localTodayQ.isLoading || localTodayQ.isError || isGlobalPaused}
-                      >
-                        Selecionar empacotados de hoje
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="rounded-2xl"
-                        onClick={() => selectTodayOrders("PENDING_SEPARATION")}
-                        disabled={localTodayQ.isLoading || localTodayQ.isError || isGlobalPaused}
-                      >
-                        Selecionar aguardando separação
-                      </Button>
-                    </div>
-
-                    <p className="text-xs text-zinc-500">
-                      Nenhuma atualização é automática. Revise e confirme as ações em lote.
-                    </p>
-                  </>
-                )}
-              </CardContent>
+                    </>
+                  )}
+                </CardContent>
+              ) : null}
             </Card>
 
           <Card className="rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
@@ -1221,8 +1339,8 @@ if (!selectedLocalOrderIds.length) {
                 <Button
                   type="button"
                   size="sm"
-                  variant={activeTab === "pending" ? "default" : "outline"}
-                  className="rounded-2xl"
+                  variant="outline"
+                  className={tabClass(activeTab === "pending")}
                   onClick={() => setActiveTab("pending")}
                 >
                   Pendentes ({pending.length})
@@ -1230,8 +1348,8 @@ if (!selectedLocalOrderIds.length) {
                 <Button
                   type="button"
                   size="sm"
-                  variant={activeTab === "approved" ? "default" : "outline"}
-                  className="rounded-2xl"
+                  variant="outline"
+                  className={tabClass(activeTab === "approved")}
                   onClick={() => setActiveTab("approved")}
                 >
                   Aprovados recentemente ({approvedRecent.length})
@@ -1239,8 +1357,8 @@ if (!selectedLocalOrderIds.length) {
                 <Button
                   type="button"
                   size="sm"
-                  variant={activeTab === "rejected" ? "default" : "outline"}
-                  className="rounded-2xl"
+                  variant="outline"
+                  className={tabClass(activeTab === "rejected")}
                   onClick={() => setActiveTab("rejected")}
                 >
                   Reprovados recentemente ({rejectedRecent.length})
@@ -1255,8 +1373,8 @@ if (!selectedLocalOrderIds.length) {
                   <Button
                     type="button"
                     size="sm"
-                    variant={deliveryFilter === "ALL" ? "default" : "outline"}
-                    className="rounded-2xl"
+                    variant="outline"
+                    className={deliveryClass(deliveryFilter === "ALL", "neutral")}
                     onClick={() => handleDeliveryFilterChange("ALL")}
                   >
                     Todos
@@ -1264,8 +1382,8 @@ if (!selectedLocalOrderIds.length) {
                   <Button
                     type="button"
                     size="sm"
-                    variant={deliveryFilter === "LOCAL" ? "default" : "outline"}
-                    className="rounded-2xl"
+                    variant="outline"
+                    className={deliveryClass(deliveryFilter === "LOCAL", "local")}
                     onClick={() => handleDeliveryFilterChange("LOCAL")}
                   >
                     Entrega local
@@ -1273,8 +1391,8 @@ if (!selectedLocalOrderIds.length) {
                   <Button
                     type="button"
                     size="sm"
-                    variant={deliveryFilter === "CORREIOS" ? "default" : "outline"}
-                    className="rounded-2xl"
+                    variant="outline"
+                    className={deliveryClass(deliveryFilter === "CORREIOS", "correios")}
                     onClick={() => handleDeliveryFilterChange("CORREIOS")}
                   >
                     Correios
@@ -1282,8 +1400,8 @@ if (!selectedLocalOrderIds.length) {
                   <Button
                     type="button"
                     size="sm"
-                    variant={deliveryFilter === "UNKNOWN" ? "default" : "outline"}
-                    className="rounded-2xl"
+                    variant="outline"
+                    className={deliveryClass(deliveryFilter === "UNKNOWN", "unknown")}
                     onClick={() => handleDeliveryFilterChange("UNKNOWN")}
                   >
                     Não identificado
@@ -1299,8 +1417,8 @@ if (!selectedLocalOrderIds.length) {
                   <Button
                     type="button"
                     size="sm"
-                    variant={localStatusFilter === "ALL" ? "default" : "outline"}
-                    className="rounded-2xl"
+                    variant="outline"
+                    className={localStatusClass(localStatusFilter === "ALL", "all")}
                     onClick={() => setLocalStatusFilter("ALL")}
                     disabled={deliveryFilter === "CORREIOS"}
                   >
@@ -1309,12 +1427,8 @@ if (!selectedLocalOrderIds.length) {
                   <Button
                     type="button"
                     size="sm"
-                    variant={
-                      localStatusFilter === "PENDING_SEPARATION"
-                        ? "default"
-                        : "outline"
-                    }
-                    className="rounded-2xl"
+                    variant="outline"
+                    className={localStatusClass(localStatusFilter === "PENDING_SEPARATION", "pending")}
                     onClick={() => setLocalStatusFilter("PENDING_SEPARATION")}
                     disabled={deliveryFilter === "CORREIOS"}
                   >
@@ -1323,8 +1437,8 @@ if (!selectedLocalOrderIds.length) {
                   <Button
                     type="button"
                     size="sm"
-                    variant={localStatusFilter === "PACKED" ? "default" : "outline"}
-                    className="rounded-2xl"
+                    variant="outline"
+                    className={localStatusClass(localStatusFilter === "PACKED", "packed")}
                     onClick={() => setLocalStatusFilter("PACKED")}
                     disabled={deliveryFilter === "CORREIOS"}
                   >
@@ -1333,12 +1447,8 @@ if (!selectedLocalOrderIds.length) {
                   <Button
                     type="button"
                     size="sm"
-                    variant={
-                      localStatusFilter === "OUT_FOR_DELIVERY"
-                        ? "default"
-                        : "outline"
-                    }
-                    className="rounded-2xl"
+                    variant="outline"
+                    className={localStatusClass(localStatusFilter === "OUT_FOR_DELIVERY", "route")}
                     onClick={() => setLocalStatusFilter("OUT_FOR_DELIVERY")}
                     disabled={deliveryFilter === "CORREIOS"}
                   >
@@ -1347,8 +1457,8 @@ if (!selectedLocalOrderIds.length) {
                   <Button
                     type="button"
                     size="sm"
-                    variant={localStatusFilter === "DELIVERED" ? "default" : "outline"}
-                    className="rounded-2xl"
+                    variant="outline"
+                    className={localStatusClass(localStatusFilter === "DELIVERED", "delivered")}
                     onClick={() => setLocalStatusFilter("DELIVERED")}
                     disabled={deliveryFilter === "CORREIOS"}
                   >
@@ -1357,12 +1467,8 @@ if (!selectedLocalOrderIds.length) {
                   <Button
                     type="button"
                     size="sm"
-                    variant={
-                      localStatusFilter === "DELIVERY_PROBLEM"
-                        ? "default"
-                        : "outline"
-                    }
-                    className="rounded-2xl"
+                    variant="outline"
+                    className={localStatusClass(localStatusFilter === "DELIVERY_PROBLEM", "problem")}
                     onClick={() => setLocalStatusFilter("DELIVERY_PROBLEM")}
                     disabled={deliveryFilter === "CORREIOS"}
                   >
