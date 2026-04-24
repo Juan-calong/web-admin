@@ -54,6 +54,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { LocalDeliveryDocumentsPanel } from "@/components/admin/LocalDeliveryDocumentsPanel";
+
 
 type OrderDetails = {
   order: {
@@ -69,6 +71,9 @@ type OrderDetails = {
     deliveryType?: string | null;
     totalAmount?: string | number;
     total?: string | number;
+    shippingCarrier?: string | null;
+    shippingServiceCode?: string | null;
+    shippingServiceName?: string | null;
 
     customer?: {
       name?: string | null;
@@ -522,6 +527,43 @@ function AddressBlock({
   );
 }
 
+
+function normalizeDeliveryText(...values: Array<string | null | undefined>) {
+  return values.filter(Boolean).join(" ").toUpperCase();
+}
+
+function isLocalDeliveryOrder(order?: OrderDetails["order"] | null) {
+  const text = normalizeDeliveryText(
+    order?.deliveryType,
+    order?.deliveryMethod,
+    order?.shippingMethod,
+    order?.shippingCarrier,
+    order?.shippingServiceCode,
+    order?.shippingServiceName
+  );
+
+  return (
+    text.includes("LOCAL") ||
+    text.includes("ENTREGA LOCAL") ||
+    text.includes("LOCAL_DELIVERY") ||
+    text.includes("ENTREGA_LOCAL")
+  );
+}
+
+function isCorreiosDeliveryOrder(order?: OrderDetails["order"] | null) {
+  const text = normalizeDeliveryText(
+    order?.deliveryType,
+    order?.deliveryMethod,
+    order?.shippingMethod,
+    order?.shippingCarrier,
+    order?.shippingServiceCode,
+    order?.shippingServiceName
+  );
+
+  return text.includes("CORREIOS");
+}
+
+
 export default function AdminOrderDetailsPage() {
   const params = useParams<{ id: string }>();
   const id = String(params?.id ?? "");
@@ -568,6 +610,8 @@ export default function AdminOrderDetailsPage() {
   );
 
   const orderStatus = order?.orderStatus ?? order?.status ?? null;
+  const isLocalDelivery = isLocalDeliveryOrder(order);
+const isCorreiosDelivery = isCorreiosDeliveryOrder(order);
 
   const salonAddressLines = formatAddressLines(order?.salon ?? null);
   const deliveryAddressLines = formatAddressLines(
@@ -868,15 +912,36 @@ export default function AdminOrderDetailsPage() {
                   )}
                 </SectionShell>
 
-                <OrderShippingPanel
-                  orderId={id}
-                  paymentStatus={order?.paymentStatus}
-                  adminApprovalStatus={order?.adminApprovalStatus}
-                  orderStatus={orderStatus}
-                  deliveryMethod={
-                    order?.deliveryMethod ?? order?.shippingMethod ?? order?.deliveryType ?? null
-                  }
-                />
+{isLocalDelivery ? (
+  <LocalDeliveryDocumentsPanel orderId={id} />
+) : isCorreiosDelivery ? (
+  <OrderShippingPanel
+    orderId={id}
+    paymentStatus={order?.paymentStatus}
+    adminApprovalStatus={order?.adminApprovalStatus}
+    orderStatus={orderStatus}
+    deliveryMethod={
+      order?.deliveryMethod ??
+      order?.shippingMethod ??
+      order?.deliveryType ??
+      order?.shippingCarrier ??
+      order?.shippingServiceName ??
+      order?.shippingServiceCode ??
+      null
+    }
+  />
+) : (
+  <SectionShell
+    title="Expedição"
+    description="Não foi possível identificar se este pedido é entrega local ou Correios."
+    icon={Package2}
+  >
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      Tipo de entrega não identificado. Verifique os campos de frete do pedido
+      antes de gerar qualquer documento de expedição.
+    </div>
+  </SectionShell>
+)}
 
                 <SectionShell
                   title="Ações do admin"

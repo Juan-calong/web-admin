@@ -37,11 +37,13 @@ export const endpoints = {
     byId: (id: string) => `/orders/${id}`,
   },
 
-  adminOrders: {
-    decide: (orderId: string) => `/admin/orders/${orderId}`,
-    details: (orderId: string) => `/admin/orders/${orderId}`,
-    refund: (orderId: string) => `/admin/orders/${orderId}/refund`,
-  },
+adminOrders: {
+  decide: (orderId: string) => `/admin/orders/${orderId}`,
+  details: (orderId: string) => `/admin/orders/${orderId}`,
+  refund: (orderId: string) => `/admin/orders/${orderId}/refund`,
+  localDeliveryDocuments: (orderId: string) =>
+    `/admin/orders/${orderId}/local-delivery-documents`,
+},
 
 adminOrderShipping: {
   byOrder: (orderId: string) => `/admin/orders/${orderId}/shipping`,
