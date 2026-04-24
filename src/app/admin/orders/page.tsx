@@ -15,6 +15,7 @@ import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
+import { openLocalDeliveryUnifiedBatchPdf } from "@/components/admin/local-delivery/localDeliveryPdf";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -356,6 +357,23 @@ export default function AdminOrdersPage() {
     displayedOrderIds.length > 0 && displayedOrderIds.every((id) => selectedOrderIds.has(id));
   const someDisplayedSelected = displayedOrderIds.some((id) => selectedOrderIds.has(id));
 
+    const selectedLocalDisplayedOrders = useMemo(
+    () =>
+      displayedOrders.filter(
+        (order) =>
+          selectedOrderIds.has(order.id) && resolveDeliveryType(order) === "LOCAL"
+      ),
+    [displayedOrders, selectedOrderIds]
+  );
+  const selectedNonLocalCount = useMemo(
+    () =>
+      displayedOrders.filter(
+        (order) =>
+          selectedOrderIds.has(order.id) && resolveDeliveryType(order) !== "LOCAL"
+      ).length,
+    [displayedOrders, selectedOrderIds]
+  );
+
   function toggleOrderSelection(orderId: string) {
     setSelectedOrderIds((prev) => {
       const next = new Set(prev);
@@ -449,6 +467,30 @@ export default function AdminOrdersPage() {
     onError: (err) => toast.error(apiErrorMessage(err, "Falha ao aprovar/reprovar.")),
   });
 
+    const localBatchPdfM = useMutation({
+    mutationFn: async (orderIds: string[]) =>
+      openLocalDeliveryUnifiedBatchPdf(orderIds),
+    onSuccess: () => toast.success("Documentos locais abertos para impressão."),
+    onError: (err) =>
+      toast.error(
+        apiErrorMessage(err, "Não foi possível abrir os documentos locais.")
+      ),
+  });
+
+  function handleOpenSelectedLocalDocuments() {
+    const localOrderIds = selectedLocalDisplayedOrders.map((order) => order.id);
+
+    if (!localOrderIds.length) {
+      toast.error("Selecione pelo menos um pedido de entrega local.");
+      return;
+    }
+
+    if (selectedNonLocalCount > 0) {
+      toast.warning("Pedidos que não são entrega local foram ignorados.");
+    }
+
+    localBatchPdfM.mutate(localOrderIds);
+  }
   const actingOrderId = (decideM.variables as { orderId?: string } | undefined)?.orderId;
 
   return (
@@ -580,6 +622,18 @@ export default function AdminOrdersPage() {
                   <span className="text-zinc-500">{selectedVisibleCount} selecionados</span>
                   {selectedVisibleCount > 0 ? (
                     <>
+                        <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
+                        onClick={handleOpenSelectedLocalDocuments}
+                        disabled={localBatchPdfM.isPending || selectedVisibleCount === 0}
+                      >
+                        {localBatchPdfM.isPending
+                          ? "Gerando PDF…"
+                          : "Abrir documentos locais"}
+                      </Button>
                       <Button
                         type="button"
                         size="sm"
@@ -589,9 +643,6 @@ export default function AdminOrdersPage() {
                       >
                         Limpar seleção
                       </Button>
-                      <span className="text-xs text-zinc-500">
-                        Ações em lote serão adicionadas na próxima etapa.
-                      </span>
                     </>
                   ) : null}
                 </div>

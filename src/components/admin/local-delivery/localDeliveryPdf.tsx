@@ -230,11 +230,7 @@ total: {
   },
 });
 
-function UnifiedLocalDeliveryDocument({
-  docs,
-}: {
-  docs: LocalDeliveryDocuments;
-}) {
+function LocalDeliveryPage({ docs }: { docs: LocalDeliveryDocuments }) {
   const label = docs.documents.label;
   const separation = docs.documents.separationList;
 
@@ -245,9 +241,8 @@ function UnifiedLocalDeliveryDocument({
   const deliveryNotes = separation.deliveryNotes ?? label.deliveryNotes;
 
   return (
-    <Document>
-      <Page size={[mmToPt(100), mmToPt(150)]} style={unifiedStyles.page}>
-        <View style={unifiedStyles.box}>
+    <Page size={[mmToPt(100), mmToPt(150)]} style={unifiedStyles.page}>
+      <View style={unifiedStyles.box}>
           <View style={unifiedStyles.header} wrap={false}>
             <Text style={unifiedStyles.title}>ENTREGA LOCAL</Text>
             <Text style={unifiedStyles.brand}>{label.brand || "KEYFI"}</Text>
@@ -331,8 +326,36 @@ function UnifiedLocalDeliveryDocument({
               <Text style={unifiedStyles.signatureBox}>Conferido por</Text>
             </View>
           </View>
-        </View>
-      </Page>
+      </View>
+    </Page>
+  );
+}
+
+function UnifiedLocalDeliveryDocument({
+  docs,
+}: {
+  docs: LocalDeliveryDocuments;
+}) {
+  return (
+    <Document>
+      <LocalDeliveryPage docs={docs} />
+    </Document>
+  );
+}
+
+function UnifiedLocalDeliveryBatchDocument({
+  docsList,
+}: {
+  docsList: LocalDeliveryDocuments[];
+}) {
+  return (
+    <Document>
+      {docsList.map((docs, index) => (
+        <LocalDeliveryPage
+          key={`${docs.documents.label.orderNumber ?? docs.documents.label.customer?.name ?? index}`}
+          docs={docs}
+        />
+      ))}
     </Document>
   );
 }
@@ -340,5 +363,23 @@ function UnifiedLocalDeliveryDocument({
 export async function openLocalDeliveryUnifiedPdf(orderId: string) {
   const docs = await fetchLocalDeliveryDocuments(orderId);
   const blob = await pdf(<UnifiedLocalDeliveryDocument docs={docs} />).toBlob();
+  openPdfBlob(blob);
+}
+
+export async function openLocalDeliveryUnifiedBatchPdf(orderIds: string[]) {
+  const uniqueOrderIds = Array.from(new Set(orderIds)).filter(Boolean);
+
+  if (!uniqueOrderIds.length) {
+    throw new Error("Nenhum pedido informado para gerar documentos locais.");
+  }
+
+  const docsList = await Promise.all(
+    uniqueOrderIds.map((orderId) => fetchLocalDeliveryDocuments(orderId))
+  );
+
+  const blob = await pdf(
+    <UnifiedLocalDeliveryBatchDocument docsList={docsList} />
+  ).toBlob();
+
   openPdfBlob(blob);
 }
