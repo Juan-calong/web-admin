@@ -137,337 +137,366 @@ function openPdfBlob(blob: Blob) {
 
 const unifiedStyles = StyleSheet.create({
   page: {
-    width: mmToPt(80),
-    height: mmToPt(100),
-    paddingTop: 10,
-    paddingHorizontal: 10,
-    paddingBottom: 8,
+    paddingTop: 12,
+    paddingHorizontal: 14,
+    paddingBottom: 12,
     fontFamily: "Helvetica",
-    fontSize: 8,
     color: "#000000",
     backgroundColor: "#ffffff",
   },
 
   header: {
     alignItems: "center",
-    marginBottom: 4,
+    marginBottom: 12,
   },
 
   headerTitle: {
-    fontSize: 15,
+    fontSize: 18,
     fontFamily: "Helvetica-Bold",
-    letterSpacing: 0.8,
-    lineHeight: 1.05,
+    lineHeight: 1,
+    letterSpacing: 0.5,
   },
 
   headerSubtitle: {
-    marginTop: 2,
-    fontSize: 7.2,
+    marginTop: 1,
+    fontSize: 6.8,
     fontFamily: "Helvetica-Bold",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
+    lineHeight: 1,
   },
 
-  separatorStrong: {
-    borderBottomWidth: 1.8,
-    borderBottomColor: "#000000",
-    marginVertical: 5,
+  topSection: {
+    marginBottom: 14,
   },
 
-  separator: {
-    borderBottomWidth: 1.4,
-    borderBottomColor: "#000000",
-    marginVertical: 4.5,
-  },
-
-  block: {
-    marginBottom: 1,
-  },
-
-  blockTitle: {
-    fontSize: 7.3,
+  sectionLabel: {
+    fontSize: 8,
     fontFamily: "Helvetica-Bold",
     textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 2,
+    letterSpacing: 2,
+    marginBottom: 4,
   },
 
   orderNumber: {
-    fontSize: 19,
+    fontSize: 21,
     fontFamily: "Helvetica-Bold",
-    lineHeight: 1.1,
+    lineHeight: 1.05,
     marginBottom: 2,
   },
 
-  customerName: {
-    fontSize: 13,
-    fontFamily: "Helvetica-Bold",
-    lineHeight: 1.2,
-    marginBottom: 2,
-  },
-
-  phone: {
-    fontSize: 10.5,
-    fontFamily: "Helvetica-Bold",
+  dateText: {
+    fontSize: 10,
     lineHeight: 1.15,
   },
 
-  line: {
-    fontSize: 8,
-    lineHeight: 1.35,
-    marginBottom: 1.2,
+  customerName: {
+    fontSize: 16,
+    fontFamily: "Helvetica-Bold",
+    lineHeight: 1.15,
+    marginBottom: 6,
   },
 
-  addressLine: {
-    fontSize: 11.2,
-    lineHeight: 1.42,
-    marginBottom: 1.6,
+  phoneText: {
+    fontSize: 14,
+    fontFamily: "Helvetica-Bold",
+    lineHeight: 1.1,
   },
 
-  productsTitle: {
-    fontSize: 7.3,
+  addressTitle: {
+    fontSize: 8.5,
     fontFamily: "Helvetica-Bold",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+
+  addressPrimary: {
+    fontSize: 14.5,
+    fontFamily: "Helvetica-Bold",
+    lineHeight: 1.18,
+    marginBottom: 4,
+  },
+
+  addressSecondary: {
+    fontSize: 12.5,
+    lineHeight: 1.16,
     marginBottom: 3,
   },
 
-  itemRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 2.4,
+  bottomDivider: {
+    borderBottomWidth: 1.6,
+    borderBottomColor: "#000000",
+    marginTop: 12,
   },
 
-  itemText: {
-    flex: 1,
-    fontSize: 7,
-    lineHeight: 1.2,
-    textTransform: "uppercase",
-    marginRight: 4,
-  },
-
-  checkbox: {
-    width: 12,
-    fontSize: 8,
-    fontFamily: "Helvetica-Bold",
-    textAlign: "right",
-  },
-
-  totals: {
-    marginTop: 2,
-    fontSize: 7.2,
-    fontFamily: "Helvetica-Bold",
-  },
-
-  compactFields: {
-    marginTop: 2,
-    gap: 2.5,
-  },
-
-  footerLine: {
-    fontSize: 7,
-    fontFamily: "Helvetica-Bold",
-  },
-
-  footerSmallText: {
-    marginTop: 1.5,
-    fontSize: 6.4,
-    lineHeight: 1.2,
-  },
-
-  cutGuideText: {
-    textAlign: "center",
-    fontSize: 6,
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-  },
-
-  orderBlock: {
-  marginBottom: 8,
-  paddingBottom: 4,
+  productSection: {
+  marginTop: 18,
 },
 
-dateLine: {
-  fontSize: 7.8,
-  lineHeight: 1.25,
-  marginTop: 1,
+productTitle: {
+  fontSize: 8,
+  fontFamily: "Helvetica-Bold",
+  textTransform: "uppercase",
+  letterSpacing: 2,
+  marginBottom: 12,
 },
 
-addressBlock: {
+productRow: {
+  flexDirection: "row",
+  alignItems: "center",
+  marginBottom: 9,
+},
+
+productText: {
+  flex: 1,
+  fontSize: 10.5,
+  fontFamily: "Helvetica-Bold",
+  lineHeight: 1.15,
+  textTransform: "uppercase",
+  letterSpacing: 0.6,
+},
+
+productCheckbox: {
+  width: 12,
+  height: 12,
+  borderWidth: 0.8,
+  borderColor: "#000000",
+  marginLeft: 8,
+},
+
+hiddenItemsText: {
+  fontSize: 8,
+  fontFamily: "Helvetica-Bold",
+  marginTop: 2,
+},
+
+totalItemsText: {
+  marginTop: 4,
+  fontSize: 8,
+  fontFamily: "Helvetica-Bold",
+  textTransform: "uppercase",
+},
+
+productDivider: {
+  borderBottomWidth: 1.4,
+  borderBottomColor: "#000000",
+  marginTop: 12,
+},
+
+checkSection: {
+  marginTop: 32,
+  marginBottom: 12,
+},
+
+checkRow: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "flex-start",
+},
+
+checkColumn: {
+  width: "42%",
+  alignItems: "center",
+},
+
+checkTopLine: {
+  width: "100%",
+  borderBottomWidth: 1,
+  borderBottomColor: "#000000",
   marginBottom: 5,
 },
 
-receiptBlock: {
-  marginTop: 6,
-  gap: 4,
-},
-
-fieldRow: {
-  flexDirection: "row",
-  alignItems: "flex-end",
-  gap: 6,
-},
-
-fieldLabel: {
-  fontSize: 7.4,
+checkLabel: {
+  fontSize: 8,
   fontFamily: "Helvetica-Bold",
+  textTransform: "uppercase",
+  letterSpacing: 1.2,
 },
 
-fieldLine: {
-  flex: 1,
-  borderBottomWidth: 1,
-  borderBottomColor: "#000000",
+proofSection: {
+  marginTop: 32,
+  marginBottom: 12,
+  alignItems: "center",
 },
 
 proofTitle: {
-  marginTop: 4,
-  fontSize: 8.2,
+  fontSize: 9,
   fontFamily: "Helvetica-Bold",
   textTransform: "uppercase",
-  letterSpacing: 0.4,
+  letterSpacing: 1,
+  marginBottom: 6,
+  textAlign: "center",
 },
 
-signatureRow: {
-  marginTop: 5,
-  flexDirection: "row",
-  alignItems: "flex-end",
-  gap: 6,
+proofText: {
+  fontSize: 8.2,
+  lineHeight: 1.25,
+  textAlign: "center",
 },
 
-signatureLabel: {
-  fontSize: 7.4,
-  fontFamily: "Helvetica-Bold",
+signatureSection: {
+  marginTop: 28,
+  alignItems: "center",
 },
 
 signatureLine: {
-  flex: 1,
-  borderBottomWidth: 1,
+  width: "58%",
+  borderBottomWidth: 1.2,
   borderBottomColor: "#000000",
+  marginBottom: 5,
 },
 
-cutGuideWrap: {
-  position: "absolute",
-  left: 10,
-  right: 10,
-  bottom: 4,
+signatureLabel: {
+  fontSize: 6.5,
+  textTransform: "uppercase",
+  letterSpacing: 0.8,
+  textAlign: "center",
 },
-
-cutGuideLine: {
-  borderTopWidth: 0.8,
-  borderTopColor: "#000000",
-  borderStyle: "dashed",
-},
-
 });
 
 function LocalDeliveryLabel({ docs }: { docs: LocalDeliveryDocuments }) {
   const label = docs.documents.label;
   const separation = docs.documents.separationList;
 
-  const items = separation.items?.length ? separation.items : label.items;
-  const totals = separation.totals ?? label.totals;
   const customer = separation.customer ?? label.customer;
   const address = separation.address ?? label.address;
-  const deliveryNotes = separation.deliveryNotes ?? label.deliveryNotes;
 
-    const addressLine1 = [optionalText(address?.street), optionalText(address?.number)]
-    .filter(Boolean)
-    .join(", ");
-  const addressLine2 = optionalText(address?.complement);
-  const cityState = [optionalText(address?.city), optionalText(address?.state)]
-    .filter(Boolean)
-    .join(" - ");
+  const items = separation.items?.length ? separation.items : label.items;
+  const totals = separation.totals ?? label.totals;
 
-  const shouldUseCompactReceipt = items.length > 6 || Boolean(deliveryNotes);
-    const maxVisibleItems = shouldUseCompactReceipt ? 6 : 8;
+  const maxVisibleItems = 3; 
   const visibleItems = items.slice(0, maxVisibleItems);
   const hiddenItemsCount = Math.max(items.length - maxVisibleItems, 0);
 
+  const addressLine1 = [
+    optionalText(address?.street),
+    optionalText(address?.number),
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  const addressLine2 = optionalText(address?.complement);
+
+  const cityState = [
+    optionalText(address?.city),
+    optionalText(address?.state),
+  ]
+    .filter(Boolean)
+    .join(" - ");
+
   return (
-    <View style={unifiedStyles.page}>
-      <View style={unifiedStyles.header} wrap={false}>
+    <View>
+      <View style={unifiedStyles.header}>
         <Text style={unifiedStyles.headerTitle}>KEYFI</Text>
         <Text style={unifiedStyles.headerSubtitle}>PROFESSIONAL</Text>
       </View>
 
-<View style={[unifiedStyles.block, unifiedStyles.orderBlock]} wrap={false}>
-  <Text style={unifiedStyles.blockTitle}>Pedido</Text>
-  <Text style={unifiedStyles.orderNumber}>{text(label.orderNumber)}</Text>
-  <Text style={unifiedStyles.dateLine}>
-    DATA: {formatPrintedDate(label.printedDate)}
-  </Text>
-</View>
-
-        <View style={unifiedStyles.separator} />
-
-      <View style={unifiedStyles.block} wrap={false}>
-        <Text style={unifiedStyles.blockTitle}>Cliente</Text>
-        <Text style={unifiedStyles.customerName}>{text(customer?.name)}</Text>
-        <Text style={unifiedStyles.blockTitle}>Telefone</Text>
-        <Text style={unifiedStyles.phone}>{text(customer?.phone)}</Text>
+      <View style={unifiedStyles.topSection}>
+        <Text style={unifiedStyles.sectionLabel}>PEDIDO</Text>
+        <Text style={unifiedStyles.orderNumber}>
+          {text(label.orderNumber)}
+        </Text>
+        <Text style={unifiedStyles.dateText}>
+          DATA: {formatPrintedDate(label.printedDate)}
+        </Text>
       </View>
 
-      <View style={unifiedStyles.separator} />
+      <View style={unifiedStyles.topSection}>
+        <Text style={unifiedStyles.sectionLabel}>CLIENTE</Text>
+        <Text style={unifiedStyles.customerName}>
+          {text(customer?.name)}
+        </Text>
 
-      <View style={unifiedStyles.block} wrap={false}>
-        <Text style={unifiedStyles.blockTitle}>Endereço de entrega</Text>
-        <Text style={unifiedStyles.addressLine}>{addressLine1 || "Não informado"}</Text>
-        {addressLine2 ? <Text style={unifiedStyles.addressLine}>{addressLine2}</Text> : null}
-        <Text style={unifiedStyles.addressLine}>{text(address?.neighborhood)}</Text>
-        <Text style={unifiedStyles.addressLine}>{cityState || "Não informado"}</Text>
-        <Text style={unifiedStyles.addressLine}>CEP: {text(address?.zipCode)}</Text>
+        <Text style={unifiedStyles.sectionLabel}>TELEFONE</Text>
+        <Text style={unifiedStyles.phoneText}>
+          {text(customer?.phone)}
+        </Text>
       </View>
-      <View style={unifiedStyles.separatorStrong} />
 
-      <View style={unifiedStyles.block}>
-        <Text style={unifiedStyles.productsTitle}>Produtos</Text>
+      <View>
+        <Text style={unifiedStyles.addressTitle}>ENDEREÇO DE ENTREGA</Text>
 
-        {visibleItems.map((item) => (
-          <View key={item.id} style={unifiedStyles.itemRow}>
-            <Text style={unifiedStyles.itemText}>
-              {item.quantity}x {item.name}
-            </Text>
-            <Text style={unifiedStyles.checkbox}>[ ]</Text>
-          </View>
-         ))}
-          {hiddenItemsCount > 0 ? (
-          <Text style={unifiedStyles.itemText}>+ {hiddenItemsCount} item(ns) adicional(is)</Text>
+        <Text style={unifiedStyles.addressPrimary}>
+          {addressLine1 || "Não informado"}
+        </Text>
+
+        {addressLine2 ? (
+          <Text style={unifiedStyles.addressPrimary}>{addressLine2}</Text>
         ) : null}
 
-        <Text style={unifiedStyles.totals}>TOTAL DE ITENS: {totals.itemsQuantity}</Text>
-      </View>
+        <Text style={unifiedStyles.addressSecondary}>
+          {text(address?.neighborhood)}
+        </Text>
 
-      <View style={unifiedStyles.separator} />
+        <Text style={unifiedStyles.addressSecondary}>
+          {cityState || "Não informado"}
+        </Text>
 
-<View style={unifiedStyles.receiptBlock} wrap={false}>
-  <View style={unifiedStyles.fieldRow}>
-    <Text style={unifiedStyles.fieldLabel}>SEPARADO</Text>
-    <View style={unifiedStyles.fieldLine} />
-  </View>
+        <Text style={unifiedStyles.addressSecondary}>
+          CEP: {text(address?.zipCode)}
+        </Text>
 
-  <View style={unifiedStyles.fieldRow}>
-    <Text style={unifiedStyles.fieldLabel}>CONFERIDO</Text>
-    <View style={unifiedStyles.fieldLine} />
-  </View>
+        <View style={unifiedStyles.bottomDivider} />
+        <View style={unifiedStyles.productSection}>
+  <Text style={unifiedStyles.productTitle}>PEDIDO</Text>
 
-  <Text style={unifiedStyles.proofTitle}>COMPROVANTE DE ENTREGA</Text>
+  {visibleItems.map((item) => (
+    <View key={item.id} style={unifiedStyles.productRow}>
+      <Text style={unifiedStyles.productText}>
+        {item.quantity}x {item.name}
+      </Text>
+      <View style={unifiedStyles.productCheckbox} />
+    </View>
+  ))}
 
-  <Text style={unifiedStyles.footerSmallText}>
-    Recebi o pedido em perfeitas condições.
+  {hiddenItemsCount > 0 ? (
+    <Text style={unifiedStyles.hiddenItemsText}>
+      + {hiddenItemsCount} item(ns) adicional(is)
+    </Text>
+  ) : null}
+
+  <Text style={unifiedStyles.totalItemsText}>
+    TOTAL DE ITENS: {totals.itemsQuantity}
   </Text>
 
-  <View style={unifiedStyles.signatureRow}>
-    <Text style={unifiedStyles.signatureLabel}>ASSINATURA</Text>
-    <View style={unifiedStyles.signatureLine} />
+  <View style={unifiedStyles.productDivider} />
+
+  <View style={unifiedStyles.checkSection}>
+  <View style={unifiedStyles.checkRow}>
+    <View style={unifiedStyles.checkColumn}>
+      <View style={unifiedStyles.checkTopLine} />
+      <Text style={unifiedStyles.checkLabel}>SEPARADO</Text>
+    </View>
+
+    <View style={unifiedStyles.checkColumn}>
+      <View style={unifiedStyles.checkTopLine} />
+      <Text style={unifiedStyles.checkLabel}>CONFERIDO</Text>
+    </View>
   </View>
 </View>
-      <View style={unifiedStyles.cutGuideWrap} wrap={false}>
-        <View style={unifiedStyles.cutGuideLine} />
-        <Text style={unifiedStyles.cutGuideText}>corte aqui</Text>
+
+<View style={unifiedStyles.proofSection}>
+  <Text style={unifiedStyles.proofTitle}>
+    COMPROVANTE DE ENTREGA
+  </Text>
+
+  <Text style={unifiedStyles.proofText}>
+    Recebi o pedido acima em perfeitas condições.
+  </Text>
+</View>
+
+<View style={unifiedStyles.signatureSection}>
+  <View style={unifiedStyles.signatureLine} />
+  <Text style={unifiedStyles.signatureLabel}>
+    ASSINATURA DO RECEBEDOR
+  </Text>
+</View>
+  
+        </View>
       </View>
     </View>
   );
 }
-
 function UnifiedLocalDeliveryDocument({
   docs,
 }: {
@@ -475,9 +504,13 @@ function UnifiedLocalDeliveryDocument({
 }) {
   return (
     <Document>
-            <Page size={[mmToPt(80), mmToPt(100)]}>
-        <LocalDeliveryLabel docs={docs} />
-      </Page>
+<Page
+  size={[mmToPt(80), mmToPt(100)]}
+  style={unifiedStyles.page}
+  wrap={false}
+>
+  <LocalDeliveryLabel docs={docs} />
+</Page>
     </Document>
   );
 }
@@ -491,8 +524,14 @@ function UnifiedLocalDeliveryBatchDocument({
     <Document>
       {docsList.map((docs, index) => (
         <Page
-          key={`${docs.documents.label.orderNumber ?? docs.documents.label.customer?.name ?? index}`}
+          key={`${
+            docs.documents.label.orderNumber ??
+            docs.documents.label.customer?.name ??
+            index
+          }`}
           size={[mmToPt(80), mmToPt(100)]}
+          style={unifiedStyles.page}
+          wrap={false}
         >
           <LocalDeliveryLabel docs={docs} />
         </Page>
