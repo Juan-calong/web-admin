@@ -139,18 +139,18 @@ const unifiedStyles = StyleSheet.create({
   page: {
     width: mmToPt(80),
     height: mmToPt(100),
-    paddingTop: 6,
-    paddingHorizontal: 6,
-    paddingBottom: 5,
+    paddingTop: 10,
+    paddingHorizontal: 10,
+    paddingBottom: 8,
     fontFamily: "Helvetica",
-    fontSize: 7.4,
+    fontSize: 8,
     color: "#000000",
     backgroundColor: "#ffffff",
   },
 
   header: {
     alignItems: "center",
-    marginBottom: 2,
+    marginBottom: 4,
   },
 
   headerTitle: {
@@ -161,22 +161,22 @@ const unifiedStyles = StyleSheet.create({
   },
 
   headerSubtitle: {
-    marginTop: 1,
-    fontSize: 6.8,
+    marginTop: 2,
+    fontSize: 7.2,
     fontFamily: "Helvetica-Bold",
     letterSpacing: 1,
   },
 
   separatorStrong: {
-    borderBottomWidth: 1.5,
+    borderBottomWidth: 1.8,
     borderBottomColor: "#000000",
-    marginVertical: 3,
+    marginVertical: 5,
   },
 
   separator: {
-    borderBottomWidth: 1,
+    borderBottomWidth: 1.4,
     borderBottomColor: "#000000",
-    marginVertical: 2.5,
+    marginVertical: 4.5,
   },
 
   block: {
@@ -184,51 +184,57 @@ const unifiedStyles = StyleSheet.create({
   },
 
   blockTitle: {
-    fontSize: 6.8,
+    fontSize: 7.3,
     fontFamily: "Helvetica-Bold",
     textTransform: "uppercase",
-    letterSpacing: 0.3,
-    marginBottom: 1.5,
+    letterSpacing: 1,
+    marginBottom: 2,
   },
 
   orderNumber: {
-    fontSize: 10.5,
+    fontSize: 19,
     fontFamily: "Helvetica-Bold",
     lineHeight: 1.1,
-    marginBottom: 1,
+    marginBottom: 2,
   },
 
   customerName: {
-    fontSize: 9.3,
+    fontSize: 13,
     fontFamily: "Helvetica-Bold",
-    lineHeight: 1.15,
-    marginBottom: 1,
+    lineHeight: 1.2,
+    marginBottom: 2,
   },
 
   phone: {
-    fontSize: 8.8,
+    fontSize: 10.5,
     fontFamily: "Helvetica-Bold",
     lineHeight: 1.15,
   },
 
   line: {
-    fontSize: 7.4,
-    lineHeight: 1.2,
-    marginBottom: 0.7,
+    fontSize: 8,
+    lineHeight: 1.35,
+    marginBottom: 1.2,
+  },
+
+  addressLine: {
+    fontSize: 11.2,
+    lineHeight: 1.42,
+    marginBottom: 1.6,
   },
 
   productsTitle: {
-    fontSize: 7,
+    fontSize: 7.3,
     fontFamily: "Helvetica-Bold",
     textTransform: "uppercase",
-    letterSpacing: 0.35,
-    marginBottom: 2,
+    letterSpacing: 1,
+    marginBottom: 3,
   },
 
   itemRow: {
     flexDirection: "row",
     alignItems: "flex-start",
-    marginBottom: 2,
+    marginBottom: 2.4,
   },
 
   itemText: {
@@ -247,14 +253,14 @@ const unifiedStyles = StyleSheet.create({
   },
 
   totals: {
-    marginTop: 1,
+    marginTop: 2,
     fontSize: 7.2,
     fontFamily: "Helvetica-Bold",
   },
 
   compactFields: {
-    marginTop: 1,
-    gap: 1.5,
+    marginTop: 2,
+    gap: 2.5,
   },
 
   footerLine: {
@@ -263,13 +269,97 @@ const unifiedStyles = StyleSheet.create({
   },
 
   footerSmallText: {
-    marginTop: 1,
+    marginTop: 1.5,
     fontSize: 6.4,
     lineHeight: 1.2,
   },
+
+  cutGuideText: {
+    textAlign: "center",
+    fontSize: 6,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+  },
+
+  orderBlock: {
+  marginBottom: 8,
+  paddingBottom: 4,
+},
+
+dateLine: {
+  fontSize: 7.8,
+  lineHeight: 1.25,
+  marginTop: 1,
+},
+
+addressBlock: {
+  marginBottom: 5,
+},
+
+receiptBlock: {
+  marginTop: 6,
+  gap: 4,
+},
+
+fieldRow: {
+  flexDirection: "row",
+  alignItems: "flex-end",
+  gap: 6,
+},
+
+fieldLabel: {
+  fontSize: 7.4,
+  fontFamily: "Helvetica-Bold",
+},
+
+fieldLine: {
+  flex: 1,
+  borderBottomWidth: 1,
+  borderBottomColor: "#000000",
+},
+
+proofTitle: {
+  marginTop: 4,
+  fontSize: 8.2,
+  fontFamily: "Helvetica-Bold",
+  textTransform: "uppercase",
+  letterSpacing: 0.4,
+},
+
+signatureRow: {
+  marginTop: 5,
+  flexDirection: "row",
+  alignItems: "flex-end",
+  gap: 6,
+},
+
+signatureLabel: {
+  fontSize: 7.4,
+  fontFamily: "Helvetica-Bold",
+},
+
+signatureLine: {
+  flex: 1,
+  borderBottomWidth: 1,
+  borderBottomColor: "#000000",
+},
+
+cutGuideWrap: {
+  position: "absolute",
+  left: 10,
+  right: 10,
+  bottom: 4,
+},
+
+cutGuideLine: {
+  borderTopWidth: 0.8,
+  borderTopColor: "#000000",
+  borderStyle: "dashed",
+},
+
 });
 
-function LocalDeliveryPage({ docs }: { docs: LocalDeliveryDocuments }) {
+function LocalDeliveryLabel({ docs }: { docs: LocalDeliveryDocuments }) {
   const label = docs.documents.label;
   const separation = docs.documents.separationList;
 
@@ -288,20 +378,24 @@ function LocalDeliveryPage({ docs }: { docs: LocalDeliveryDocuments }) {
     .join(" - ");
 
   const shouldUseCompactReceipt = items.length > 6 || Boolean(deliveryNotes);
+    const maxVisibleItems = shouldUseCompactReceipt ? 6 : 8;
+  const visibleItems = items.slice(0, maxVisibleItems);
+  const hiddenItemsCount = Math.max(items.length - maxVisibleItems, 0);
 
   return (
-    <Page size={[mmToPt(80), mmToPt(100)]} style={unifiedStyles.page}>
+    <View style={unifiedStyles.page}>
       <View style={unifiedStyles.header} wrap={false}>
         <Text style={unifiedStyles.headerTitle}>KEYFI</Text>
         <Text style={unifiedStyles.headerSubtitle}>PROFESSIONAL</Text>
       </View>
 
-      <View style={unifiedStyles.separatorStrong} />
-      <View style={unifiedStyles.block} wrap={false}>
-        <Text style={unifiedStyles.blockTitle}>Pedido</Text>
-        <Text style={unifiedStyles.orderNumber}>{text(label.orderNumber)}</Text>
-        <Text style={unifiedStyles.line}>DATA: {formatPrintedDate(label.printedDate)}</Text>
-      </View>
+<View style={[unifiedStyles.block, unifiedStyles.orderBlock]} wrap={false}>
+  <Text style={unifiedStyles.blockTitle}>Pedido</Text>
+  <Text style={unifiedStyles.orderNumber}>{text(label.orderNumber)}</Text>
+  <Text style={unifiedStyles.dateLine}>
+    DATA: {formatPrintedDate(label.printedDate)}
+  </Text>
+</View>
 
         <View style={unifiedStyles.separator} />
 
@@ -316,18 +410,18 @@ function LocalDeliveryPage({ docs }: { docs: LocalDeliveryDocuments }) {
 
       <View style={unifiedStyles.block} wrap={false}>
         <Text style={unifiedStyles.blockTitle}>Endereço de entrega</Text>
-        <Text style={unifiedStyles.line}>{addressLine1 || "Não informado"}</Text>
-        {addressLine2 ? <Text style={unifiedStyles.line}>{addressLine2}</Text> : null}
-        <Text style={unifiedStyles.line}>{text(address?.neighborhood)}</Text>
-        <Text style={unifiedStyles.line}>{cityState || "Não informado"}</Text>
-        <Text style={unifiedStyles.line}>CEP: {text(address?.zipCode)}</Text>
+        <Text style={unifiedStyles.addressLine}>{addressLine1 || "Não informado"}</Text>
+        {addressLine2 ? <Text style={unifiedStyles.addressLine}>{addressLine2}</Text> : null}
+        <Text style={unifiedStyles.addressLine}>{text(address?.neighborhood)}</Text>
+        <Text style={unifiedStyles.addressLine}>{cityState || "Não informado"}</Text>
+        <Text style={unifiedStyles.addressLine}>CEP: {text(address?.zipCode)}</Text>
       </View>
       <View style={unifiedStyles.separatorStrong} />
 
       <View style={unifiedStyles.block}>
         <Text style={unifiedStyles.productsTitle}>Produtos</Text>
 
-        {items.map((item) => (
+        {visibleItems.map((item) => (
           <View key={item.id} style={unifiedStyles.itemRow}>
             <Text style={unifiedStyles.itemText}>
               {item.quantity}x {item.name}
@@ -335,28 +429,42 @@ function LocalDeliveryPage({ docs }: { docs: LocalDeliveryDocuments }) {
             <Text style={unifiedStyles.checkbox}>[ ]</Text>
           </View>
          ))}
+          {hiddenItemsCount > 0 ? (
+          <Text style={unifiedStyles.itemText}>+ {hiddenItemsCount} item(ns) adicional(is)</Text>
+        ) : null}
 
         <Text style={unifiedStyles.totals}>TOTAL DE ITENS: {totals.itemsQuantity}</Text>
       </View>
 
       <View style={unifiedStyles.separator} />
 
-      <View style={unifiedStyles.compactFields} wrap={false}>
-        <Text style={unifiedStyles.footerLine}>SEPARADO ________</Text>
-        <Text style={unifiedStyles.footerLine}>CONFERIDO _______</Text>
-        {shouldUseCompactReceipt ? (
-          <Text style={unifiedStyles.footerLine}>RECEBIDO/ASSINATURA __________________</Text>
-        ) : (
-          <>
-            <Text style={unifiedStyles.footerLine}>COMPROVANTE DE ENTREGA</Text>
-            <Text style={unifiedStyles.footerSmallText}>
-              Recebi o pedido em perfeitas condições.
-            </Text>
-            <Text style={unifiedStyles.footerLine}>ASSINATURA __________________</Text>
-          </>
-        )}
+<View style={unifiedStyles.receiptBlock} wrap={false}>
+  <View style={unifiedStyles.fieldRow}>
+    <Text style={unifiedStyles.fieldLabel}>SEPARADO</Text>
+    <View style={unifiedStyles.fieldLine} />
+  </View>
+
+  <View style={unifiedStyles.fieldRow}>
+    <Text style={unifiedStyles.fieldLabel}>CONFERIDO</Text>
+    <View style={unifiedStyles.fieldLine} />
+  </View>
+
+  <Text style={unifiedStyles.proofTitle}>COMPROVANTE DE ENTREGA</Text>
+
+  <Text style={unifiedStyles.footerSmallText}>
+    Recebi o pedido em perfeitas condições.
+  </Text>
+
+  <View style={unifiedStyles.signatureRow}>
+    <Text style={unifiedStyles.signatureLabel}>ASSINATURA</Text>
+    <View style={unifiedStyles.signatureLine} />
+  </View>
+</View>
+      <View style={unifiedStyles.cutGuideWrap} wrap={false}>
+        <View style={unifiedStyles.cutGuideLine} />
+        <Text style={unifiedStyles.cutGuideText}>corte aqui</Text>
       </View>
-    </Page>
+    </View>
   );
 }
 
@@ -367,7 +475,9 @@ function UnifiedLocalDeliveryDocument({
 }) {
   return (
     <Document>
-      <LocalDeliveryPage docs={docs} />
+            <Page size={[mmToPt(80), mmToPt(100)]}>
+        <LocalDeliveryLabel docs={docs} />
+      </Page>
     </Document>
   );
 }
@@ -380,10 +490,12 @@ function UnifiedLocalDeliveryBatchDocument({
   return (
     <Document>
       {docsList.map((docs, index) => (
-        <LocalDeliveryPage
+        <Page
           key={`${docs.documents.label.orderNumber ?? docs.documents.label.customer?.name ?? index}`}
-          docs={docs}
-        />
+          size={[mmToPt(80), mmToPt(100)]}
+        >
+          <LocalDeliveryLabel docs={docs} />
+        </Page>
       ))}
     </Document>
   );
