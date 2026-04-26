@@ -136,14 +136,15 @@ function openPdfBlob(blob: Blob) {
 }
 
 const unifiedStyles = StyleSheet.create({
-  page: {
-    paddingTop: 12,
-    paddingHorizontal: 14,
-    paddingBottom: 12,
-    fontFamily: "Helvetica",
-    color: "#000000",
-    backgroundColor: "#ffffff",
-  },
+page: {
+  paddingTop: 12,
+  paddingLeft: 14,
+  paddingRight: 18,
+  paddingBottom: 12,
+  fontFamily: "Helvetica",
+  color: "#000000",
+  backgroundColor: "#ffffff",
+},
 
   header: {
     alignItems: "center",
@@ -177,12 +178,13 @@ const unifiedStyles = StyleSheet.create({
     marginBottom: 4,
   },
 
-  orderNumber: {
-    fontSize: 21,
-    fontFamily: "Helvetica-Bold",
-    lineHeight: 1.05,
-    marginBottom: 2,
-  },
+orderNumber: {
+  fontSize: 15,
+  fontFamily: "Helvetica-Bold",
+  lineHeight: 1.02,
+  marginBottom: 2,
+},
+
 
   dateText: {
     fontSize: 10,
@@ -282,10 +284,10 @@ productDivider: {
   borderBottomColor: "#000000",
   marginTop: 12,
 },
-
 checkSection: {
   marginTop: 32,
   marginBottom: 12,
+  paddingHorizontal: 10,
 },
 
 checkRow: {
@@ -294,8 +296,9 @@ checkRow: {
   alignItems: "flex-start",
 },
 
+
 checkColumn: {
-  width: "42%",
+  width: "38%",
   alignItems: "center",
 },
 
@@ -307,51 +310,56 @@ checkTopLine: {
 },
 
 checkLabel: {
-  fontSize: 8,
+  fontSize: 7.4,
   fontFamily: "Helvetica-Bold",
   textTransform: "uppercase",
-  letterSpacing: 1.2,
+  letterSpacing: 1,
+  textAlign: "center",
 },
 
 proofSection: {
   marginTop: 32,
   marginBottom: 12,
   alignItems: "center",
+  paddingHorizontal: 12,
 },
 
 proofTitle: {
-  fontSize: 9,
+  fontSize: 8.6,
   fontFamily: "Helvetica-Bold",
   textTransform: "uppercase",
-  letterSpacing: 1,
+  letterSpacing: 0.8,
   marginBottom: 6,
   textAlign: "center",
 },
 
 proofText: {
-  fontSize: 8.2,
-  lineHeight: 1.25,
+  width: "90%",
+  fontSize: 7.5,
+  lineHeight: 1.2,
   textAlign: "center",
 },
 
 signatureSection: {
-  marginTop: 28,
+  marginTop: 26,
   alignItems: "center",
+  paddingHorizontal: 12,
 },
 
 signatureLine: {
-  width: "58%",
+  width: "54%",
   borderBottomWidth: 1.2,
   borderBottomColor: "#000000",
   marginBottom: 5,
 },
 
 signatureLabel: {
-  fontSize: 6.5,
+  fontSize: 6.2,
   textTransform: "uppercase",
-  letterSpacing: 0.8,
+  letterSpacing: 0.7,
   textAlign: "center",
 },
+
 });
 
 function LocalDeliveryLabel({ docs }: { docs: LocalDeliveryDocuments }) {
@@ -393,9 +401,9 @@ function LocalDeliveryLabel({ docs }: { docs: LocalDeliveryDocuments }) {
 
       <View style={unifiedStyles.topSection}>
         <Text style={unifiedStyles.sectionLabel}>PEDIDO</Text>
-        <Text style={unifiedStyles.orderNumber}>
-          {text(label.orderNumber)}
-        </Text>
+<Text style={unifiedStyles.orderNumber}>
+  #{text(label.orderNumber)}
+</Text>
         <Text style={unifiedStyles.dateText}>
           DATA: {formatPrintedDate(label.printedDate)}
         </Text>
