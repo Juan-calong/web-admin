@@ -136,15 +136,15 @@ function openPdfBlob(blob: Blob) {
 }
 
 const unifiedStyles = StyleSheet.create({
-page: {
-  paddingTop: 12,
-  paddingLeft: 14,
-  paddingRight: 18,
-  paddingBottom: 12,
-  fontFamily: "Helvetica",
-  color: "#000000",
-  backgroundColor: "#ffffff",
-},
+  page: {
+    paddingTop: 12,
+    paddingLeft: 12,
+    paddingRight: 18, // Aumentei um pouco a margem direita para a impressora não cortar o conteúdo
+    paddingBottom: 12,
+    fontFamily: "Helvetica",
+    color: "#000000",
+    backgroundColor: "#ffffff",
+  },
 
   header: {
     alignItems: "center",
@@ -178,13 +178,12 @@ page: {
     marginBottom: 4,
   },
 
-orderNumber: {
-  fontSize: 15,
-  fontFamily: "Helvetica-Bold",
-  lineHeight: 1.02,
-  marginBottom: 2,
-},
-
+  orderNumber: {
+    fontSize: 15,
+    fontFamily: "Helvetica-Bold",
+    lineHeight: 1.02,
+    marginBottom: 2,
+  },
 
   dateText: {
     fontSize: 10,
@@ -231,135 +230,145 @@ orderNumber: {
     marginTop: 12,
   },
 
+  // NOVA CLASSE PARA AS LINHAS DE DATA E TELEFONE
+  separatorLine: {
+    borderBottomWidth: 1.2,
+    borderBottomColor: "#000000",
+    marginTop: 8,
+    width: "100%",
+  },
+
   productSection: {
-  marginTop: 18,
-},
+    marginTop: 18,
+  },
 
-productTitle: {
-  fontSize: 8,
-  fontFamily: "Helvetica-Bold",
-  textTransform: "uppercase",
-  letterSpacing: 2,
-  marginBottom: 12,
-},
+  productTitle: {
+    fontSize: 8,
+    fontFamily: "Helvetica-Bold",
+    textTransform: "uppercase",
+    letterSpacing: 2,
+    marginBottom: 12,
+  },
 
-productRow: {
-  flexDirection: "row",
-  alignItems: "center",
-  marginBottom: 9,
-},
+  productRow: {
+    flexDirection: "row",
+    alignItems: "flex-start", // Alterado para não repuxar com textos de 2 linhas
+    marginBottom: 9,
+    paddingRight: 6, // Mais um respiro de segurança do lado direito
+  },
 
-productText: {
-  flex: 1,
-  fontSize: 10.5,
-  fontFamily: "Helvetica-Bold",
-  lineHeight: 1.15,
-  textTransform: "uppercase",
-  letterSpacing: 0.6,
-},
+  productText: {
+    flex: 1,
+    fontSize: 10.5,
+    fontFamily: "Helvetica-Bold",
+    lineHeight: 1.15,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    paddingRight: 10, // Garante que o texto não "cole" no checkbox
+  },
 
-productCheckbox: {
-  width: 12,
-  height: 12,
-  borderWidth: 0.8,
-  borderColor: "#000000",
-  marginLeft: 8,
-},
+  productCheckbox: {
+    width: 12,
+    height: 12,
+    borderWidth: 0.8,
+    borderColor: "#000000",
+    marginTop: 1, // Desce o checkbox um pouquinho pra alinhar com o topo do texto
+    flexShrink: 0, // A MÁGICA AQUI: Diz ao flexbox para NUNCA esmagar a largura do checkbox
+  },
 
-hiddenItemsText: {
-  fontSize: 8,
-  fontFamily: "Helvetica-Bold",
-  marginTop: 2,
-},
+  hiddenItemsText: {
+    fontSize: 8,
+    fontFamily: "Helvetica-Bold",
+    marginTop: 2,
+  },
 
-totalItemsText: {
-  marginTop: 4,
-  fontSize: 8,
-  fontFamily: "Helvetica-Bold",
-  textTransform: "uppercase",
-},
+  totalItemsText: {
+    marginTop: 4,
+    fontSize: 8,
+    fontFamily: "Helvetica-Bold",
+    textTransform: "uppercase",
+  },
 
-productDivider: {
-  borderBottomWidth: 1.4,
-  borderBottomColor: "#000000",
-  marginTop: 12,
-},
-checkSection: {
-  marginTop: 32,
-  marginBottom: 12,
-  paddingHorizontal: 10,
-},
+  productDivider: {
+    borderBottomWidth: 1.4,
+    borderBottomColor: "#000000",
+    marginTop: 12,
+  },
+  
+  checkSection: {
+    marginTop: 32,
+    marginBottom: 12,
+    paddingHorizontal: 10,
+  },
 
-checkRow: {
-  flexDirection: "row",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-},
+  checkRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
 
+  checkColumn: {
+    width: "38%",
+    alignItems: "center",
+  },
 
-checkColumn: {
-  width: "38%",
-  alignItems: "center",
-},
+  checkTopLine: {
+    width: "100%",
+    borderBottomWidth: 1,
+    borderBottomColor: "#000000",
+    marginBottom: 5,
+  },
 
-checkTopLine: {
-  width: "100%",
-  borderBottomWidth: 1,
-  borderBottomColor: "#000000",
-  marginBottom: 5,
-},
+  checkLabel: {
+    fontSize: 7.4,
+    fontFamily: "Helvetica-Bold",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    textAlign: "center",
+  },
 
-checkLabel: {
-  fontSize: 7.4,
-  fontFamily: "Helvetica-Bold",
-  textTransform: "uppercase",
-  letterSpacing: 1,
-  textAlign: "center",
-},
+  proofSection: {
+    marginTop: 32,
+    marginBottom: 12,
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
 
-proofSection: {
-  marginTop: 32,
-  marginBottom: 12,
-  alignItems: "center",
-  paddingHorizontal: 12,
-},
+  proofTitle: {
+    fontSize: 8.6,
+    fontFamily: "Helvetica-Bold",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    marginBottom: 6,
+    textAlign: "center",
+  },
 
-proofTitle: {
-  fontSize: 8.6,
-  fontFamily: "Helvetica-Bold",
-  textTransform: "uppercase",
-  letterSpacing: 0.8,
-  marginBottom: 6,
-  textAlign: "center",
-},
+  proofText: {
+    width: "90%",
+    fontSize: 7.5,
+    lineHeight: 1.2,
+    textAlign: "center",
+  },
 
-proofText: {
-  width: "90%",
-  fontSize: 7.5,
-  lineHeight: 1.2,
-  textAlign: "center",
-},
+  signatureSection: {
+    marginTop: 26,
+    alignItems: "center",
+    paddingHorizontal: 12,
+  },
 
-signatureSection: {
-  marginTop: 26,
-  alignItems: "center",
-  paddingHorizontal: 12,
-},
+  signatureLine: {
+    width: "54%",
+    borderBottomWidth: 1.2,
+    borderBottomColor: "#000000",
+    marginBottom: 5,
+  },
 
-signatureLine: {
-  width: "54%",
-  borderBottomWidth: 1.2,
-  borderBottomColor: "#000000",
-  marginBottom: 5,
-},
-
-signatureLabel: {
-  fontSize: 6.2,
-  textTransform: "uppercase",
-  letterSpacing: 0.7,
-  textAlign: "center",
-},
-
+  signatureLabel: {
+    fontSize: 6.2,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+    textAlign: "center",
+  },
 });
 
 function LocalDeliveryLabel({ docs }: { docs: LocalDeliveryDocuments }) {
@@ -401,12 +410,14 @@ function LocalDeliveryLabel({ docs }: { docs: LocalDeliveryDocuments }) {
 
       <View style={unifiedStyles.topSection}>
         <Text style={unifiedStyles.sectionLabel}>PEDIDO</Text>
-<Text style={unifiedStyles.orderNumber}>
-  #{text(label.orderNumber)}
-</Text>
+        <Text style={unifiedStyles.orderNumber}>
+          #{text(label.orderNumber)}
+        </Text>
         <Text style={unifiedStyles.dateText}>
           DATA: {formatPrintedDate(label.printedDate)}
         </Text>
+        {/* LINHA INSERIDA AQUI */}
+        <View style={unifiedStyles.separatorLine} />
       </View>
 
       <View style={unifiedStyles.topSection}>
@@ -419,6 +430,8 @@ function LocalDeliveryLabel({ docs }: { docs: LocalDeliveryDocuments }) {
         <Text style={unifiedStyles.phoneText}>
           {text(customer?.phone)}
         </Text>
+        {/* LINHA INSERIDA AQUI */}
+        <View style={unifiedStyles.separatorLine} />
       </View>
 
       <View>
@@ -445,66 +458,67 @@ function LocalDeliveryLabel({ docs }: { docs: LocalDeliveryDocuments }) {
         </Text>
 
         <View style={unifiedStyles.bottomDivider} />
+        
         <View style={unifiedStyles.productSection}>
-  <Text style={unifiedStyles.productTitle}>PEDIDO</Text>
+          <Text style={unifiedStyles.productTitle}>PEDIDO</Text>
 
-  {visibleItems.map((item) => (
-    <View key={item.id} style={unifiedStyles.productRow}>
-      <Text style={unifiedStyles.productText}>
-        {item.quantity}x {item.name}
-      </Text>
-      <View style={unifiedStyles.productCheckbox} />
-    </View>
-  ))}
+          {visibleItems.map((item) => (
+            <View key={item.id} style={unifiedStyles.productRow}>
+              <Text style={unifiedStyles.productText}>
+                {item.quantity}x {item.name}
+              </Text>
+              <View style={unifiedStyles.productCheckbox} />
+            </View>
+          ))}
 
-  {hiddenItemsCount > 0 ? (
-    <Text style={unifiedStyles.hiddenItemsText}>
-      + {hiddenItemsCount} item(ns) adicional(is)
-    </Text>
-  ) : null}
+          {hiddenItemsCount > 0 ? (
+            <Text style={unifiedStyles.hiddenItemsText}>
+              + {hiddenItemsCount} item(ns) adicional(is)
+            </Text>
+          ) : null}
 
-  <Text style={unifiedStyles.totalItemsText}>
-    TOTAL DE ITENS: {totals.itemsQuantity}
-  </Text>
+          <Text style={unifiedStyles.totalItemsText}>
+            TOTAL DE ITENS: {totals.itemsQuantity}
+          </Text>
 
-  <View style={unifiedStyles.productDivider} />
+          <View style={unifiedStyles.productDivider} />
 
-  <View style={unifiedStyles.checkSection}>
-  <View style={unifiedStyles.checkRow}>
-    <View style={unifiedStyles.checkColumn}>
-      <View style={unifiedStyles.checkTopLine} />
-      <Text style={unifiedStyles.checkLabel}>SEPARADO</Text>
-    </View>
+          <View style={unifiedStyles.checkSection}>
+            <View style={unifiedStyles.checkRow}>
+              <View style={unifiedStyles.checkColumn}>
+                <View style={unifiedStyles.checkTopLine} />
+                <Text style={unifiedStyles.checkLabel}>SEPARADO</Text>
+              </View>
 
-    <View style={unifiedStyles.checkColumn}>
-      <View style={unifiedStyles.checkTopLine} />
-      <Text style={unifiedStyles.checkLabel}>CONFERIDO</Text>
-    </View>
-  </View>
-</View>
+              <View style={unifiedStyles.checkColumn}>
+                <View style={unifiedStyles.checkTopLine} />
+                <Text style={unifiedStyles.checkLabel}>CONFERIDO</Text>
+              </View>
+            </View>
+          </View>
 
-<View style={unifiedStyles.proofSection}>
-  <Text style={unifiedStyles.proofTitle}>
-    COMPROVANTE DE ENTREGA
-  </Text>
+          <View style={unifiedStyles.proofSection}>
+            <Text style={unifiedStyles.proofTitle}>
+              COMPROVANTE DE ENTREGA
+            </Text>
 
-  <Text style={unifiedStyles.proofText}>
-    Recebi o pedido acima em perfeitas condições.
-  </Text>
-</View>
+            <Text style={unifiedStyles.proofText}>
+              Recebi o pedido acima em perfeitas condições.
+            </Text>
+          </View>
 
-<View style={unifiedStyles.signatureSection}>
-  <View style={unifiedStyles.signatureLine} />
-  <Text style={unifiedStyles.signatureLabel}>
-    ASSINATURA DO RECEBEDOR
-  </Text>
-</View>
-  
+          <View style={unifiedStyles.signatureSection}>
+            <View style={unifiedStyles.signatureLine} />
+            <Text style={unifiedStyles.signatureLabel}>
+              ASSINATURA DO RECEBEDOR
+            </Text>
+          </View>
         </View>
       </View>
     </View>
   );
 }
+
 function UnifiedLocalDeliveryDocument({
   docs,
 }: {
@@ -512,13 +526,13 @@ function UnifiedLocalDeliveryDocument({
 }) {
   return (
     <Document>
-<Page
-  size={[mmToPt(80), mmToPt(100)]}
-  style={unifiedStyles.page}
-  wrap={false}
->
-  <LocalDeliveryLabel docs={docs} />
-</Page>
+      <Page
+        size={[mmToPt(80), mmToPt(100)]}
+        style={unifiedStyles.page}
+        wrap={false}
+      >
+        <LocalDeliveryLabel docs={docs} />
+      </Page>
     </Document>
   );
 }
