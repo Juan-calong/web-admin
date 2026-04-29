@@ -13,6 +13,7 @@ import {
   ChevronUp,
   MapPin,
   AlertTriangle,
+  Wallet,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
@@ -367,11 +368,12 @@ function StatusBadge({
 export default function AdminOrdersPage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
-  const [deliveryFilter, setDeliveryFilter] = useState<
-    "ALL" | "LOCAL" | "CORREIOS" | "UNKNOWN"
-  >("ALL");
-  const [localStatusFilter, setLocalStatusFilter] =
-    useState<LocalStatusFilter>("ALL");
+const [deliveryFilter, setDeliveryFilter] = useState<
+  "ALL" | "LOCAL" | "CORREIOS" | "UNKNOWN"
+>("ALL");
+
+const [localStatusFilter, setLocalStatusFilter] =
+  useState<LocalStatusFilter>("ALL");
   const [onlyTodayLocalDelivery, setOnlyTodayLocalDelivery] = useState(false);
   const [todayPanelOpen, setTodayPanelOpen] = useState(false);
   const [todayCitySearch, setTodayCitySearch] = useState("");
@@ -905,51 +907,38 @@ if (!selectedLocalOrderIds.length) {
   }
   const actingOrderId = (decideM.variables as { orderId?: string } | undefined)?.orderId;
 
-    const baseFilterClass =
-    "rounded-xl border px-3 text-xs sm:text-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50";
+  const baseFilterClass =
+    "h-8 rounded-full border px-3 text-xs font-semibold transition-colors hover:border-zinc-300 hover:bg-zinc-50";
+
   const tabClass = (isActive: boolean) =>
     cn(
       baseFilterClass,
       isActive
-        ? "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800"
+        ? "border-zinc-950 bg-zinc-950 text-white shadow-sm hover:bg-zinc-900"
         : "border-zinc-200 bg-white text-zinc-700"
     );
-  const deliveryClass = (
-    isActive: boolean,
-    tone: "neutral" | "local" | "correios" | "unknown"
-  ) =>
-    cn(
-      baseFilterClass,
-      !isActive && "border-zinc-200 bg-white text-zinc-700",
-      isActive &&
-        (tone === "local"
-          ? "border-violet-200 bg-violet-50 text-violet-800"
-          : tone === "correios"
-            ? "border-amber-200 bg-amber-50 text-amber-800"
-            : tone === "unknown"
-              ? "border-slate-200 bg-slate-100 text-slate-800"
-              : "border-zinc-300 bg-zinc-100 text-zinc-900")
-    );
-  const localStatusClass = (
-    isActive: boolean,
-    tone: "all" | "pending" | "packed" | "route" | "delivered" | "problem"
-  ) =>
-    cn(
-      baseFilterClass,
-      !isActive && "border-zinc-200 bg-white text-zinc-700",
-      isActive &&
-        (tone === "pending"
-          ? "border-amber-200 bg-amber-50 text-amber-900"
-          : tone === "packed"
-            ? "border-sky-200 bg-sky-50 text-sky-900"
-            : tone === "route"
-              ? "border-violet-200 bg-violet-50 text-violet-900"
-              : tone === "delivered"
-                ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                : tone === "problem"
-                  ? "border-red-200 bg-red-50 text-red-900"
-                  : "border-zinc-300 bg-zinc-100 text-zinc-900")
-    );
+
+const deliveryClass = (
+  isActive: boolean,
+  _tone: "neutral" | "local" | "correios" | "unknown"
+) =>
+  cn(
+    baseFilterClass,
+    isActive
+      ? "border-zinc-300 bg-zinc-100 text-zinc-950 shadow-sm"
+      : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+  );
+
+const localStatusClass = (
+  isActive: boolean,
+  _tone: "all" | "pending" | "packed" | "route" | "delivered" | "problem"
+) =>
+  cn(
+    baseFilterClass,
+    isActive
+      ? "border-zinc-300 bg-zinc-100 text-zinc-950 shadow-sm"
+      : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+  );
 
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#fafafa_0%,#ffffff_45%,#f4f4f5_100%)]">
@@ -975,9 +964,74 @@ if (!selectedLocalOrderIds.length) {
           </Button>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
-          <div className="space-y-4">
-            <Card className="rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
+        <div className="space-y-4">
+<Card className="gap-0 overflow-hidden rounded-2xl border border-zinc-200/70 bg-white py-0 shadow-[0_10px_28px_rgba(15,23,42,0.07)]">
+  <CardHeader className="border-b border-blue-200/70 bg-blue-100/70 px-4 py-2">
+    <CardTitle className="text-base font-black text-zinc-950">
+      Métrica do Dia
+    </CardTitle>
+  </CardHeader>
+
+  <CardContent className="grid gap-0 p-0 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="flex items-center gap-3 border-b border-zinc-200/70 px-4 py-4 sm:border-r xl:border-b-0">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+        <Clock3 className="h-5 w-5" />
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-sm leading-tight text-zinc-700">Pendentes</p>
+        <p className="mt-1 text-2xl font-black leading-none text-zinc-950">
+          {pending.length}
+        </p>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-3 border-b border-zinc-200/70 px-4 py-4 xl:border-r xl:border-b-0">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+        <CheckCircle2 className="h-5 w-5" />
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-sm leading-tight text-zinc-700">
+          Aprovados recentes
+        </p>
+        <p className="mt-1 text-2xl font-black leading-none text-zinc-950">
+          {approvedRecent.length}
+        </p>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-3 border-b border-zinc-200/70 px-4 py-4 sm:border-r sm:border-b-0">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-700">
+        <XCircle className="h-5 w-5" />
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-sm leading-tight text-zinc-700">
+          Reprovados recentes
+        </p>
+        <p className="mt-1 text-2xl font-black leading-none text-zinc-950">
+          {rejectedRecent.length}
+        </p>
+      </div>
+    </div>
+
+    <div className="flex items-center gap-3 px-4 py-4">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-700">
+        <RefreshCw className="h-5 w-5" />
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-sm leading-tight text-zinc-700">Total em análise</p>
+        <p className="mt-1 text-2xl font-black leading-none text-zinc-950">
+          {pendingTotal}
+        </p>
+      </div>
+    </div>
+  </CardContent>
+</Card>
+
+          <Card className="overflow-hidden rounded-[24px] border border-zinc-200/70 bg-white/90 shadow-sm">
               <CardHeader className="border-b border-zinc-100 pb-3">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-2">
@@ -1381,338 +1435,334 @@ if (!selectedLocalOrderIds.length) {
               ) : null}
             </Card>
 
-          <Card className="rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
-            <CardHeader className="border-b border-zinc-100 pb-4">
-              <CardTitle className="text-xl font-bold text-zinc-950">
-                Fila de aprovação
-              </CardTitle>
-              <CardDescription className="text-sm text-zinc-500">
-                {ordersQ.isLoading ? "Carregando pedidos…" : "Tudo no mesmo lugar: Pendentes, Aprovados e Reprovados recentes."}
-              </CardDescription>
+<Card className="gap-0 overflow-hidden rounded-[24px] border border-zinc-200/70 bg-white py-0 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
+  <CardHeader className="rounded-t-[24px] border-b border-zinc-200/70 bg-[#eef6ff] px-5 py-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <CardTitle className="text-xl font-black tracking-tight text-zinc-950">
+                    Fila de aprovação
+                  </CardTitle>
+                  <CardDescription className="mt-1 text-sm text-zinc-600">
+                    {ordersQ.isLoading
+                      ? "Carregando pedidos…"
+                      : "Revise, filtre e abra pedidos sem perder contexto."}
+                  </CardDescription>
+                </div>
+
+                <details className="group relative">
+  <summary className="inline-flex h-9 cursor-pointer list-none items-center gap-2 rounded-xl border border-zinc-900 bg-white px-3 text-sm font-medium text-zinc-900 shadow-sm transition hover:bg-zinc-50 [&::-webkit-details-marker]:hidden">
+    Filtros avançados
+    <ChevronDown className="h-4 w-4 transition group-open:rotate-180" />
+  </summary>
+
+<div className="absolute right-0 z-30 mt-2 w-[min(92vw,430px)] rounded-2xl border border-zinc-200 bg-white p-4 shadow-xl">
+  <div className="grid gap-4 sm:grid-cols-2">
+    <label className="space-y-2">
+      <span className="text-sm font-medium text-zinc-600">
+        Tipo de entrega
+      </span>
+
+      <div className="relative">
+        <select
+          value={deliveryFilter}
+          onChange={(event) =>
+            handleDeliveryFilterChange(
+              event.target.value as "ALL" | "LOCAL" | "CORREIOS" | "UNKNOWN"
+            )
+          }
+          className={cn(
+            "h-11 w-full appearance-none rounded-xl border px-3 pr-10 text-sm font-semibold outline-none transition",
+            deliveryFilter !== "ALL"
+              ? "border-zinc-950 bg-zinc-950 text-white shadow-sm"
+              : "border-zinc-300 bg-white text-zinc-950 hover:bg-zinc-50"
+          )}
+        >
+          <option value="ALL">Todos</option>
+          <option value="LOCAL">Entrega local</option>
+          <option value="CORREIOS">Correios</option>
+          <option value="UNKNOWN">Não identificado</option>
+        </select>
+
+        <ChevronDown
+          className={cn(
+            "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2",
+            deliveryFilter !== "ALL" ? "text-white" : "text-zinc-500"
+          )}
+        />
+      </div>
+    </label>
+
+    <label className="space-y-2">
+      <span className="text-sm font-medium text-zinc-600">
+        Status local
+      </span>
+
+      <div className="relative">
+        <select
+          value={localStatusFilter}
+          onChange={(event) =>
+            setLocalStatusFilter(event.target.value as LocalStatusFilter)
+          }
+          disabled={deliveryFilter === "CORREIOS"}
+          className={cn(
+            "h-11 w-full appearance-none rounded-xl border px-3 pr-10 text-sm font-semibold outline-none transition",
+            localStatusFilter !== "ALL" && deliveryFilter !== "CORREIOS"
+              ? "border-zinc-950 bg-zinc-950 text-white shadow-sm"
+              : "border-zinc-300 bg-white text-zinc-950 hover:bg-zinc-50",
+            deliveryFilter === "CORREIOS" &&
+              "cursor-not-allowed opacity-50 hover:bg-white"
+          )}
+        >
+          <option value="ALL">Todos</option>
+          <option value="PENDING_SEPARATION">Separação</option>
+          <option value="PACKED">Empacotado</option>
+          <option value="OUT_FOR_DELIVERY">Em rota</option>
+          <option value="DELIVERED">Entregue</option>
+          <option value="DELIVERY_PROBLEM">Problema</option>
+        </select>
+
+        <ChevronDown
+          className={cn(
+            "pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2",
+            localStatusFilter !== "ALL" && deliveryFilter !== "CORREIOS"
+              ? "text-white"
+              : "text-zinc-500"
+          )}
+        />
+      </div>
+    </label>
+  </div>
+
+  {deliveryFilter === "CORREIOS" ? (
+    <p className="mt-3 text-xs text-zinc-500">
+      Status local se aplica apenas aos pedidos de entrega local.
+    </p>
+  ) : null}
+
+  {(deliveryFilter !== "ALL" || localStatusFilter !== "ALL") ? (
+    <div className="mt-4 flex justify-end border-t border-zinc-100 pt-3">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="h-8 rounded-xl border-zinc-200 bg-white px-3 text-xs"
+        onClick={() => {
+          handleDeliveryFilterChange("ALL");
+          setLocalStatusFilter("ALL");
+        }}
+      >
+        Limpar filtros
+      </Button>
+    </div>
+  ) : null}
+</div>
+</details>
+              </div>
             </CardHeader>
 
             <CardContent className="p-4 sm:p-5">
-                <div className="mb-4 flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className={tabClass(activeTab === "pending")}
-                  onClick={() => setActiveTab("pending")}
-                >
-                  Pendentes ({pending.length})
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className={tabClass(activeTab === "approved")}
-                  onClick={() => setActiveTab("approved")}
-                >
-                  Aprovados recentemente ({approvedRecent.length})
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className={tabClass(activeTab === "rejected")}
-                  onClick={() => setActiveTab("rejected")}
-                >
-                  Reprovados recentemente ({rejectedRecent.length})
-                </Button>
+              <div className="mb-4 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" size="sm" variant="outline" className={tabClass(activeTab === "pending")} onClick={() => setActiveTab("pending")}>Pendentes ({pending.length})</Button>
+                  <Button type="button" size="sm" variant="outline" className={tabClass(activeTab === "approved")} onClick={() => setActiveTab("approved")}>Aprovados recentemente ({approvedRecent.length})</Button>
+                  <Button type="button" size="sm" variant="outline" className={tabClass(activeTab === "rejected")} onClick={() => setActiveTab("rejected")}>Reprovados recentemente ({rejectedRecent.length})</Button>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-600">
+                  <span>Exibindo <strong className="font-semibold text-zinc-950">{displayedOrders.length}</strong> pedido(s) neste filtro.</span>
+                  {deliveryFilter !== "ALL" ? <span className="rounded-full border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-xs font-medium text-zinc-700">Entrega: {deliveryFilter === "LOCAL" ? "Entrega local" : deliveryFilter === "CORREIOS" ? "Correios" : "Não identificado"}</span> : null}
+                  {localStatusFilter !== "ALL" && deliveryFilter !== "CORREIOS" ? <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700">Local: {getLocalDeliveryStatusLabel(localStatusFilter) ?? localStatusFilter}</span> : null}
+                  {onlyTodayLocalDelivery ? <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">Entregas de hoje <button type="button" className="font-bold underline" onClick={() => setOnlyTodayLocalDelivery(false)}>Limpar</button></span> : null}
+                </div>
               </div>
 
-                            <div className="mb-3">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Tipo de entrega
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={deliveryClass(deliveryFilter === "ALL", "neutral")}
-                    onClick={() => handleDeliveryFilterChange("ALL")}
-                  >
-                    Todos
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={deliveryClass(deliveryFilter === "LOCAL", "local")}
-                    onClick={() => handleDeliveryFilterChange("LOCAL")}
-                  >
-                    Entrega local
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={deliveryClass(deliveryFilter === "CORREIOS", "correios")}
-                    onClick={() => handleDeliveryFilterChange("CORREIOS")}
-                  >
-                    Correios
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={deliveryClass(deliveryFilter === "UNKNOWN", "unknown")}
-                    onClick={() => handleDeliveryFilterChange("UNKNOWN")}
-                  >
-                    Não identificado
-                  </Button>
-                </div>
-                              </div>
+<div className="mb-4 rounded-[22px] border border-zinc-200/80 bg-white px-4 py-3 shadow-sm">
+  <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="flex flex-wrap items-center gap-3">
+        <label className="inline-flex items-center gap-2 text-sm text-zinc-800">
+          <input
+            ref={selectAllRef}
+            type="checkbox"
+            className="h-4 w-4 rounded border-zinc-300"
+            checked={allDisplayedSelected}
+            onChange={toggleSelectDisplayedOrders}
+            disabled={displayedOrderIds.length === 0}
+          />
+          <span className="font-medium">Selecionar todos exibidos</span>
+        </label>
 
-              <div className="mb-3">
-                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
-                  Status local
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={localStatusClass(localStatusFilter === "ALL", "all")}
-                    onClick={() => setLocalStatusFilter("ALL")}
-                    disabled={deliveryFilter === "CORREIOS"}
-                  >
-                    Todos
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={localStatusClass(localStatusFilter === "PENDING_SEPARATION", "pending")}
-                    onClick={() => setLocalStatusFilter("PENDING_SEPARATION")}
-                    disabled={deliveryFilter === "CORREIOS"}
-                  >
-                    Aguardando separação
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={localStatusClass(localStatusFilter === "PACKED", "packed")}
-                    onClick={() => setLocalStatusFilter("PACKED")}
-                    disabled={deliveryFilter === "CORREIOS"}
-                  >
-                    Empacotado
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={localStatusClass(localStatusFilter === "OUT_FOR_DELIVERY", "route")}
-                    onClick={() => setLocalStatusFilter("OUT_FOR_DELIVERY")}
-                    disabled={deliveryFilter === "CORREIOS"}
-                  >
-                    Saiu para entrega
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={localStatusClass(localStatusFilter === "DELIVERED", "delivered")}
-                    onClick={() => setLocalStatusFilter("DELIVERED")}
-                    disabled={deliveryFilter === "CORREIOS"}
-                  >
-                    Entregue
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className={localStatusClass(localStatusFilter === "DELIVERY_PROBLEM", "problem")}
-                    onClick={() => setLocalStatusFilter("DELIVERY_PROBLEM")}
-                    disabled={deliveryFilter === "CORREIOS"}
-                  >
-                    Problema
-                  </Button>
-                </div>
-                {deliveryFilter === "CORREIOS" ? (
-                  <p className="mt-2 text-xs text-zinc-500">
-                    Status local se aplica apenas a pedidos de entrega local.
-                  </p>
-                ) : null}
-                <p className="mt-2 text-xs text-zinc-500">
-                  Exibindo {displayedOrders.length} pedido(s) neste filtro.
-                </p>
-                                {onlyTodayLocalDelivery ? (
-                  <div className="mt-2 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs text-emerald-700">
-                    <span>Filtro: entregas de hoje ativo</span>
-                    <button
-                      type="button"
-                      className="font-semibold underline"
-                      onClick={() => setOnlyTodayLocalDelivery(false)}
-                    >
-                      Limpar filtro de hoje
-                    </button>
-                  </div>
-                ) : null}
-              </div>
+        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
+          {selectedVisibleCount} selecionado{selectedVisibleCount === 1 ? "" : "s"}
+        </span>
+      </div>
 
-                            <div className="mb-3 rounded-xl border border-zinc-200/80 bg-zinc-50/80 px-3 py-2">
-                <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 sm:text-sm">
-                  <label className="inline-flex items-center gap-2 text-zinc-800">
-                    <input
-                      ref={selectAllRef}
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-zinc-300"
-                      checked={allDisplayedSelected}
-                      onChange={toggleSelectDisplayedOrders}
-                      disabled={displayedOrderIds.length === 0}
-                    />
-                    <span>Selecionar todos exibidos</span>
-                  </label>
-                  <span className="text-zinc-500">{selectedVisibleCount} selecionados</span>
-                  {selectedVisibleCount > 0 ? (
-                    <>
-                        <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
-                        onClick={handleOpenSelectedLocalDocuments}
-                        disabled={localBatchPdfM.isPending || selectedVisibleCount === 0}
-                      >
-                        {localBatchPdfM.isPending
-                          ? "Gerando PDF…"
-                          : "Abrir documentos locais"}
-                      </Button>
-                      <Button
-  type="button"
-  size="sm"
-  variant="outline"
-  className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
-  onClick={handleOpenSelectedCorreiosLabels}
-  disabled={correiosBatchPdfM.isPending || selectedVisibleCount === 0}
->
-  {correiosBatchPdfM.isPending
-    ? "Abrindo etiquetas…"
-    : "Abrir etiquetas Correios"}
-</Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
-                        onClick={clearSelection}
-                      >
-                        Limpar seleção
-                      </Button>
-                    </>
-                  ) : null}
-                </div>
-                                {selectedVisibleCount > 0 ? (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
-                      onClick={() => handleBulkLocalDeliveryStatus("PACKED")}
-                      disabled={
-                        selectedLocalOrderIds.length === 0 ||
-                        localDeliveryBulkStatusM.isPending
-                      }
-                    >
-                      Marcar empacotado
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
-                      onClick={() => handleBulkLocalDeliveryStatus("OUT_FOR_DELIVERY")}
-                      disabled={
-                        selectedLocalOrderIds.length === 0 ||
-                        localDeliveryBulkStatusM.isPending
-                      }
-                    >
-                      Saiu para entrega
-                    </Button>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
-                          disabled={
-                            selectedLocalOrderIds.length === 0 ||
-                            localDeliveryBulkStatusM.isPending
-                          }
-                        >
-                          Marcar entregue
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent className="rounded-[28px]">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            Marcar pedidos selecionados como entregues?
-                          </AlertDialogTitle>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel
-                            className="rounded-2xl"
-                            onClick={() => {
-                              setGlobalPauseReason("");
-                              setIsGlobalPauseDialogOpen(false);
-                              }}
-                              >
-                            Cancelar
-                          </AlertDialogCancel>
-                          <AlertDialogAction
-                            className="rounded-2xl"
-                            onClick={() => handleBulkLocalDeliveryStatus("DELIVERED")}
-                          >
-                            Confirmar
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          className="h-7 rounded-lg border-zinc-200 bg-white px-2 text-xs"
-                          disabled={
-                            selectedLocalOrderIds.length === 0 ||
-                            localDeliveryBulkStatusM.isPending
-                          }
-                        >
-                          Problema
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent className="rounded-[28px]">
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>
-                            Marcar pedidos selecionados com problema na entrega?
-                          </AlertDialogTitle>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel className="rounded-2xl">
-                            Cancelar
-                          </AlertDialogCancel>
-                          <AlertDialogAction
-                            className="rounded-2xl"
-                            onClick={() =>
-                              handleBulkLocalDeliveryStatus("DELIVERY_PROBLEM")
-                            }
-                          >
-                            Confirmar
-                          </AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  </div>
-                ) : null}
-              </div>
+      {selectedVisibleCount > 0 ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-9 rounded-xl border-zinc-200 bg-white px-3 text-xs font-medium hover:bg-zinc-50"
+            onClick={handleOpenSelectedLocalDocuments}
+            disabled={localBatchPdfM.isPending || selectedVisibleCount === 0}
+          >
+            {localBatchPdfM.isPending
+              ? "Gerando PDF…"
+              : "Abrir documentos locais"}
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-9 rounded-xl border-zinc-200 bg-white px-3 text-xs font-medium hover:bg-zinc-50"
+            onClick={handleOpenSelectedCorreiosLabels}
+            disabled={correiosBatchPdfM.isPending || selectedVisibleCount === 0}
+          >
+            {correiosBatchPdfM.isPending
+              ? "Abrindo etiquetas…"
+              : "Abrir etiquetas Correios"}
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-9 rounded-xl px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-100"
+            onClick={clearSelection}
+          >
+            Limpar seleção
+          </Button>
+        </div>
+      ) : null}
+    </div>
+
+    {selectedVisibleCount > 0 ? (
+      <div className="flex flex-col gap-2 border-t border-zinc-100 pt-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500">
+            Status local
+          </span>
+
+          {selectedLocalOrderIds.length === 0 ? (
+            <span className="text-xs text-zinc-400">
+              Selecione pedidos de entrega local para alterar status.
+            </span>
+          ) : null}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 rounded-full border-zinc-200 bg-white px-3 text-xs font-medium hover:bg-zinc-50"
+            onClick={() => handleBulkLocalDeliveryStatus("PACKED")}
+            disabled={
+              selectedLocalOrderIds.length === 0 ||
+              localDeliveryBulkStatusM.isPending
+            }
+          >
+            Marcar empacotado
+          </Button>
+
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="h-8 rounded-full border-zinc-200 bg-white px-3 text-xs font-medium hover:bg-zinc-50"
+            onClick={() => handleBulkLocalDeliveryStatus("OUT_FOR_DELIVERY")}
+            disabled={
+              selectedLocalOrderIds.length === 0 ||
+              localDeliveryBulkStatusM.isPending
+            }
+          >
+            Saiu para entrega
+          </Button>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 rounded-full border-zinc-200 bg-white px-3 text-xs font-medium hover:bg-zinc-50"
+                disabled={
+                  selectedLocalOrderIds.length === 0 ||
+                  localDeliveryBulkStatusM.isPending
+                }
+              >
+                Marcar entregue
+              </Button>
+            </AlertDialogTrigger>
+
+            <AlertDialogContent className="rounded-[28px]">
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Marcar pedidos selecionados como entregues?
+                </AlertDialogTitle>
+              </AlertDialogHeader>
+
+              <AlertDialogFooter>
+                <AlertDialogCancel className="rounded-2xl">
+                  Cancelar
+                </AlertDialogCancel>
+
+                <AlertDialogAction
+                  className="rounded-2xl"
+                  onClick={() => handleBulkLocalDeliveryStatus("DELIVERED")}
+                >
+                  Confirmar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 rounded-full border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700 hover:bg-red-100"
+                disabled={
+                  selectedLocalOrderIds.length === 0 ||
+                  localDeliveryBulkStatusM.isPending
+                }
+              >
+                Problema
+              </Button>
+            </AlertDialogTrigger>
+
+            <AlertDialogContent className="rounded-[28px]">
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  Marcar pedidos selecionados com problema na entrega?
+                </AlertDialogTitle>
+              </AlertDialogHeader>
+
+              <AlertDialogFooter>
+                <AlertDialogCancel className="rounded-2xl">
+                  Cancelar
+                </AlertDialogCancel>
+
+                <AlertDialogAction
+                  className="rounded-2xl"
+                  onClick={() =>
+                    handleBulkLocalDeliveryStatus("DELIVERY_PROBLEM")
+                  }
+                >
+                  Confirmar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </div>
+    ) : null}
+  </div>
+</div>
 
               {ordersQ.isLoading ? (
                 <div className="rounded-2xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-5 text-sm text-zinc-600">
@@ -1736,246 +1786,231 @@ if (!selectedLocalOrderIds.length) {
               ) : (
                 <div className="space-y-3">
                   {displayedOrders.map((o) => {
-                    const total = brl(o.total);
-                    const busyThis = decideM.isPending && actingOrderId === o.id;
-                    const orderStatus = o.orderStatus ?? o.status ?? null;
-                    const deliveryType = resolveDeliveryType(o);
-                    const deliveryBadge = getDeliveryBadgeMeta(deliveryType);
-                    const localDeliveryLabel = getLocalDeliveryStatusLabel(
-                      resolveLocalDeliveryStatus(o)
-                    );
-                    const localBadgeLabel =
-                      deliveryType === "LOCAL"
-                        ? localDeliveryLabel ?? "Aguardando separação"
-                        : null;
+const total = brl(o.total);
+const busyThis = decideM.isPending && actingOrderId === o.id;
+const orderStatus = o.orderStatus ?? o.status ?? null;
+const deliveryType = resolveDeliveryType(o);
+const deliveryBadge = getDeliveryBadgeMeta(deliveryType);
+const localDeliveryLabel = getLocalDeliveryStatusLabel(
+  resolveLocalDeliveryStatus(o)
+);
+const localBadgeLabel =
+  deliveryType === "LOCAL"
+    ? localDeliveryLabel ?? "Aguardando separação"
+    : null;
+
+const movementLabel =
+  activeTab === "pending"
+    ? "Pronto para decisão"
+    : activeTab === "approved"
+      ? "Movido para aprovados"
+      : "Movido para reprovados";
+
+                    const movementClass =
+                      activeTab === "pending"
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : activeTab === "approved"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-red-200 bg-red-50 text-red-700";
 
                     return (
-                      <div
-                        key={o.id}
-                        className="rounded-2xl border border-zinc-200/80 bg-zinc-50/85 p-3 shadow-sm"                      >
-                        <div className="flex flex-col gap-3 lg:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                          <div className="min-w-0 space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                                <input
-                                type="checkbox"
-                                className="h-4 w-4 rounded border-zinc-300"
-                                checked={selectedOrderIds.has(o.id)}
-                                onChange={() => toggleOrderSelection(o.id)}
-                                aria-label={`Selecionar pedido ${o.id}`}
-                              />
-                              <h2 className="text-sm font-black tracking-tight text-zinc-950">
-                                Pedido #{o.id.slice(0, 8)}
-                              </h2>
-                              <span className="text-xs text-zinc-500">Criado em {fmtDate(o.createdAt)}</span>
+  <div
+    key={o.id}
+    className="overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-sm"
+  >
+    <div className="grid gap-4 px-4 py-4 lg:grid-cols-[28px_260px_minmax(0,1fr)_140px_220px] lg:items-center">
+      <div className="flex lg:justify-center">
+        <input
+          type="checkbox"
+          className="h-4 w-4 rounded border-zinc-300"
+          checked={selectedOrderIds.has(o.id)}
+          onChange={() => toggleOrderSelection(o.id)}
+          aria-label={`Selecionar pedido ${o.id}`}
+        />
+      </div>
 
-                              {busyThis ? (
-                                <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-white">
-                                  Processando…
-                                </span>
-                              ) : null}
-                            </div>
+      <div className="min-w-0">
+        <h2 className="truncate text-xl font-black leading-tight tracking-tight text-zinc-950">
+          Pedido #{o.id.slice(0, 8)}
+        </h2>
 
-                            <div className="grid gap-1 text-sm text-zinc-700 sm:grid-cols-3 sm:gap-3">
-                              <div className="min-w-0 truncate">
-                                <span className="text-zinc-500">Cliente:</span>{" "}
-                                <span className="font-medium text-zinc-900">{o.customerName ?? "Não informado"}</span>
-                              </div>
-                              <div className="min-w-0 truncate">
-                                <span className="text-zinc-500">Salão:</span>{" "}
-                                <span className="font-medium text-zinc-900">{o.salonName ?? "Não informado"}</span>
-                              </div>
-                              <div className="min-w-0">
-                                <span className="text-zinc-500">Total:</span>{" "}
-                                <span className="font-bold text-zinc-950">{total ?? "Não informado"}</span>
-                              </div>
-                            </div>
+        <p className="mt-1 text-xs text-zinc-600">
+          Criado em {fmtDate(o.createdAt)}
+        </p>
 
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <StatusBadge label="Pagamento" value={o.paymentStatus} />
-                              <StatusBadge label="Pedido" value={orderStatus} />
-                              <StatusBadge label="Admin" value={o.adminApprovalStatus} />
-                                <span
-                                className={cn(
-                                  "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
-                                  deliveryBadge.classes
-                                )}
-                              >
-                                <span className="uppercase tracking-[0.14em] text-[10px] text-zinc-500">
-                                  Entrega
-                                </span>
-                                <span>{deliveryBadge.label}</span>
-                              </span>
-                                {localBadgeLabel ? (
-                                <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200/80 bg-violet-50/90 px-2 py-0.5 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">
-                                  <span className="uppercase tracking-[0.14em] text-[10px] text-violet-500">
-                                    Local
-                                  </span>
-                                  <span>{localBadgeLabel}</span>
-                                </span>
-                              ) : null}
-                              <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] text-zinc-600">
-                                <Clock3 className="h-3.5 w-3.5" />
-                                {activeTab === "pending"
-                                  ? "Pronto para decisão"
-                                  : activeTab === "approved"
-                                    ? "Movido para aprovados"
-                                    : "Movido para reprovados"}
-                              </span>
-                            </div>
-                          </div>
+        <p className="mt-3 truncate text-sm text-zinc-800">
+          Cliente:{" "}
+          <span className="font-bold text-zinc-950">
+            {o.customerName ?? "Não informado"}
+          </span>
+        </p>
+      </div>
 
-                          <div className="grid gap-2 sm:grid-cols-3 lg:w-auto lg:min-w-[360px]">
-                            {activeTab === "pending" ? (
-                              <>
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-8 rounded-xl border-zinc-200 bg-white px-3 text-xs"
-                                      disabled={decideM.isPending}
-                                    >
-                                      <XCircle className="mr-1.5 h-3.5 w-3.5" />
-                                      Reprovar
-                                    </Button>
-                                  </AlertDialogTrigger>
+      <div className="min-w-0 space-y-1 text-sm text-zinc-800">
+        <p className="truncate">
+          Cliente:{" "}
+          <span className="font-semibold text-zinc-950">
+            {o.customerName ?? "Não informado"}
+          </span>
+        </p>
 
-                                  <AlertDialogContent className="rounded-[28px]">
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Reprovar este pedido?</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Esta ação altera apenas a aprovação do admin.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
+        <p className="truncate">
+          Salão:{" "}
+          <span className="font-bold text-zinc-950">
+            {o.salonName ?? "Não informado"}
+          </span>
+        </p>
+      </div>
 
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel className="rounded-2xl">
-                                        Cancelar
-                                      </AlertDialogCancel>
-                                      <AlertDialogAction
-                                        className="rounded-2xl"
-                                        onClick={() =>
-                                          decideM.mutate({ orderId: o.id, action: "reject" })
-                                        }
-                                      >
-                                        Confirmar reprovação
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
+      <div className="min-w-0">
+        <p className="text-sm text-zinc-700">Total:</p>
+        <p className="text-2xl font-black leading-tight tracking-tight text-zinc-950">
+          {total ?? "Não informado"}
+        </p>
+      </div>
 
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button
-                                      size="sm"
-                                      className="h-8 rounded-xl px-3 text-xs"
-                                      disabled={decideM.isPending}
-                                    >
-                                      <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
-                                      Aprovar
-                                    </Button>
-                                  </AlertDialogTrigger>
+      <div className="flex flex-wrap gap-1.5 lg:justify-end">
+        <StatusBadge label="Pedido" value={o.paymentStatus} />
+        <StatusBadge label="Admin" value={o.adminApprovalStatus} />
 
-                                  <AlertDialogContent className="rounded-[28px]">
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>Aprovar este pedido?</AlertDialogTitle>
-                                      <AlertDialogDescription>
-                                        Esta ação libera o pedido para seguir o fluxo.
-                                      </AlertDialogDescription>
-                                    </AlertDialogHeader>
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
+            deliveryBadge.classes
+          )}
+        >
+          <span className="uppercase tracking-[0.14em] text-[10px] text-zinc-500">
+            Entrega
+          </span>
+          <span>{deliveryBadge.label}</span>
+        </span>
 
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel className="rounded-2xl">
-                                        Cancelar
-                                      </AlertDialogCancel>
-                                      <AlertDialogAction
-                                        className="rounded-2xl"
-                                        onClick={() =>
-                                          decideM.mutate({ orderId: o.id, action: "approve" })
-                                        }
-                                      >
-                                        Confirmar aprovação
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
-                              </>
-                            ) : activeTab === "approved" ? (
-                              <div className="sm:col-span-3">
-                                <Link href={`/admin/orders/${o.id}`} className="block">
-                                  <Button
-                                    size="sm"
-                                    className="h-8 w-full rounded-xl px-3 text-xs"
-                                    disabled={decideM.isPending}
-                                  >
-                                    Abrir pedido
-                                    <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                                  </Button>
-                                </Link>
-                              </div>
-                            ) : (
-                              <div className="sm:col-span-2 rounded-xl border border-zinc-200/80 bg-white px-3 py-1.5 text-xs text-zinc-600">                                Pedido reprovado recentemente. Abra o detalhe para revisar contexto e histórico.
-                              </div>
-                            )}
+        {localBadgeLabel ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-200/80 bg-violet-50/90 px-2 py-0.5 text-[11px] font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">
+            <span className="uppercase tracking-[0.14em] text-[10px] text-violet-500">
+              Local
+            </span>
+            <span>{localBadgeLabel}</span>
+          </span>
+        ) : null}
 
-                            {activeTab !== "approved" ? (
-                              <Link href={`/admin/orders/${o.id}`} className="block">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-8 w-full rounded-xl border-zinc-200 bg-white px-3 text-xs"
-                                  disabled={decideM.isPending}
-                                >
-                                  {activeTab === "pending" ? "Abrir detalhe" : "Abrir pedido"}
-                                  <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
-                                </Button>
-                              </Link>
-                            ) : null}
-                          </div>
-                        </div>
-                      </div>
-                    );
+        {busyThis ? (
+          <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-white">
+            Processando…
+          </span>
+        ) : null}
+      </div>
+    </div>
+
+    <div className="grid border-t border-zinc-200/80 bg-zinc-50/90 px-4 py-2.5 lg:grid-cols-[1fr_auto_1fr] lg:items-center">
+      <div className="flex flex-wrap items-center gap-2">
+        {activeTab === "pending" ? (
+          <>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 rounded-xl border-red-200 bg-white px-3 text-xs text-red-700 hover:bg-red-50"
+                  disabled={decideM.isPending}
+                >
+                  <XCircle className="mr-1.5 h-3.5 w-3.5" />
+                  Reprovar
+                </Button>
+              </AlertDialogTrigger>
+
+              <AlertDialogContent className="rounded-[28px]">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Reprovar este pedido?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta ação altera apenas a aprovação do admin.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="rounded-2xl">
+                    Cancelar
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    className="rounded-2xl"
+                    onClick={() =>
+                      decideM.mutate({ orderId: o.id, action: "reject" })
+                    }
+                  >
+                    Confirmar reprovação
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  size="sm"
+                  className="h-8 rounded-xl px-3 text-xs"
+                  disabled={decideM.isPending}
+                >
+                  <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
+                  Aprovar
+                </Button>
+              </AlertDialogTrigger>
+
+              <AlertDialogContent className="rounded-[28px]">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Aprovar este pedido?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta ação libera o pedido para seguir o fluxo.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="rounded-2xl">
+                    Cancelar
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    className="rounded-2xl"
+                    onClick={() =>
+                      decideM.mutate({ orderId: o.id, action: "approve" })
+                    }
+                  >
+                    Confirmar aprovação
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </>
+        ) : activeTab === "rejected" ? (
+          <span className="text-xs text-zinc-500">
+            Pedido reprovado recentemente.
+          </span>
+        ) : null}
+      </div>
+
+      <Link href={`/admin/orders/${o.id}`} className="mt-2 block lg:mt-0">
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 rounded-xl px-4 text-sm font-bold text-zinc-950 hover:bg-white"
+          disabled={decideM.isPending}
+        >
+          Abrir pedido
+          <ArrowRight className="ml-2 h-4 w-4" />
+        </Button>
+      </Link>
+
+      <div className="mt-2 flex items-center gap-1 text-xs text-zinc-500 lg:mt-0 lg:justify-end">
+        <Clock3 className="h-3.5 w-3.5" />
+        {movementLabel}
+      </div>
+    </div>
+  </div>
+);
                   })}
                 </div>
               )}
             </CardContent>
           </Card>
-       </div>
 
-          <Card className="rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
-            <CardHeader className="border-b border-zinc-100 pb-4">
-              <CardTitle className="text-lg font-bold text-zinc-950">
-                Resumo rápido
-              </CardTitle>
-              <CardDescription className="text-sm text-zinc-500">
-                Visão geral da fila atual
-              </CardDescription>
-            </CardHeader>
-
-            <CardContent className="space-y-3 p-4 sm:p-5">
-              <div className="rounded-2xl border border-zinc-200/80 bg-zinc-50 p-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-zinc-500">Pendentes</span>
-                  <span className="font-bold text-zinc-950">{pending.length}</span>
-                </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-zinc-500">Aprovados recentes</span>
-                  <span className="font-semibold text-zinc-900">{approvedRecent.length}</span>
-                </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-zinc-500">Reprovados recentes</span>
-                  <span className="font-semibold text-zinc-900">{rejectedRecent.length}</span>
-                </div>
-                <div className="mt-2 flex items-center justify-between">
-                  <span className="text-zinc-500">Total em análise</span>
-                  <span className="font-bold text-zinc-950">{pendingTotal}</span>
-                </div>
-              </div>
-              <div className="rounded-2xl border border-zinc-200/80 bg-white px-3 py-2 text-xs text-zinc-600">
-                Critério de Pendentes: paymentStatus = PAID e adminApprovalStatus = PENDING.
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </div>
     </div>
