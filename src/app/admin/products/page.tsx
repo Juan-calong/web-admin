@@ -29,6 +29,16 @@ type ProductImage = {
   isPrimary?: boolean | null;
 };
 
+type QuantityDiscountHighlight = {
+  minQuantity?: number | null;
+  discountType?: "PERCENT" | "FIXED" | string | null;
+  discountValue?: string | number | null;
+  unitPriceAfterQuantity?: string | number | null;
+  unitPriceFinal?: string | number | null;
+  label?: string | null;
+  shortLabel?: string | null;
+};
+
 type Product = {
   id: string;
   sku: string;
@@ -44,6 +54,8 @@ type Product = {
 
   promoNow?: boolean;
   promoScheduled?: boolean;
+
+  quantityDiscountHighlight?: QuantityDiscountHighlight | null;
 };
 
 type ListState = {
@@ -72,6 +84,31 @@ function pickPrimaryImage(images?: ProductImage[] | null) {
 function brl(value: string | number) {
   const n = typeof value === "string" ? Number(value) : value;
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n || 0);
+}
+
+function getQuantityDiscountText(p: Product) {
+  const h = p.quantityDiscountHighlight;
+  if (!h) return null;
+
+  if (h.label && h.label.trim()) return h.label.trim();
+  if (h.shortLabel && h.shortLabel.trim()) return h.shortLabel.trim();
+
+  const minQty = Number(h.minQuantity ?? 0);
+  const priceAfter = h.unitPriceAfterQuantity ?? h.unitPriceFinal;
+  const normalizedPrice = Number(priceAfter);
+
+  if (Number.isFinite(minQty) && minQty > 0 && Number.isFinite(normalizedPrice) && normalizedPrice > 0) {
+    return `A partir de ${minQty}: ${brl(normalizedPrice)}/unidade`;
+  }
+
+  if (String(h.discountType).toUpperCase() === "FIXED") {
+    const perUnit = Number(h.discountValue);
+    if (Number.isFinite(perUnit) && perUnit > 0) {
+      return `Desconto por quantidade: ${brl(perUnit)} por unidade`;
+    }
+  }
+
+  return null;
 }
 
 function statusBadgeClass(active: boolean) {
@@ -553,6 +590,7 @@ function ProductRow({
   const showImg = !!img && !broken;
 
   const desc = (p.description ?? "").trim();
+  const quantityDiscountText = getQuantityDiscountText(p);
   const statusCls = statusBadgeClass(p.active);
 
   const promoNow = !!p.promoNow;
@@ -611,6 +649,11 @@ function ProductRow({
           ) : (
             <div className="mt-1 text-xs text-black/40">Sem descrição</div>
           )}
+                    {quantityDiscountText ? (
+            <div className="mt-1 text-xs text-emerald-700 line-clamp-2" title={quantityDiscountText}>
+              {quantityDiscountText}
+            </div>
+          ) : null}
         </div>
       </TableCell>
 

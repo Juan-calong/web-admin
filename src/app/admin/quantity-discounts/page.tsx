@@ -146,9 +146,20 @@ function getTierSummary(tiers: QuantityDiscountTier[]) {
     .map((tier) =>
       tier.discountType === "PERCENT"
         ? `${tier.minQuantity}+ (${tier.discountValue}%)`
-        : `${tier.minQuantity}+ (${formatCurrency(tier.discountValue)})`
+        : `${tier.minQuantity}+ (${formatCurrency(tier.discountValue)}/unidade)`
     )
     .join(" • ");
+}
+
+function getTierPreviewText(tier: QuantityDiscountTier) {
+  if (tier.discountType === "PERCENT") {
+    return `Comprando ${tier.minQuantity} ou mais, o cliente recebe ${tier.discountValue}% de desconto.`;
+  }
+
+  const estimatedTotal = Math.max(0, Number(tier.discountValue) || 0) * Math.max(0, Number(tier.minQuantity) || 0);
+  return `Desconto por quantidade: ${formatCurrency(tier.discountValue)} por unidade (estimado em ${formatCurrency(
+    estimatedTotal
+  )} no total ao comprar ${tier.minQuantity} unidades).`;
 }
 
 function getAppliesToLabel(value: GroupAppliesTo) {
@@ -1163,14 +1174,18 @@ export default function QuantityDiscountGroupsPage() {
                                   }
                                 >
                                   <option value="PERCENT">Percentual</option>
-                                  <option value="FIXED">Valor fixo</option>
+                                  <option value="FIXED">Valor fixo por unidade</option>
                                 </select>
+                                  {tier.discountType === "FIXED" ? (
+                                  <p className="text-[11px] text-slate-500">
+                                    Valor fixo desconta em cada unidade ao atingir a quantidade mínima.
+                                  </p>
+                                ) : null}
                               </div>
 
                               <div className="space-y-2">
                                 <Label className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                                  {tier.discountType === "PERCENT" ? "Percentual" : "Valor"}
-                                </Label>
+                                  {tier.discountType === "PERCENT" ? "Percentual" : "Valor por unidade"}                                </Label>
 
                                 <div className="relative">
                                   {tier.discountType === "PERCENT" ? (
@@ -1200,31 +1215,20 @@ export default function QuantityDiscountGroupsPage() {
                             </div>
 
                             <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-                              {tier.discountType === "PERCENT" ? (
-                                <>
-                                  Comprando{" "}
-                                  <span className="font-semibold text-slate-900">
-                                    {tier.minQuantity} ou mais
-                                  </span>
-                                  , o cliente recebe{" "}
-                                  <span className="font-semibold text-blue-700">
-                                    {tier.discountValue}% de desconto
-                                  </span>
-                                  .
-                                </>
-                              ) : (
-                                <>
-                                  Comprando{" "}
-                                  <span className="font-semibold text-slate-900">
-                                    {tier.minQuantity} ou mais
-                                  </span>
-                                  , o cliente recebe{" "}
-                                  <span className="font-semibold text-emerald-700">
-                                    {formatCurrency(tier.discountValue)}
-                                  </span>{" "}
-                                  de desconto.
-                                </>
-                              )}
+                              <span
+                                className={
+                                  tier.discountType === "PERCENT"
+                                    ? "font-medium text-slate-700"
+                                    : "font-medium text-emerald-800"
+                                }
+                              >
+                                {getTierPreviewText(tier)}
+                              </span>
+                              {tier.discountType === "FIXED" ? (
+                                <div className="mt-2 text-xs text-slate-600">
+                                  Ex.: produto R$ 210, desconto R$ 11, mínimo 6 → a partir de 6 sai R$ 199/unidade.
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         ))}
