@@ -94,7 +94,7 @@ function getQuantityDiscountText(p: Product) {
   if (h.shortLabel && h.shortLabel.trim()) return h.shortLabel.trim();
 
   const minQty = Number(h.minQuantity ?? 0);
-  const priceAfter = h.unitPriceAfterQuantity ?? h.unitPriceFinal;
+  const priceAfter = h.unitPriceFinal ?? h.unitPriceAfterQuantity;
   const normalizedPrice = Number(priceAfter);
 
   if (Number.isFinite(minQty) && minQty > 0 && Number.isFinite(normalizedPrice) && normalizedPrice > 0) {
