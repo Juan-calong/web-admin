@@ -96,7 +96,7 @@ const POST_DELIVERY_REASON_LABEL: Record<string, string> = {
 };
 
 const REJECTABLE = new Set(["REQUESTED", "UNDER_REVIEW"]);
-const APPROVABLE = new Set(["REQUESTED", "UNDER_REVIEW"]);
+const APPROVABLE = new Set(["REQUESTED"]);
 
 const ERROR_LABEL: Record<string, string> = {
   ORDER_NOT_DELIVERED: "Pedido ainda não foi entregue.",
@@ -368,7 +368,12 @@ export default function AdminRefundRequestsPage() {
     onError: (error) => {
       console.error("approve_refund_request_error", error);
       const raw = apiErrorMessage(error, "");
-      if (raw.toUpperCase().includes("DOMAIN_FINALIZATION_FAILED")) {
+      const normalizedRaw = raw.toUpperCase();
+      if (normalizedRaw.includes("INVALID_REQUEST_STATUS")) {
+        toast.error("Esta solicitação não está mais em status permitido para aprovação.");
+        return;
+      }
+      if (normalizedRaw.includes("DOMAIN_FINALIZATION_FAILED")) {
         toast.error(
           "Reembolso externo pode ter sido confirmado, mas a finalização interna falhou. Verificação manual necessária."
         );
@@ -535,8 +540,13 @@ export default function AdminRefundRequestsPage() {
                       ) : null}
                         {canApprove ? (
                         <Button size="sm" onClick={() => setApproveId(request.id)}>
-                          Aprovar
+                          Aprovar reembolso
                         </Button>
+                      ) : null}
+                          {currentStatus === "UNDER_REVIEW" ? (
+                        <span className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">
+                          Reembolso em processamento no provedor
+                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -642,23 +652,31 @@ export default function AdminRefundRequestsPage() {
           )}
 
           <DialogFooter>
-            {detailRequest && APPROVABLE.has(normalizeKey(detailRequest.status)) ? (
+              {detailRequest ? (
               <>
-                <Button
-                  variant="destructive"
-                  onClick={() => setRejectId(detailRequest.id)}
-                >
-                  Rejeitar
-                </Button>
-                <Button onClick={() => setApproveId(detailRequest.id)}>
-                  Aprovar reembolso
-                </Button>
+                {REJECTABLE.has(normalizeKey(detailRequest.status)) ? (
+                  <Button
+                    variant="destructive"
+                    onClick={() => setRejectId(detailRequest.id)}
+                  >
+                    Rejeitar
+                  </Button>
+                ) : null}
+                {APPROVABLE.has(normalizeKey(detailRequest.status)) ? (
+                  <Button onClick={() => setApproveId(detailRequest.id)}>
+                    Aprovar reembolso
+                  </Button>
+                ) : normalizeKey(detailRequest.status) === "UNDER_REVIEW" ? (
+                  <Button variant="secondary" disabled>
+                    Reembolso em processamento no provedor
+                  </Button>
+                ) : (
+                  <Button variant="secondary" disabled>
+                    Status atual: {statusLabel(detailRequest?.status)}
+                  </Button>
+                )}
               </>
-            ) : (
-              <Button variant="secondary" disabled>
-                Status atual: {statusLabel(detailRequest?.status)}
-              </Button>
-            )}
+            ) : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
