@@ -96,6 +96,7 @@ const POST_DELIVERY_REASON_LABEL: Record<string, string> = {
 };
 
 const REJECTABLE = new Set(["REQUESTED", "UNDER_REVIEW"]);
+const APPROVABLE = new Set(["REQUESTED", "UNDER_REVIEW"]);
 
 const ERROR_LABEL: Record<string, string> = {
   ORDER_NOT_DELIVERED: "Pedido ainda não foi entregue.",
@@ -235,6 +236,9 @@ export default function AdminRefundRequestsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [rejectId, setRejectId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
+  const [approveId, setApproveId] = useState<string | null>(null);
+  const [approveConfirmText, setApproveConfirmText] = useState("");
+  const [approveNote, setApproveNote] = useState("");
 
   const list = useQuery({
     queryKey: ["admin-refund-requests", status, page, limit],
@@ -323,6 +327,57 @@ export default function AdminRefundRequestsPage() {
     [rawItems, rejectId]
   );
 
+    const approveRequest = useMemo(
+    () => rawItems.find((item) => item.id === approveId) ?? null,
+    [rawItems, approveId]
+  );
+
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      if (!approveId) throw new Error("ID inválido");
+      if (approveConfirmText !== "APROVAR REEMBOLSO") {
+        throw new Error("Confirmação inválida");
+      }
+
+      return api.post(endpoints.adminRefundRequests.approve(approveId), {
+        adminNote: approveNote || undefined,
+      });
+    },
+    onSuccess: (response) => {
+      const body = response?.data as
+        | { status?: string; state?: string }
+        | undefined;
+      const normalizedStatus = normalizeKey(body?.status);
+      const normalizedState = normalizeKey(body?.state);
+      const isPending =
+        response.status === 202 ||
+        normalizedStatus === "PENDING" ||
+        normalizedState === "PENDING";
+
+      toast.success(
+        isPending
+          ? "Reembolso pendente no provedor. Verifique novamente mais tarde."
+          : "Reembolso aprovado/processado com sucesso."
+      );
+      setApproveId(null);
+      setApproveConfirmText("");
+      setApproveNote("");
+      qc.invalidateQueries({ queryKey: ["admin-refund-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin-refund-requests-detail"] });
+    },
+    onError: (error) => {
+      console.error("approve_refund_request_error", error);
+      const raw = apiErrorMessage(error, "");
+      if (raw.toUpperCase().includes("DOMAIN_FINALIZATION_FAILED")) {
+        toast.error(
+          "Reembolso externo pode ter sido confirmado, mas a finalização interna falhou. Verificação manual necessária."
+        );
+        return;
+      }
+      toast.error(getFriendlyError(error));
+    },
+  });
+
   if (!canManageOrders) {
     return (
       <Card>
@@ -339,7 +394,7 @@ export default function AdminRefundRequestsPage() {
       <div>
         <h1 className="text-2xl font-black tracking-tight">Solicitações de reembolso</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Analise solicitações criadas pelo app. A aprovação real segue bloqueada até smoke test em staging.
+          Analise solicitações criadas pelo app com confirmação forte para evitar ações acidentais.
         </p>
       </div>
 
@@ -402,6 +457,7 @@ export default function AdminRefundRequestsPage() {
           items.map((request) => {
             const currentStatus = normalizeKey(request.status);
             const canReject = REJECTABLE.has(currentStatus);
+            const canApprove = APPROVABLE.has(currentStatus);
 
             return (
               <Card key={request.id} className="overflow-hidden">
@@ -475,6 +531,11 @@ export default function AdminRefundRequestsPage() {
                           onClick={() => setRejectId(request.id)}
                         >
                           Rejeitar
+                        </Button>
+                      ) : null}
+                        {canApprove ? (
+                        <Button size="sm" onClick={() => setApproveId(request.id)}>
+                          Aprovar
                         </Button>
                       ) : null}
                     </div>
@@ -581,8 +642,92 @@ export default function AdminRefundRequestsPage() {
           )}
 
           <DialogFooter>
-            <Button variant="secondary" disabled>
-              Aprovação será liberada após smoke test em staging
+            {detailRequest && APPROVABLE.has(normalizeKey(detailRequest.status)) ? (
+              <>
+                <Button
+                  variant="destructive"
+                  onClick={() => setRejectId(detailRequest.id)}
+                >
+                  Rejeitar
+                </Button>
+                <Button onClick={() => setApproveId(detailRequest.id)}>
+                  Aprovar reembolso
+                </Button>
+              </>
+            ) : (
+              <Button variant="secondary" disabled>
+                Status atual: {statusLabel(detailRequest?.status)}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!approveId} onOpenChange={(open) => !open && setApproveId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Aprovar reembolso</DialogTitle>
+            <DialogDescription>
+              Esta ação pode devolver dinheiro via BB/Mercado Pago. Confirme apenas se a solicitação foi analisada.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-3 rounded-xl border bg-muted/20 p-3 md:grid-cols-2">
+            <InfoItem
+              label="Pedido"
+              value={`#${shortId(approveRequest?.orderId)}`}
+              title={approveRequest?.orderId}
+            />
+            <InfoItem label="Motivo" value={reasonLabel(approveRequest?.reason)} />
+            <InfoItem
+              label="Usuário"
+              value={shortId(approveRequest?.requestedByUserId, 12)}
+              title={approveRequest?.requestedByUserId}
+            />
+            <InfoItem
+              label="Payment ID"
+              value={shortId(approveRequest?.paymentId, 12)}
+              title={approveRequest?.paymentId}
+            />
+            <InfoItem label="Status atual" value={statusLabel(approveRequest?.status)} />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Observação administrativa (opcional)</Label>
+            <Textarea
+              value={approveNote}
+              onChange={(event) => setApproveNote(event.target.value)}
+              placeholder="Observação administrativa opcional"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Digite APROVAR REEMBOLSO para confirmar</Label>
+            <Input
+              value={approveConfirmText}
+              onChange={(event) => setApproveConfirmText(event.target.value)}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setApproveId(null);
+                setApproveConfirmText("");
+                setApproveNote("");
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => approveMutation.mutate()}
+              disabled={
+                approveConfirmText !== "APROVAR REEMBOLSO" ||
+                approveMutation.isPending
+              }
+            >
+              {approveMutation.isPending ? "Aprovando..." : "Confirmar aprovação"}
             </Button>
           </DialogFooter>
         </DialogContent>
