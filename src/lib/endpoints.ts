@@ -124,6 +124,13 @@ adminLocalDelivery: {
     patchSalonAccess: (id: string) => `/admin/salons/${id}/access`,
   },
 
+  adminRefundRequests: {
+    list: "/admin/refund-requests",
+    byId: (id: string) => `/admin/refund-requests/${id}`,
+    reject: (id: string) => `/admin/refund-requests/${id}/reject`,
+    approve: (id: string) => `/admin/refund-requests/${id}/approve`,
+  },
+
   adminCommissionAudits: {
     list: "/admin/commissions/audits",
     byOrderId: (orderId: string) => `/admin/commissions/audits/${orderId}`,

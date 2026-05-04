@@ -20,6 +20,7 @@ import {
   MessageSquareText,
   Megaphone,
   Truck,
+  HandCoins,
 } from "lucide-react";
 import { TicketPercent } from "lucide-react";
 
@@ -178,6 +179,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <nav className="grid gap-1">
                 <NavItem href="/admin" label="Dashboard" icon={LayoutDashboard} />
                 <NavItem href="/admin/orders" label="Pedidos" icon={ShoppingBag} />
+                <NavItem href="/admin/refund-requests" label="Reembolsos" icon={HandCoins} />
                 <NavItem href="/admin/products" label="Produtos" icon={Boxes} />
                 <NavItem href="/admin/categories" label="Categorias" icon={Tags} />
                 <NavItem href="/admin/coupons" label="Cupons" icon={TicketPercent} />
