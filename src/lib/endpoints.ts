@@ -129,6 +129,7 @@ adminLocalDelivery: {
     byId: (id: string) => `/admin/refund-requests/${id}`,
     reject: (id: string) => `/admin/refund-requests/${id}/reject`,
     approve: (id: string) => `/admin/refund-requests/${id}/approve`,
+    refreshProviderStatus: (id: string) => `/admin/refund-requests/${id}/refresh-provider-status`,
   },
 
   adminCommissionAudits: {

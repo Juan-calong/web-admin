@@ -95,7 +95,7 @@ const POST_DELIVERY_REASON_LABEL: Record<string, string> = {
   NOT_DELIVERED: "Pedido não entregue",
 };
 
-const REJECTABLE = new Set(["REQUESTED", "UNDER_REVIEW"]);
+const REJECTABLE = new Set(["REQUESTED"]);
 const APPROVABLE = new Set(["REQUESTED"]);
 
 const ERROR_LABEL: Record<string, string> = {
@@ -332,6 +332,42 @@ export default function AdminRefundRequestsPage() {
     [rawItems, approveId]
   );
 
+  
+  const refreshProviderMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return api.post(endpoints.adminRefundRequests.refreshProviderStatus(id));
+    },
+    onSuccess: (response) => {
+      const body = response?.data as
+        | { state?: string; paymentRefundStatus?: string; requestStatus?: string }
+        | undefined;
+
+      const state = normalizeKey(body?.state);
+
+      if (state === "SUCCEEDED") {
+        toast.success("Reembolso confirmado e finalizado com sucesso.");
+      } else if (state === "PENDING") {
+        toast.info("Reembolso ainda está em processamento no provedor.");
+      } else if (state === "UNKNOWN") {
+        toast.warning("Consulta inconclusiva. O reembolso continua em análise.");
+      } else if (state === "FAILED") {
+        toast.error("O provedor retornou falha na devolução.");
+      } else if (state === "NOOP") {
+        toast.info("Nenhuma ação necessária para este pagamento.");
+      } else {
+        toast.success("Status do provedor atualizado.");
+      }
+
+      qc.invalidateQueries({ queryKey: ["admin-refund-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin-refund-requests-detail"] });
+    },
+    onError: (error) => {
+      console.error("refresh_refund_provider_status_error", error);
+      toast.error(getFriendlyError(error));
+    },
+  });
+
+
   const approveMutation = useMutation({
     mutationFn: async () => {
       if (!approveId) throw new Error("ID inválido");
@@ -538,15 +574,30 @@ export default function AdminRefundRequestsPage() {
                           Rejeitar
                         </Button>
                       ) : null}
-                        {canApprove ? (
+                      {canApprove ? (
                         <Button size="sm" onClick={() => setApproveId(request.id)}>
                           Aprovar reembolso
                         </Button>
                       ) : null}
-                          {currentStatus === "UNDER_REVIEW" ? (
-                        <span className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">
-                          Reembolso em processamento no provedor
-                        </span>
+                      {currentStatus === "UNDER_REVIEW" ? (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => refreshProviderMutation.mutate(request.id)}
+                            disabled={refreshProviderMutation.isPending}
+                          >
+                            {refreshProviderMutation.isPending
+                              ? "Verificando..."
+                              : "Verificar status no provedor"}
+                          </Button>
+                          <span className="inline-flex items-center rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">
+                            Reembolso em processamento no provedor
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            Clique em verificar para consultar se o BB já confirmou, ainda está pendente ou falhou.
+                          </span>
+                        </>
                       ) : null}
                     </div>
                   </div>
@@ -667,8 +718,14 @@ export default function AdminRefundRequestsPage() {
                     Aprovar reembolso
                   </Button>
                 ) : normalizeKey(detailRequest.status) === "UNDER_REVIEW" ? (
-                  <Button variant="secondary" disabled>
-                    Reembolso em processamento no provedor
+                  <Button
+                    variant="outline"
+                    onClick={() => refreshProviderMutation.mutate(detailRequest.id)}
+                    disabled={refreshProviderMutation.isPending}
+                  >
+                    {refreshProviderMutation.isPending
+                      ? "Verificando..."
+                      : "Verificar status no provedor"}
                   </Button>
                 ) : (
                   <Button variant="secondary" disabled>
