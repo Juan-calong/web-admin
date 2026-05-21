@@ -110,6 +110,21 @@ export function normalizeFiscalConfigResponse(raw: unknown): BlingFiscalConfigRe
   };
 }
 
+function normalizeFiscalConfigInputForApi(input: BlingFiscalConfigInput) {
+  return {
+    natureOperationId: input.natureOperationId.trim() || undefined,
+    natureOperationName: input.natureOperationName.trim() || undefined,
+    series: input.series.trim() || undefined,
+    finality: input.finality.trim() || undefined,
+    storeId: input.storeId.trim() || undefined,
+    storeName: input.storeName.trim() || undefined,
+    defaultIssueType: input.defaultIssueType.trim() || "S",
+    defaultSituation: Number.isFinite(Number(input.defaultSituation))
+      ? Number(input.defaultSituation)
+      : 1,
+  };
+}
+
 export async function getBlingIntegrationStatus() {
   const { data } = await api.get(endpoints.adminBlingIntegration.status);
   return (data?.item ?? data) as BlingIntegrationStatus;
@@ -136,6 +151,7 @@ export async function getBlingFiscalConfig() {
 }
 
 export async function updateBlingFiscalConfig(input: BlingFiscalConfigInput) {
-  const { data } = await api.put(endpoints.adminBlingIntegration.fiscalConfig, input);
+  const payload = normalizeFiscalConfigInputForApi(input);
+  const { data } = await api.put(endpoints.adminBlingIntegration.fiscalConfig, payload);
   return normalizeFiscalConfigResponse(data?.item ?? data);
 }
