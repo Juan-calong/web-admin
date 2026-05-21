@@ -86,6 +86,11 @@ adminLocalDelivery: {
       `/admin/products/${productId}/promotions/${promoId}/disable`,
   },
 
+    adminProductFiscal: {
+    get: (productId: string) => `/admin/products/${productId}/fiscal`,
+    save: (productId: string) => `/admin/products/${productId}/fiscal`,
+  },
+
   bbFunds: {
     get: "/admin/bb/balance",
     set: "/admin/bb/balance",

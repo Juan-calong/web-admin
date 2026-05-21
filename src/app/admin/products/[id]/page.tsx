@@ -25,6 +25,11 @@ import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
+import {
+  getAdminProductFiscal,
+  updateAdminProductFiscal,
+  type ProductFiscalInput,
+} from "@/lib/productFiscal";
 
 import {
   Card,
@@ -113,6 +118,41 @@ type Category = {
   id: string;
   name: string;
   active: boolean;
+};
+
+type FiscalForm = {
+  fiscalDescription: string;
+  unit: string;
+  tributaryUnit: string;
+  gtin: string;
+  ncm: string;
+  cest: string;
+  origin: string;
+  itemType: string;
+  defaultCfop: string;
+  icmsCst: string;
+  icmsCsosn: string;
+  pisCst: string;
+  cofinsCst: string;
+  ipiCst: string;
+  blingProductId: string;
+};
+const EMPTY_FISCAL_FORM: FiscalForm = {
+  fiscalDescription: "",
+  unit: "",
+  tributaryUnit: "",
+  gtin: "",
+  ncm: "",
+  cest: "",
+  origin: "",
+  itemType: "",
+  defaultCfop: "",
+  icmsCst: "",
+  icmsCsosn: "",
+  pisCst: "",
+  cofinsCst: "",
+  ipiCst: "",
+  blingProductId: "",
 };
 
 type ProductPromotion = {
@@ -469,6 +509,14 @@ export default function EditProductPage() {
     retry: false,
   });
 
+    const fiscalQ = useQuery({
+    queryKey: ["product-fiscal", id],
+    queryFn: async () => getAdminProductFiscal(id),
+    enabled: id !== "new",
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
   const categories = useMemo(() => {
     const items = categoriesQ.data ?? [];
     return [...items].sort((a, b) => a.name.localeCompare(b.name));
@@ -511,7 +559,53 @@ export default function EditProductPage() {
   const [widthCm, setWidthCm] = useState("");
   const [lengthCm, setLengthCm] = useState("");
   const [packageVolumes, setPackageVolumes] = useState("1");
+  const [fiscalForm, setFiscalForm] = useState<FiscalForm>(EMPTY_FISCAL_FORM);
+  const [fiscalErrors, setFiscalErrors] = useState<{ ncm?: string; cest?: string }>({});
   const product = productQ.data ?? null;
+    useEffect(() => {
+    const fd = fiscalQ.data?.fiscalData;
+    if (!fd) return setFiscalForm(EMPTY_FISCAL_FORM);
+    setFiscalForm({
+      fiscalDescription: fd.fiscalDescription ?? "",
+      unit: fd.unit ?? "",
+      tributaryUnit: fd.tributaryUnit ?? "",
+      gtin: fd.gtin ?? "",
+      ncm: fd.ncm ?? "",
+      cest: fd.cest ?? "",
+      origin: fd.origin ?? "",
+      itemType: fd.itemType ?? "",
+      defaultCfop: fd.defaultCfop ?? "",
+      icmsCst: fd.icmsCst ?? "",
+      icmsCsosn: fd.icmsCsosn ?? "",
+      pisCst: fd.pisCst ?? "",
+      cofinsCst: fd.cofinsCst ?? "",
+      ipiCst: fd.ipiCst ?? "",
+      blingProductId: fd.blingProductId ?? "",
+    });
+  }, [fiscalQ.data]);
+
+  const saveFiscalM = useMutation({
+    mutationFn: async () => {
+      const nextErrors: { ncm?: string; cest?: string } = {};
+      if (fiscalForm.ncm.trim() && !/^\d{8}$/.test(fiscalForm.ncm.trim()))
+        nextErrors.ncm = "NCM deve ter 8 dígitos.";
+      if (fiscalForm.cest.trim() && !/^\d{7}$/.test(fiscalForm.cest.trim()))
+        nextErrors.cest = "CEST deve ter 7 dígitos.";
+      setFiscalErrors(nextErrors);
+      if (Object.keys(nextErrors).length) throw new Error("Validação fiscal");
+      const payload: ProductFiscalInput = {
+        ...fiscalForm,
+        unit: fiscalForm.unit.toUpperCase(),
+        tributaryUnit: fiscalForm.tributaryUnit.toUpperCase(),
+      };
+      return updateAdminProductFiscal(id, payload);
+    },
+    onSuccess: async () => {
+      toast.success("Dados fiscais salvos com sucesso.");
+      await qc.invalidateQueries({ queryKey: ["product-fiscal", id] });
+    },
+    onError: (err) => toast.error(apiErrorMessage(err, "Falha ao salvar dados fiscais.")),
+  });
   const [manualImageOrder, setManualImageOrder] = useState<string[]>([]);
 
   useEffect(() => {
@@ -2194,6 +2288,46 @@ onClick={() => {
               <div className="text-xs text-slate-500">
                 Dica: regra “cupom não afeta produto com promoção” fica no checkout/pricing.
               </div>
+            </SectionCard>
+
+                        <SectionCard
+              title="Fiscal / NF-e"
+              description="Dados fiscais usados para emissão de NF-e e integração com Bling."
+              defaultOpen
+            >
+              {fiscalQ.isLoading ? <div className="text-sm text-slate-500">Carregando dados fiscais…</div> : null}
+              {fiscalQ.isError ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+                  Erro ao carregar dados fiscais.
+                  <Button type="button" variant="outline" className="ml-3" onClick={() => fiscalQ.refetch()}>
+                    Tentar novamente
+                  </Button>
+                </div>
+              ) : null}
+              {!fiscalQ.isLoading && !fiscalQ.isError ? (
+                <>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm">
+                    {fiscalQ.data?.readiness?.ready ? "Produto pronto para uso fiscal." : "Produto com pendências fiscais."}
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    {(["ncm","origin","unit","tributaryUnit","gtin","cest","itemType","fiscalDescription","defaultCfop","icmsCst","icmsCsosn","pisCst","cofinsCst","ipiCst"] as const).map((key) => (
+                      <div key={key} className="grid gap-2">
+                        <Label>{key}</Label>
+                        <Input className="h-11 rounded-2xl border-slate-200 bg-slate-50/60" value={fiscalForm[key]} onChange={(e)=>setFiscalForm((p)=>({ ...p, [key]: e.target.value }))} />
+                        {key === "ncm" && fiscalErrors.ncm ? <div className="text-xs text-rose-600">{fiscalErrors.ncm}</div> : null}
+                        {key === "cest" && fiscalErrors.cest ? <div className="text-xs text-rose-600">{fiscalErrors.cest}</div> : null}
+                      </div>
+                    ))}
+                    <div className="grid gap-2">
+                      <Label>ID Produto Bling (técnico)</Label>
+                      <Input className="h-11 rounded-2xl border-slate-200 bg-slate-100" value={fiscalForm.blingProductId} readOnly />
+                    </div>
+                  </div>
+                  <Button type="button" onClick={() => saveFiscalM.mutate()} disabled={saveFiscalM.isPending}>
+                    {saveFiscalM.isPending ? "Salvando…" : "Salvar dados fiscais"}
+                  </Button>
+                </>
+              ) : null}
             </SectionCard>
 
             <SectionCard
