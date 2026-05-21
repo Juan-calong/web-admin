@@ -137,6 +137,40 @@ type FiscalForm = {
   ipiCst: string;
   blingProductId: string;
 };
+
+type FiscalFieldMeta = { label: string; placeholder?: string; help?: string };
+const FISCAL_FIELD_META: Record<keyof FiscalForm, FiscalFieldMeta> = {
+  ncm: { label: "NCM", placeholder: "33051000", help: "Código fiscal do produto. Confirme com o contador." },
+  origin: { label: "Origem", placeholder: "0", help: "Ex.: 0 = Nacional." },
+  unit: { label: "Unidade comercial", placeholder: "UN", help: "Unidade usada na venda." },
+  tributaryUnit: { label: "Unidade tributável", placeholder: "UN", help: "Normalmente igual à unidade comercial." },
+  gtin: { label: "GTIN/EAN", placeholder: "SEM GTIN", help: "Use SEM GTIN quando o produto não possuir código de barras." },
+  cest: { label: "CEST", placeholder: "Opcional", help: "Obrigatório somente em alguns cenários fiscais." },
+  itemType: { label: "Tipo do item", placeholder: "MERCADORIA_REVENDA" },
+  fiscalDescription: { label: "Descrição fiscal", placeholder: "Nome fiscal do produto" },
+  defaultCfop: { label: "CFOP padrão", placeholder: "5102" },
+  icmsCst: { label: "ICMS CST" },
+  icmsCsosn: { label: "ICMS CSOSN" },
+  pisCst: { label: "PIS CST" },
+  cofinsCst: { label: "COFINS CST" },
+  ipiCst: { label: "IPI CST" },
+  blingProductId: { label: "ID Produto Bling", help: "Campo técnico preenchido quando o produto for vinculado/sincronizado com o Bling." },
+} as const;
+
+const FISCAL_MAIN_FIELDS = ["ncm","origin","unit","tributaryUnit","gtin","cest","itemType","fiscalDescription"] as const;
+const FISCAL_TAX_FIELDS = ["defaultCfop","icmsCst","icmsCsosn","pisCst","cofinsCst","ipiCst"] as const;
+const READINESS_MISSING_LABELS: Record<string, string> = {
+  ncm: "NCM",
+  origin: "Origem",
+  unit: "Unidade comercial",
+  "items.fiscalData": "Dados fiscais dos itens",
+};
+const READINESS_WARNING_LABELS: Record<string, string> = {
+  gtin: "GTIN/EAN",
+  itemType: "Tipo do item",
+  tributaryUnit: "Unidade tributável",
+};
+
 const EMPTY_FISCAL_FORM: FiscalForm = {
   fiscalDescription: "",
   unit: "",
@@ -561,6 +595,16 @@ export default function EditProductPage() {
   const [packageVolumes, setPackageVolumes] = useState("1");
   const [fiscalForm, setFiscalForm] = useState<FiscalForm>(EMPTY_FISCAL_FORM);
   const [fiscalErrors, setFiscalErrors] = useState<{ ncm?: string; cest?: string }>({});
+    const applyFiscalBasicDefaults = () => {
+    setFiscalForm((prev) => ({
+      ...prev,
+      unit: prev.unit.trim() ? prev.unit : "UN",
+      tributaryUnit: prev.tributaryUnit.trim() ? prev.tributaryUnit : "UN",
+      gtin: prev.gtin.trim() ? prev.gtin : "SEM GTIN",
+      origin: prev.origin.trim() ? prev.origin : "0",
+      itemType: prev.itemType.trim() ? prev.itemType : "MERCADORIA_REVENDA",
+    }));
+  };
   const product = productQ.data ?? null;
     useEffect(() => {
     const fd = fiscalQ.data?.fiscalData;
@@ -588,9 +632,9 @@ export default function EditProductPage() {
     mutationFn: async () => {
       const nextErrors: { ncm?: string; cest?: string } = {};
       if (fiscalForm.ncm.trim() && !/^\d{8}$/.test(fiscalForm.ncm.trim()))
-        nextErrors.ncm = "NCM deve ter 8 dígitos.";
+        nextErrors.ncm = "NCM deve conter exatamente 8 dígitos.";
       if (fiscalForm.cest.trim() && !/^\d{7}$/.test(fiscalForm.cest.trim()))
-        nextErrors.cest = "CEST deve ter 7 dígitos.";
+        nextErrors.cest = "CEST deve conter exatamente 7 dígitos.";
       setFiscalErrors(nextErrors);
       if (Object.keys(nextErrors).length) throw new Error("Validação fiscal");
       const payload: ProductFiscalInput = {
@@ -2306,26 +2350,71 @@ onClick={() => {
               ) : null}
               {!fiscalQ.isLoading && !fiscalQ.isError ? (
                 <>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                    {fiscalQ.data?.readiness?.ready ? "Produto pronto para uso fiscal." : "Produto com pendências fiscais."}
-                  </div>
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {(["ncm","origin","unit","tributaryUnit","gtin","cest","itemType","fiscalDescription","defaultCfop","icmsCst","icmsCsosn","pisCst","cofinsCst","ipiCst"] as const).map((key) => (
-                      <div key={key} className="grid gap-2">
-                        <Label>{key}</Label>
-                        <Input className="h-11 rounded-2xl border-slate-200 bg-slate-50/60" value={fiscalForm[key]} onChange={(e)=>setFiscalForm((p)=>({ ...p, [key]: e.target.value }))} />
-                        {key === "ncm" && fiscalErrors.ncm ? <div className="text-xs text-rose-600">{fiscalErrors.ncm}</div> : null}
-                        {key === "cest" && fiscalErrors.cest ? <div className="text-xs text-rose-600">{fiscalErrors.cest}</div> : null}
+                  <div className={`rounded-2xl border p-3 text-sm ${fiscalQ.data?.readiness?.ready ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+                    <p className="font-medium">{fiscalQ.data?.readiness?.ready ? "Produto pronto para uso fiscal." : "Produto com pendências fiscais."}</p>
+                    {!!fiscalQ.data?.readiness?.missing?.length && (
+                      <div className="mt-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide">Pendências obrigatórias</p>
+                        <ul className="mt-1 list-disc pl-5 text-sm">
+                          {fiscalQ.data.readiness.missing.map((key) => <li key={key}>{READINESS_MISSING_LABELS[key] ?? key}</li>)}
+                        </ul>
                       </div>
-                    ))}
-                    <div className="grid gap-2">
-                      <Label>ID Produto Bling (técnico)</Label>
-                      <Input className="h-11 rounded-2xl border-slate-200 bg-slate-100" value={fiscalForm.blingProductId} readOnly />
+                    )}
+                    {!!fiscalQ.data?.readiness?.warnings?.length && (
+                      <div className="mt-2">
+                        <p className="text-xs font-semibold uppercase tracking-wide">Avisos/recomendações</p>
+                        <ul className="mt-1 list-disc pl-5 text-sm">
+                          {fiscalQ.data.readiness.warnings.map((key) => <li key={key}>{READINESS_WARNING_LABELS[key] ?? key}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                  <div className="space-y-4">
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <h4 className="mb-3 text-sm font-semibold text-slate-900">Dados principais</h4>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {FISCAL_MAIN_FIELDS.map((key) => (
+                          <div key={key} className="grid gap-2">
+                            <Label>{FISCAL_FIELD_META[key].label}</Label>
+                            <Input placeholder={FISCAL_FIELD_META[key].placeholder} className="h-11 rounded-2xl border-slate-200 bg-slate-50/60" value={fiscalForm[key]} onChange={(e) => setFiscalForm((p) => ({ ...p, [key]: e.target.value }))} />
+                            {FISCAL_FIELD_META[key].help ? <div className="text-xs text-slate-500">{FISCAL_FIELD_META[key].help}</div> : null}
+                            {key === "ncm" && fiscalErrors.ncm ? <div className="text-xs text-rose-600">{fiscalErrors.ncm}</div> : null}
+                            {key === "cest" && fiscalErrors.cest ? <div className="text-xs text-rose-600">{fiscalErrors.cest}</div> : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <h4 className="mb-3 text-sm font-semibold text-slate-900">Tributação avançada</h4>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        {FISCAL_TAX_FIELDS.map((key) => (
+                          <div key={key} className="grid gap-2">
+                            <Label>{FISCAL_FIELD_META[key].label}</Label>
+                            <Input placeholder={FISCAL_FIELD_META[key].placeholder} className="h-11 rounded-2xl border-slate-200 bg-slate-50/60" value={fiscalForm[key]} onChange={(e) => setFiscalForm((p) => ({ ...p, [key]: e.target.value }))} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <h4 className="mb-3 text-sm font-semibold text-slate-900">Integração Bling</h4>
+                      <div className="grid gap-2">
+                        <Label>{FISCAL_FIELD_META.blingProductId.label}</Label>
+                        <Input className="h-11 rounded-2xl border-slate-200 bg-slate-100" value={fiscalForm.blingProductId} readOnly />
+                        <div className="text-xs text-slate-500">{FISCAL_FIELD_META.blingProductId.help}</div>
+                        <div className="text-xs text-slate-500">A sincronização do produto com o Bling será feita em uma próxima etapa.</div>
+                      </div>
+ 
                     </div>
                   </div>
-                  <Button type="button" onClick={() => saveFiscalM.mutate()} disabled={saveFiscalM.isPending}>
-                    {saveFiscalM.isPending ? "Salvando…" : "Salvar dados fiscais"}
-                  </Button>
+                  
+                  <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant="outline" onClick={applyFiscalBasicDefaults}>Aplicar padrão básico</Button>
+                    <Button type="button" onClick={() => saveFiscalM.mutate()} disabled={saveFiscalM.isPending}>
+                      {saveFiscalM.isPending ? "Salvando…" : "Salvar dados fiscais"}
+                    </Button>
+                  </div>
                 </>
               ) : null}
             </SectionCard>
