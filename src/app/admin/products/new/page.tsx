@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
+import { ProductFiscalInput, updateAdminProductFiscal } from "@/lib/productFiscal";
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,14 @@ type ProductAudience = "ALL" | "STAFF_ONLY";
 type ProductApiResponse = {
   item?: { id?: string };
   id?: string;
+};
+
+type CreateProductMutationResult = {
+  productId?: string;
+  fiscalAttempted: boolean;
+  fiscalSaved: boolean;
+  fiscalFailed: boolean;
+  redirectTo?: string;
 };
 
 type NewDraft = {
@@ -81,6 +90,45 @@ type NewDraft = {
   videoShowInGallery: boolean;
   videoThumbnailUrl: string;
 };
+
+type FiscalForm = {
+  fiscalDescription: string;
+  unit: string;
+  tributaryUnit: string;
+  gtin: string;
+  ncm: string;
+  cest: string;
+  origin: string;
+  itemType: string;
+  defaultCfop: string;
+  icmsCst: string;
+  icmsCsosn: string;
+  pisCst: string;
+  cofinsCst: string;
+  ipiCst: string;
+  blingProductId: string;
+};
+
+const EMPTY_FISCAL_FORM: FiscalForm = { fiscalDescription: "", unit: "", tributaryUnit: "", gtin: "", ncm: "", cest: "", origin: "", itemType: "", defaultCfop: "", icmsCst: "", icmsCsosn: "", pisCst: "", cofinsCst: "", ipiCst: "", blingProductId: "" };
+const FISCAL_MAIN_FIELDS = ["ncm","origin","unit","tributaryUnit","gtin","cest","itemType","fiscalDescription"] as const;
+const FISCAL_TAX_FIELDS = ["defaultCfop","icmsCst","icmsCsosn","pisCst","cofinsCst","ipiCst"] as const;
+const FISCAL_FIELD_META: Record<keyof FiscalForm, { label: string; placeholder?: string; help?: string }> = {
+  ncm: { label: "NCM", placeholder: "33051000", help: "Código fiscal do produto. Confirme com o contador." },
+  origin: { label: "Origem", placeholder: "0", help: "Ex.: 0 = Nacional." },
+  unit: { label: "Unidade comercial", placeholder: "UN", help: "Unidade usada na venda." },
+  tributaryUnit: { label: "Unidade tributável", placeholder: "UN", help: "Normalmente igual à unidade comercial." },
+  gtin: { label: "GTIN/EAN", placeholder: "SEM GTIN", help: "Use SEM GTIN quando o produto não possuir código de barras." },
+  cest: { label: "CEST", placeholder: "Opcional", help: "Obrigatório somente em alguns cenários fiscais." },
+  itemType: { label: "Tipo do item", placeholder: "MERCADORIA_REVENDA" },
+  fiscalDescription: { label: "Descrição fiscal", placeholder: "Nome fiscal do produto" },
+  defaultCfop: { label: "CFOP padrão", placeholder: "5102" },
+  icmsCst: { label: "ICMS CST" }, icmsCsosn: { label: "ICMS CSOSN" }, pisCst: { label: "PIS CST" }, cofinsCst: { label: "COFINS CST" }, ipiCst: { label: "IPI CST" },
+  blingProductId: { label: "ID Produto Bling", help: "Campo técnico preenchido quando houver vínculo com o Bling." },
+};
+
+function hasFiscalDraftValues(form: FiscalForm) {
+  return [form.fiscalDescription,form.unit,form.tributaryUnit,form.gtin,form.ncm,form.cest,form.origin,form.itemType,form.defaultCfop,form.icmsCst,form.icmsCsosn,form.pisCst,form.cofinsCst,form.ipiCst].some((v)=>String(v??"").trim());
+}
 
 const DRAFT_KEY = "admin-product-new-draft";
 
@@ -268,6 +316,8 @@ export default function NewProductPage() {
   const [videoActive, setVideoActive] = useState(true);
   const [videoShowInGallery, setVideoShowInGallery] = useState(true);
   const [videoThumbnailUrl, setVideoThumbnailUrl] = useState("");
+  const [fiscalForm, setFiscalForm] = useState<FiscalForm>(EMPTY_FISCAL_FORM);
+  const [fiscalErrors, setFiscalErrors] = useState<{ ncm?: string; cest?: string }>({});
 
   useEffect(() => {
     const draft = readDraft();
@@ -612,7 +662,11 @@ export default function NewProductPage() {
       : "Preencha peso e medidas da embalagem.";
   }, [weightKg, heightCm, widthCm, lengthCm, packageVolumes]);
 
-  const createM = useMutation({
+  const applyFiscalBasicDefaults = () => {
+    setFiscalForm((prev) => ({ ...prev, unit: prev.unit.trim() ? prev.unit : "UN", tributaryUnit: prev.tributaryUnit.trim() ? prev.tributaryUnit : "UN", gtin: prev.gtin.trim() ? prev.gtin : "SEM GTIN", origin: prev.origin.trim() ? prev.origin : "0", itemType: prev.itemType.trim() ? prev.itemType : "MERCADORIA_REVENDA" }));
+  };
+
+  const createM = useMutation<CreateProductMutationResult>({
     mutationFn: async () => {
       const skuN = sku.trim();
       const nameN = name.trim();
@@ -699,6 +753,13 @@ export default function NewProductPage() {
       const howToUse = parseStringList(howToUseText);
       if (howToUse.length) payload.howToUse = howToUse;
 
+      const hasFiscal = hasFiscalDraftValues(fiscalForm);
+      const nextFiscalErrors: { ncm?: string; cest?: string } = {};
+      if (hasFiscal && fiscalForm.ncm.trim() && !/^\d{8}$/.test(fiscalForm.ncm.trim())) nextFiscalErrors.ncm = "NCM deve conter exatamente 8 dígitos.";
+      if (hasFiscal && fiscalForm.cest.trim() && !/^\d{7}$/.test(fiscalForm.cest.trim())) nextFiscalErrors.cest = "CEST deve conter exatamente 7 dígitos.";
+      setFiscalErrors(nextFiscalErrors);
+      if (Object.keys(nextFiscalErrors).length) throw new Error("Validação fiscal");
+
       const createRes = await api.post(endpoints.products.create, payload, {
         headers: {
           "Idempotency-Key": stableKey(
@@ -719,16 +780,47 @@ export default function NewProductPage() {
         await uploadProductImages(productId, files);
       }
 
+      let fiscalSaved = false;
+      let fiscalFailed = false;
+
+      if (hasFiscal && productId) {
+        try {
+          const fiscalPayload: ProductFiscalInput = { ...fiscalForm, unit: fiscalForm.unit.toUpperCase(), tributaryUnit: fiscalForm.tributaryUnit.toUpperCase() };
+          await updateAdminProductFiscal(productId, fiscalPayload);
+          fiscalSaved = true;
+        } catch {
+          fiscalFailed = true;
+        }
+      }
+
       if (videoFile) {
         if (!productId) throw new Error("Produto criado, mas sem ID para enviar vídeo.");
         await uploadProductVideo(productId, videoFile);
       }
+        return {
+        productId,
+        fiscalAttempted: hasFiscal,
+        fiscalSaved: hasFiscal ? fiscalSaved : false,
+        fiscalFailed,
+        redirectTo: fiscalFailed && productId ? `/admin/products/${productId}` : returnTo,
+      };
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       clearDraft();
-      toast.success(files.length ? "Produto criado com imagens." : "Produto criado.");
       await qc.invalidateQueries({ queryKey: ["products"] });
-      router.replace(returnTo);
+      if (data.fiscalFailed) {
+        toast.error("Produto criado, mas não foi possível salvar os dados fiscais.");
+        router.replace(data.redirectTo ?? returnTo);
+        return;
+      }
+
+      if (data.fiscalSaved) {
+        toast.success("Produto e dados fiscais salvos com sucesso.");
+      } else {
+        toast.success(files.length ? "Produto criado com imagens." : "Produto criado.");
+      }
+
+      router.replace(data.redirectTo ?? returnTo);
     },
     onError: (e) => toast.error(apiErrorMessage(e, "Falha ao criar produto.")),
   });
@@ -1145,6 +1237,20 @@ export default function NewProductPage() {
                       ) : null}
                     </div>
                   </div>
+                </div>
+              </CardContent>
+            </Card>
+
+              <Card className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+              <CardContent className="p-5 sm:p-7">
+                <SectionHeader icon={<Package2 className="h-5 w-5" />} title="Fiscal / NF-e" subtitle="Opcional na criação. Você pode preencher agora ou completar depois." />
+                <div className={`rounded-2xl border p-3 text-sm ${hasFiscalDraftValues(fiscalForm) ? "border-amber-200 bg-amber-50 text-amber-800" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+                  <p className="font-medium">{hasFiscalDraftValues(fiscalForm) ? "Os dados fiscais serão salvos junto com o produto." : "Dados fiscais ainda não preenchidos. Você pode completar depois."}</p>
+                </div>
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-2xl border border-slate-200 p-4"><h4 className="mb-3 text-sm font-semibold text-slate-900">Dados principais</h4><div className="grid gap-4 md:grid-cols-2">{FISCAL_MAIN_FIELDS.map((key) => (<div key={key} className="grid gap-2"><Label>{FISCAL_FIELD_META[key].label}</Label><Input placeholder={FISCAL_FIELD_META[key].placeholder} className="h-11 rounded-2xl border-slate-200 bg-slate-50/60" value={fiscalForm[key]} onChange={(e) => setFiscalForm((p) => ({ ...p, [key]: e.target.value }))} />{FISCAL_FIELD_META[key].help ? <div className="text-xs text-slate-500">{FISCAL_FIELD_META[key].help}</div> : null}{key === "ncm" && fiscalErrors.ncm ? <div className="text-xs text-rose-600">{fiscalErrors.ncm}</div> : null}{key === "cest" && fiscalErrors.cest ? <div className="text-xs text-rose-600">{fiscalErrors.cest}</div> : null}</div>))}</div></div>
+                  <div className="rounded-2xl border border-slate-200 p-4"><h4 className="mb-3 text-sm font-semibold text-slate-900">Tributação avançada</h4><div className="grid gap-4 md:grid-cols-2">{FISCAL_TAX_FIELDS.map((key) => (<div key={key} className="grid gap-2"><Label>{FISCAL_FIELD_META[key].label}</Label><Input placeholder={FISCAL_FIELD_META[key].placeholder} className="h-11 rounded-2xl border-slate-200 bg-slate-50/60" value={fiscalForm[key]} onChange={(e) => setFiscalForm((p) => ({ ...p, [key]: e.target.value }))} /></div>))}</div></div>
+                  <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={applyFiscalBasicDefaults}>Aplicar padrão básico</Button><p className="self-center text-sm text-slate-600">Os dados fiscais serão salvos junto com o produto.</p></div>
                 </div>
               </CardContent>
             </Card>
