@@ -55,6 +55,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { LocalDeliveryDocumentsPanel } from "@/components/admin/LocalDeliveryDocumentsPanel";
+import { OrderBlingFiscalCard } from "@/components/admin/OrderBlingFiscalCard";
 
 
 type OrderDetails = {
@@ -911,6 +912,8 @@ const isCorreiosDelivery = isCorreiosDeliveryOrder(order);
                     <EmptyBlock text="Dados de pagamento ainda não enviados por este payload." />
                   )}
                 </SectionShell>
+                <OrderBlingFiscalCard orderId={id} />
+
 
 {isLocalDelivery ? (
   <LocalDeliveryDocumentsPanel orderId={id} />
