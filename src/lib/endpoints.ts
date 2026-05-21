@@ -227,4 +227,11 @@ adminLocalDelivery: {
     status: "/admin/integrations/correios/status",
     verify: "/admin/integrations/correios/verify",
   },
+  adminBlingIntegration: {
+    status: "/admin/integrations/bling/status",
+    oauthStart: "/admin/integrations/bling/oauth/start",
+    oauthRefresh: "/admin/integrations/bling/oauth/refresh",
+    apiStatus: "/admin/integrations/bling/api-status",
+    fiscalConfig: "/admin/integrations/bling/fiscal-config",
+  },
 } as const;

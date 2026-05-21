@@ -21,6 +21,7 @@ import {
   Megaphone,
   Truck,
   HandCoins,
+  ReceiptText,
 } from "lucide-react";
 import { TicketPercent } from "lucide-react";
 
@@ -210,6 +211,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   icon={MessageSquareText}
                   rightBadge={<CountBadge count={commentUnreadCount} />}
                 />
+                <NavItem href="/admin/integrations/bling" label="Bling / NF-e" icon={ReceiptText} />
               </nav>
               <NavItem href="/admin/shipping" label="Entrega e frete" icon={Truck} />
 
