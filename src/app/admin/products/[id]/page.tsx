@@ -27,6 +27,7 @@ import { apiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
 import {
   getAdminProductFiscal,
+  syncAdminProductToBling,
   updateAdminProductFiscal,
   type ProductFiscalInput,
 } from "@/lib/productFiscal";
@@ -627,6 +628,23 @@ export default function EditProductPage() {
       blingProductId: fd.blingProductId ?? "",
     });
   }, [fiscalQ.data]);
+
+    const syncBlingM = useMutation({
+    mutationFn: async () => syncAdminProductToBling(id),
+    onSuccess: async (data) => {
+      if (data?.created) {
+        toast.success("Produto criado no Bling.");
+      } else if (data?.updated) {
+        toast.success("Produto atualizado no Bling.");
+      } else {
+        toast.success("Produto sincronizado com Bling.");
+      }
+      await qc.invalidateQueries({ queryKey: ["product-fiscal", id] });
+    },
+    onError: (err) => {
+      toast.error(apiErrorMessage(err, "Falha ao sincronizar produto com Bling."));
+    },
+  });
 
   const saveFiscalM = useMutation({
     mutationFn: async () => {
@@ -2403,12 +2421,25 @@ onClick={() => {
                         <Label>{FISCAL_FIELD_META.blingProductId.label}</Label>
                         <Input className="h-11 rounded-2xl border-slate-200 bg-slate-100" value={fiscalForm.blingProductId} readOnly />
                         <div className="text-xs text-slate-500">{FISCAL_FIELD_META.blingProductId.help}</div>
-                        <div className="text-xs text-slate-500">A sincronização do produto com o Bling será feita em uma próxima etapa.</div>
+                        <div className="text-xs text-slate-500">Use a sincronização para criar ou atualizar este produto no Bling com os dados fiscais atuais.</div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => syncBlingM.mutate()}
+                          disabled={fiscalQ.data?.readiness?.ready !== true || saveFiscalM.isPending || syncBlingM.isPending}
+                          title={
+                            fiscalQ.data?.readiness?.ready !== true
+                              ? "Complete os dados fiscais obrigatórios antes de sincronizar."
+                              : undefined
+                          }
+                        >
+                          {syncBlingM.isPending ? "Sincronizando…" : "Sincronizar com Bling"}
+                        </Button>
                       </div>
  
                     </div>
                   </div>
-                  
+
                   <div className="flex flex-wrap gap-2">
                     <Button type="button" variant="outline" onClick={applyFiscalBasicDefaults}>Aplicar padrão básico</Button>
                     <Button type="button" onClick={() => saveFiscalM.mutate()} disabled={saveFiscalM.isPending}>

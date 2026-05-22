@@ -85,6 +85,10 @@ adminLocalDelivery: {
     disable: (productId: string, promoId: string) =>
       `/admin/products/${productId}/promotions/${promoId}/disable`,
   },
+  
+   adminProductBling: {
+    sync: (productId: string) => `/admin/products/${productId}/bling/sync`,
+  },
 
     adminProductFiscal: {
     get: (productId: string) => `/admin/products/${productId}/fiscal`,

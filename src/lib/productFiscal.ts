@@ -70,3 +70,20 @@ export async function updateAdminProductFiscal(productId: string, input: Product
   const { data } = await api.put(endpoints.adminProductFiscal.save(productId), payload);
   return (data?.item ?? data) as ProductFiscalResponse;
 }
+export type ProductBlingSyncResponse = {
+  productId: string;
+  sku?: string | null;
+  name?: string | null;
+  readiness?: ProductFiscalReadiness;
+  blingProductId?: string | null;
+  created?: boolean;
+  updated?: boolean;
+  existing?: boolean;
+  source?: "db" | "bling-search" | "created" | string;
+  syncedAt?: string;
+};
+
+export async function syncAdminProductToBling(productId: string) {
+  const { data } = await api.post(endpoints.adminProductBling.sync(productId), {});
+  return (data?.item ?? data) as ProductBlingSyncResponse;
+}
