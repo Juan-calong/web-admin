@@ -172,6 +172,42 @@ const READINESS_WARNING_LABELS: Record<string, string> = {
   tributaryUnit: "Unidade tributável",
 };
 
+const FISCAL_SYNC_COMPARE_FIELDS = [
+  "fiscalDescription",
+  "unit",
+  "tributaryUnit",
+  "gtin",
+  "ncm",
+  "cest",
+  "origin",
+  "itemType",
+  "defaultCfop",
+  "icmsCst",
+  "icmsCsosn",
+  "pisCst",
+  "cofinsCst",
+  "ipiCst",
+] as const;
+
+function normalizeFiscalValue(field: string, value: string | null | undefined) {
+  const normalized = (value ?? "").trim();
+  if (field === "unit" || field === "tributaryUnit") {
+    return normalized.toUpperCase();
+  }
+  return normalized;
+}
+
+function hasUnsavedFiscalFormChanges(
+  form: FiscalForm,
+  fiscalData: Partial<FiscalForm> | null | undefined,
+) {
+  return FISCAL_SYNC_COMPARE_FIELDS.some((field) => {
+    const formValue = normalizeFiscalValue(field, form[field]);
+    const persistedValue = normalizeFiscalValue(field, fiscalData?.[field]);
+    return formValue !== persistedValue;
+  });
+}
+
 const EMPTY_FISCAL_FORM: FiscalForm = {
   fiscalDescription: "",
   unit: "",
@@ -668,6 +704,18 @@ export default function EditProductPage() {
     },
     onError: (err) => toast.error(apiErrorMessage(err, "Falha ao salvar dados fiscais.")),
   });
+    const hasUnsavedFiscalChanges = useMemo(
+    () => hasUnsavedFiscalFormChanges(fiscalForm, fiscalQ.data?.fiscalData as Partial<FiscalForm> | undefined),
+    [fiscalForm, fiscalQ.data?.fiscalData],
+  );
+  const syncDisabled =
+    fiscalQ.data?.readiness?.ready !== true || saveFiscalM.isPending || syncBlingM.isPending || hasUnsavedFiscalChanges;
+  const syncDisabledTitle =
+    fiscalQ.data?.readiness?.ready !== true
+      ? "Complete os dados fiscais obrigatórios antes de sincronizar."
+      : hasUnsavedFiscalChanges
+        ? "Salve os dados fiscais antes de sincronizar com o Bling."
+        : undefined;
   const [manualImageOrder, setManualImageOrder] = useState<string[]>([]);
 
   useEffect(() => {
@@ -2426,15 +2474,16 @@ onClick={() => {
                           type="button"
                           variant="outline"
                           onClick={() => syncBlingM.mutate()}
-                          disabled={fiscalQ.data?.readiness?.ready !== true || saveFiscalM.isPending || syncBlingM.isPending}
-                          title={
-                            fiscalQ.data?.readiness?.ready !== true
-                              ? "Complete os dados fiscais obrigatórios antes de sincronizar."
-                              : undefined
-                          }
+                          disabled={syncDisabled}
+                          title={syncDisabledTitle}
                         >
                           {syncBlingM.isPending ? "Sincronizando…" : "Sincronizar com Bling"}
                         </Button>
+                          {hasUnsavedFiscalChanges ? (
+                          <div className="text-xs text-amber-700">
+                            Existem alterações fiscais não salvas. Salve antes de sincronizar.
+                          </div>
+                        ) : null}
                       </div>
  
                     </div>
