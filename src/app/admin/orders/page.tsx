@@ -735,6 +735,46 @@ const selectedNonCorreiosCount = useMemo(
     ),
 });
 
+  const fiscalRunBatchM = useMutation({
+    mutationFn: async (orderIds: string[]) => {
+      let succeeded = 0;
+      let failed = 0;
+
+      for (const orderId of orderIds) {
+        try {
+          await api.post(`/admin/orders/${orderId}/bling/fiscal/run`, {});
+          succeeded += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      return { processed: orderIds.length, succeeded, failed };
+    },
+    onSuccess: async (result) => {
+      if (result.failed === 0) {
+        toast.success(
+          `Automação fiscal concluída: ${result.processed} processado(s), ${result.succeeded} sucesso(s).`
+        );
+      } else if (result.succeeded > 0) {
+        toast.warning(
+          `Automação fiscal concluída com falhas: ${result.processed} processado(s), ${result.succeeded} sucesso(s), ${result.failed} falha(s).`
+        );
+      } else {
+        toast.error(
+          `Automação fiscal concluída sem sucesso: ${result.processed} processado(s), ${result.failed} falha(s).`
+        );
+      }
+
+      await qc.invalidateQueries({ queryKey: ["orders"] });
+      await ordersQ.refetch();
+    },
+    onError: (err) =>
+      toast.error(
+        apiErrorMessage(err, "Não foi possível executar a automação fiscal em lote.")
+      ),
+  });
+
   function handleOpenSelectedLocalDocuments() {
 if (!selectedLocalOrderIds.length) {
       toast.error("Selecione pelo menos um pedido de entrega local.");
@@ -1624,6 +1664,43 @@ const localStatusClass = (
               ? "Abrindo etiquetas…"
               : "Abrir etiquetas Correios"}
           </Button>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9 rounded-xl border-amber-200 bg-amber-50 px-3 text-xs font-medium text-amber-800 hover:bg-amber-100"
+                disabled={fiscalRunBatchM.isPending || selectedVisibleCount === 0}
+              >
+                {fiscalRunBatchM.isPending
+                  ? "Executando fiscalâ€¦"
+                  : "Executar fiscal dos selecionados"}
+              </Button>
+            </AlertDialogTrigger>
+
+            <AlertDialogContent className="rounded-[28px]">
+              <AlertDialogHeader>
+                <AlertDialogTitle>Executar automação fiscal nos pedidos selecionados?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Isso tentará criar e sincronizar pedido Bling, NF-e e DANFE/XML dos pedidos selecionados. Não altera entrega, não marca postado e não imprime automaticamente.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+
+              <AlertDialogFooter>
+                <AlertDialogCancel className="rounded-2xl">
+                  Cancelar
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  className="rounded-2xl bg-amber-600 text-white hover:bg-amber-700"
+                  onClick={() => fiscalRunBatchM.mutate(selectedDisplayedOrders.map((order) => order.id))}
+                >
+                  Confirmar execução
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           <Button
             type="button"
