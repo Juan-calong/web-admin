@@ -11,6 +11,17 @@ import {
   type FiscalWorkflowAction,
 } from "@/lib/blingFiscalWorkflow";
 import { Badge } from "@/components/ui/badge";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -49,6 +60,7 @@ const actionLabel: Record<string, string> = {
   DOWNLOAD_DANFE: "Baixar/Salvar DANFE",
   DOWNLOAD_XML: "Baixar/Salvar XML",
   OPEN_DANFE: "Abrir DANFE",
+  OPEN_XML: "Abrir XML",
 };
 
 const warningLabel: Record<string, string> = {
@@ -68,6 +80,8 @@ const getDanfeLabel = (
 
 const getXmlLabel = (xml: { available?: boolean } | undefined) =>
   xml?.available ? "Disponível" : "Ainda não disponível";
+
+const isSensitiveFiscalAction = (actionId: string) => actionId === "CREATE_NFE";
 
 export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
   const [runningActionId, setRunningActionId] = useState<string | null>(null);
@@ -126,9 +140,27 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
               <p><strong>NF-e:</strong> {workflowQ.data.summary?.blingNfeId ?? "Não criada"}</p>
               <p><strong>Número/Série:</strong> {workflowQ.data.summary?.nfeNumber ?? "-"} / {workflowQ.data.summary?.nfeSeries ?? "-"}</p>
               <p><strong>Status NF-e:</strong> {labelFromMap(workflowQ.data.summary?.nfeStatus, nfeStatusLabel)}</p>
-              <p><strong>DANFE:</strong> {getDanfeLabel(workflowQ.data.documents?.danfe)}</p>
-              <div>
+              <div className="space-y-2">
+                <p><strong>DANFE:</strong> {getDanfeLabel(workflowQ.data.documents?.danfe)}</p>
+                {workflowQ.data.documents?.danfe?.url ? (
+                  <Button asChild variant="outline" size="sm" className="h-8 rounded-xl">
+                    <a href={workflowQ.data.documents.danfe.url} target="_blank" rel="noreferrer">Abrir DANFE</a>
+                  </Button>
+                ) : null}
+                {workflowQ.data.documents?.danfe?.key ? (
+                  <p className="text-xs text-zinc-500">DANFE key: {workflowQ.data.documents.danfe.key}</p>
+                ) : null}
+              </div>
+              <div className="space-y-2">
                 <p><strong>XML:</strong> {getXmlLabel(workflowQ.data.documents?.xml)}</p>
+                {workflowQ.data.documents?.xml?.url ? (
+                  <Button asChild variant="outline" size="sm" className="h-8 rounded-xl">
+                    <a href={workflowQ.data.documents.xml.url} target="_blank" rel="noreferrer">Abrir XML</a>
+                  </Button>
+                ) : null}
+                {workflowQ.data.documents?.xml?.key ? (
+                  <p className="text-xs text-zinc-500">XML key: {workflowQ.data.documents.xml.key}</p>
+                ) : null}
                 {workflowQ.data.documents?.xml?.message ? (
                   <p className="text-xs text-zinc-500">{workflowQ.data.documents.xml.message}</p>
                 ) : null}
@@ -144,6 +176,12 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
                     <li key={warning}>{warningLabel[warning] ?? warning}</li>
                   ))}
                 </ul>
+              </div>
+            ) : null}
+
+            {(workflowQ.data.actions ?? []).some((action) => isSensitiveFiscalAction(action.id)) ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                Ação sensível disponível: criar NF-e no Bling exige confirmação.
               </div>
             ) : null}
 
@@ -174,6 +212,43 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
                         {isPrimary ? <span className="ml-2 text-xs font-medium opacity-90">Recomendado</span> : null}
                       </Button>
                     </a>
+                  );
+                }
+
+                if (isSensitiveFiscalAction(action.id)) {
+                  return (
+                    <AlertDialog key={action.id}>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant={isPrimary ? "default" : "outline"}
+                          disabled={!action.enabled || isLoading}
+                          title={action.reason ?? undefined}
+                        >
+                          {isLoading ? "Processando..." : (actionLabel[action.id] ?? action.label)}
+                          {isPrimary && !isLoading ? <span className="ml-2 text-xs font-medium opacity-90">Recomendado</span> : null}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent className="rounded-[28px]">
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Confirmar criação de NF-e?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Esta ação cria uma NF-e no Bling. Confirme se pedido, cliente, produtos, série e dados fiscais estão corretos.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel className="rounded-2xl">
+                            Cancelar
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            className="rounded-2xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => runActionM.mutate(action)}
+                          >
+                            Confirmar criação
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   );
                 }
 
