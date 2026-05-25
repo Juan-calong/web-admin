@@ -1675,7 +1675,7 @@ const localStatusClass = (
                 disabled={fiscalRunBatchM.isPending || selectedVisibleCount === 0}
               >
                 {fiscalRunBatchM.isPending
-                  ? "Executando fiscalâ€¦"
+                  ? "Executando fiscal..."
                   : "Executar fiscal dos selecionados"}
               </Button>
             </AlertDialogTrigger>
