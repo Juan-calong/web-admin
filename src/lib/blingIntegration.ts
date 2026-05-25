@@ -53,6 +53,27 @@ export type BlingFiscalConfigResponse = BlingFiscalConfigInput & {
   warnings: string[];
 };
 
+export type BlingProductionReadinessStatus = "OK" | "WARNING" | "BLOCKED" | string;
+
+export type BlingProductionReadinessSection = {
+  key: string;
+  label: string;
+  status: BlingProductionReadinessStatus;
+  ready?: boolean;
+  [key: string]: unknown;
+};
+
+export type BlingProductionReadinessResponse = {
+  provider: string;
+  environment: string;
+  readyForProduction: boolean;
+  readyForProductionSwitch: boolean;
+  sections: BlingProductionReadinessSection[];
+  blockers: string[];
+  warnings: string[];
+  recommendations: string[];
+};
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
 }
@@ -154,4 +175,9 @@ export async function updateBlingFiscalConfig(input: BlingFiscalConfigInput) {
   const payload = normalizeFiscalConfigInputForApi(input);
   const { data } = await api.put(endpoints.adminBlingIntegration.fiscalConfig, payload);
   return normalizeFiscalConfigResponse(data?.item ?? data);
+}
+
+export async function getBlingProductionReadiness() {
+  const { data } = await api.get(endpoints.adminBlingIntegration.productionReadiness);
+  return (data?.item ?? data) as BlingProductionReadinessResponse;
 }

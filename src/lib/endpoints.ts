@@ -242,5 +242,6 @@ adminLocalDelivery: {
     oauthRefresh: "/admin/integrations/bling/oauth/refresh",
     apiStatus: "/admin/integrations/bling/api-status",
     fiscalConfig: "/admin/integrations/bling/fiscal-config",
+    productionReadiness: "/admin/integrations/bling/production-readiness",
   },
 } as const;
