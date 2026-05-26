@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import { apiErrorMessage } from "@/lib/apiError";
@@ -56,6 +56,7 @@ const nfeStatusLabel: Record<string, string> = {
 const actionLabel: Record<string, string> = {
   CREATE_SALES_ORDER: "Criar pedido no Bling",
   CREATE_NFE: "Criar NF-e no Bling",
+  SEND_NFE: "Enviar/Autorizar NF-e",
   SYNC_NFE: "Sincronizar NF-e",
   DOWNLOAD_DANFE: "Baixar/Salvar DANFE",
   DOWNLOAD_XML: "Baixar/Salvar XML",
@@ -81,10 +82,12 @@ const getDanfeLabel = (
 const getXmlLabel = (xml: { available?: boolean } | undefined) =>
   xml?.available ? "Disponível" : "Ainda não disponível";
 
-const isSensitiveFiscalAction = (actionId: string) => actionId === "CREATE_NFE";
+const isSensitiveFiscalAction = (actionId: string) =>
+  actionId === "CREATE_NFE" || actionId === "SEND_NFE";
 
 export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
   const [runningActionId, setRunningActionId] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const workflowQ = useQuery({
     queryKey: ["admin-order-bling-fiscal", orderId],
@@ -102,6 +105,7 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
     onSuccess: async (data) => {
       toast.success(data?.message ?? "Ação executada com sucesso.");
       await workflowQ.refetch();
+      await queryClient.invalidateQueries({ queryKey: ["admin-order-details", orderId] });
     },
     onError: (error) => {
       toast.error(apiErrorMessage(error, "Não foi possível executar a ação fiscal."));
@@ -216,6 +220,16 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
                 }
 
                 if (isSensitiveFiscalAction(action.id)) {
+                  const sensitiveActionLabel = actionLabel[action.id] ?? action.label;
+                  const sensitiveActionTitle =
+                    action.id === "SEND_NFE"
+                      ? "Confirmar envio/autorização de NF-e?"
+                      : "Confirmar criação de NF-e?";
+                  const sensitiveActionDescription =
+                    action.id === "SEND_NFE"
+                      ? "Esta ação envia a NF-e para autorização no Bling/SEFAZ. Confirme se pedido, cliente, produtos, série e dados fiscais estão corretos."
+                      : "Esta ação cria uma NF-e no Bling. Confirme se pedido, cliente, produtos, série e dados fiscais estão corretos.";
+
                   return (
                     <AlertDialog key={action.id}>
                       <AlertDialogTrigger asChild>
@@ -231,9 +245,9 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
                       </AlertDialogTrigger>
                       <AlertDialogContent className="rounded-[28px]">
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Confirmar criação de NF-e?</AlertDialogTitle>
+                          <AlertDialogTitle>{sensitiveActionTitle}</AlertDialogTitle>
                           <AlertDialogDescription>
-                            Esta ação cria uma NF-e no Bling. Confirme se pedido, cliente, produtos, série e dados fiscais estão corretos.
+                            {sensitiveActionDescription}
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -244,7 +258,7 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
                             className="rounded-2xl bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             onClick={() => runActionM.mutate(action)}
                           >
-                            Confirmar criação
+                            {sensitiveActionLabel}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
