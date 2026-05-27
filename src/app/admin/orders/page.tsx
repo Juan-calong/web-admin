@@ -13,12 +13,16 @@ import {
   ChevronUp,
   MapPin,
   AlertTriangle,
-  Wallet,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
+import {
+  getOrderPrintReadinessBadgeMeta,
+  isOrderPrintReady,
+  type OrderPrintReadiness,
+} from "@/lib/orderPrintReadiness";
 import { cn } from "@/lib/utils";
 import { openLocalDeliveryUnifiedBatchPdf } from "@/components/admin/local-delivery/localDeliveryPdf";
 import { openCorreiosBatchLabelsPdf } from "@/components/admin/correios/correiosBatchPdf";
@@ -61,6 +65,7 @@ type Order = {
   shippingCarrier?: string | null;
   shippingServiceCode?: string | null;
   shippingServiceName?: string | null;
+  printReadiness?: OrderPrintReadiness | null;
     localDeliveryStatus?:
     | "PENDING_SEPARATION"
     | "PACKED"
@@ -365,6 +370,33 @@ function StatusBadge({
   );
 }
 
+function PrintReadinessBadge({
+  kind,
+  label,
+  readiness,
+}: {
+  kind: "shipping" | "fiscal" | "danfe" | "xml" | "bundle";
+  label: string;
+  readiness?: OrderPrintReadiness | null;
+}) {
+  const meta = getOrderPrintReadinessBadgeMeta(kind, readiness);
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
+        meta.className
+      )}
+      title={meta.title}
+    >
+      <span className="uppercase tracking-[0.14em] text-[10px] opacity-75">
+        {label}
+      </span>
+      <span>{meta.label}</span>
+    </span>
+  );
+}
+
 export default function AdminOrdersPage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
@@ -385,6 +417,7 @@ const [localStatusFilter, setLocalStatusFilter] =
   const [cityDialogTarget, setCityDialogTarget] = useState<{ city: string; state: string } | null>(
     null
   );
+  const [now, setNow] = useState(() => Date.now());
   const [recentActions, setRecentActions] = useState<
     Record<string, { action: "approve" | "reject"; at: number; order: Order }>
   >({});
@@ -416,9 +449,9 @@ const [localStatusFilter, setLocalStatusFilter] =
     return (ordersQ.data ?? []).filter((o) => {
       if (o.paymentStatus !== "PAID" || o.adminApprovalStatus !== "PENDING") return false;
       const recentAction = recentActions[o.id];
-      return !recentAction || Date.now() - recentAction.at > 10 * 60_000;
+      return !recentAction || now - recentAction.at > 10 * 60_000;
     });
-  }, [ordersQ.data, recentActions]);
+  }, [ordersQ.data, recentActions, now]);
 
   const approvedRecent = useMemo(() => {
     const fromBackend = (ordersQ.data ?? []).filter((o) => o.adminApprovalStatus === "APPROVED");
@@ -482,17 +515,12 @@ const [localStatusFilter, setLocalStatusFilter] =
     [localTodayQ.data?.orders]
   );
 
-  function matchesTodayFilter(order: Order) {
-    if (!onlyTodayLocalDelivery) return true;
-    return todayOrderIds.has(order.id);
-  }
-
   const displayedOrders = useMemo(
     () =>
       currentTabOrders
         .filter((order) => matchesDeliveryFilter(order, deliveryFilter))
         .filter((order) => matchesLocalStatusFilter(order, localStatusFilter))
-        .filter((order) => matchesTodayFilter(order)),
+        .filter((order) => !onlyTodayLocalDelivery || todayOrderIds.has(order.id)),
     [currentTabOrders, deliveryFilter, localStatusFilter, onlyTodayLocalDelivery, todayOrderIds]
   );
 
@@ -644,6 +672,7 @@ const selectedNonCorreiosCount = useMemo(
   useEffect(() => {
     const visible = new Set(displayedOrderIds);
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSelectedOrderIds((prev) => {
       const next = new Set<string>();
 
@@ -662,6 +691,11 @@ const selectedNonCorreiosCount = useMemo(
     if (!selectAllRef.current) return;
     selectAllRef.current.indeterminate = !allDisplayedSelected && someDisplayedSelected;
   }, [allDisplayedSelected, someDisplayedSelected]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const decideM = useMutation({
     mutationFn: async (vars: { orderId: string; action: "approve" | "reject" }) => {
@@ -698,6 +732,19 @@ const selectedNonCorreiosCount = useMemo(
       await ordersQ.refetch();
     },
     onError: (err) => toast.error(apiErrorMessage(err, "Falha ao aprovar/reprovar.")),
+  });
+
+  const prepareDocumentsM = useMutation({
+    mutationFn: async (orderId: string) => {
+      await api.post(endpoints.adminOrderPrepareDocuments(orderId), {});
+    },
+    onSuccess: async (_data, orderId) => {
+      toast.success(`Preparação de documentos iniciada para o pedido ${orderId.slice(0, 8)}.`);
+      await qc.invalidateQueries({ queryKey: ["orders"] });
+      await ordersQ.refetch();
+    },
+    onError: (err) =>
+      toast.error(apiErrorMessage(err, "Não foi possível preparar os documentos.")),
   });
 
     const localBatchPdfM = useMutation({
@@ -1866,6 +1913,10 @@ const localStatusClass = (
 const total = brl(o.total);
 const busyThis = decideM.isPending && actingOrderId === o.id;
 const orderStatus = o.orderStatus ?? o.status ?? null;
+const readiness = o.printReadiness ?? null;
+const documentsReady = isOrderPrintReady(readiness);
+const preparingDocuments =
+  prepareDocumentsM.isPending && prepareDocumentsM.variables === o.id;
 const deliveryType = resolveDeliveryType(o);
 const deliveryBadge = getDeliveryBadgeMeta(deliveryType);
 const localDeliveryLabel = getLocalDeliveryStatusLabel(
@@ -1971,6 +2022,16 @@ const movementLabel =
           </span>
         ) : null}
 
+        <PrintReadinessBadge
+          kind="shipping"
+          label="Etiqueta"
+          readiness={readiness}
+        />
+        <PrintReadinessBadge kind="fiscal" label="NF-e" readiness={readiness} />
+        <PrintReadinessBadge kind="danfe" label="DANFE" readiness={readiness} />
+        <PrintReadinessBadge kind="xml" label="XML" readiness={readiness} />
+        <PrintReadinessBadge kind="bundle" label="Bundle" readiness={readiness} />
+
         {busyThis ? (
           <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-white">
             Processando…
@@ -2061,6 +2122,20 @@ const movementLabel =
             Pedido reprovado recentemente.
           </span>
         ) : null}
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 rounded-xl border-zinc-200 bg-white px-3 text-xs text-zinc-700 hover:bg-zinc-50"
+          onClick={() => prepareDocumentsM.mutate(o.id)}
+          disabled={documentsReady || preparingDocuments}
+          title={documentsReady ? "Documentos prontos" : undefined}
+        >
+          {preparingDocuments ? (
+            <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+          ) : null}
+          {documentsReady ? "Documentos prontos" : "Preparar documentos"}
+        </Button>
       </div>
 
       <Link href={`/admin/orders/${o.id}`} className="mt-2 block lg:mt-0">

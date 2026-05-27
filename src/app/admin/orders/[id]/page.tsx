@@ -29,6 +29,11 @@ import {
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
+import {
+  getOrderPrintReadinessBadgeMeta,
+  isOrderPrintReady,
+  type OrderPrintReadiness,
+} from "@/lib/orderPrintReadiness";
 import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
@@ -59,6 +64,7 @@ import { OrderBlingFiscalCard } from "@/components/admin/OrderBlingFiscalCard";
 
 
 type OrderDetails = {
+  printReadiness?: OrderPrintReadiness | null;
   order: {
     id: string;
     code?: string | null;
@@ -75,6 +81,7 @@ type OrderDetails = {
     shippingCarrier?: string | null;
     shippingServiceCode?: string | null;
     shippingServiceName?: string | null;
+    printReadiness?: OrderPrintReadiness | null;
 
     customer?: {
       name?: string | null;
@@ -378,6 +385,33 @@ function StatusCard({
   );
 }
 
+function PrintReadinessBadge({
+  kind,
+  label,
+  readiness,
+}: {
+  kind: "shipping" | "fiscal" | "danfe" | "xml" | "bundle";
+  label: string;
+  readiness?: OrderPrintReadiness | null;
+}) {
+  const meta = getOrderPrintReadinessBadgeMeta(kind, readiness);
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
+        meta.className
+      )}
+      title={meta.title}
+    >
+      <span className="uppercase tracking-[0.14em] text-[10px] opacity-75">
+        {label}
+      </span>
+      <span>{meta.label}</span>
+    </span>
+  );
+}
+
 function InfoField({
   label,
   value,
@@ -605,6 +639,19 @@ export default function AdminOrderDetailsPage() {
       toast.error(apiErrorMessage(err, "Falha ao aprovar/reprovar.")),
   });
 
+  const prepareDocumentsM = useMutation({
+    mutationFn: async () => {
+      await api.post(endpoints.adminOrderPrepareDocuments(id), {});
+    },
+    onSuccess: async () => {
+      toast.success("Preparação de documentos iniciada.");
+      await qc.invalidateQueries({ queryKey: ["admin-order-details", id] });
+      await detailsQ.refetch();
+    },
+    onError: (err) =>
+      toast.error(apiErrorMessage(err, "Não foi possível preparar os documentos.")),
+  });
+
   const total = useMemo(
     () => brl(order?.totalAmount ?? order?.total),
     [order?.totalAmount, order?.total]
@@ -613,6 +660,8 @@ export default function AdminOrderDetailsPage() {
   const orderStatus = order?.orderStatus ?? order?.status ?? null;
   const isLocalDelivery = isLocalDeliveryOrder(order);
 const isCorreiosDelivery = isCorreiosDeliveryOrder(order);
+  const printReadiness = order?.printReadiness ?? detailsQ.data?.printReadiness ?? null;
+  const documentsReady = isOrderPrintReady(printReadiness);
 
   const salonAddressLines = formatAddressLines(order?.salon ?? null);
   const deliveryAddressLines = formatAddressLines(
@@ -911,6 +960,59 @@ const isCorreiosDelivery = isCorreiosDeliveryOrder(order);
                   ) : (
                     <EmptyBlock text="Dados de pagamento ainda não enviados por este payload." />
                   )}
+                </SectionShell>
+
+                <SectionShell
+                  title="Documentos/Impressão"
+                  description="Status dos documentos fiscais e de expedição enviados pelo backend"
+                  icon={ReceiptText}
+                >
+                  <div className="space-y-4">
+                    <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                      Este processo pode levar alguns segundos, pois pode gerar
+                      etiqueta, NF-e, DANFE e XML.
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <PrintReadinessBadge
+                        kind="shipping"
+                        label="Etiqueta"
+                        readiness={printReadiness}
+                      />
+                      <PrintReadinessBadge
+                        kind="fiscal"
+                        label="NF-e"
+                        readiness={printReadiness}
+                      />
+                      <PrintReadinessBadge
+                        kind="danfe"
+                        label="DANFE"
+                        readiness={printReadiness}
+                      />
+                      <PrintReadinessBadge
+                        kind="xml"
+                        label="XML"
+                        readiness={printReadiness}
+                      />
+                      <PrintReadinessBadge
+                        kind="bundle"
+                        label="Bundle"
+                        readiness={printReadiness}
+                      />
+                    </div>
+
+                    <Button
+                      className="h-11 rounded-2xl"
+                      onClick={() => prepareDocumentsM.mutate()}
+                      disabled={documentsReady || prepareDocumentsM.isPending}
+                      title={documentsReady ? "Documentos prontos" : undefined}
+                    >
+                      {prepareDocumentsM.isPending ? (
+                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                      ) : null}
+                      {documentsReady ? "Documentos prontos" : "Preparar documentos"}
+                    </Button>
+                  </div>
                 </SectionShell>
                 <OrderBlingFiscalCard orderId={id} />
 

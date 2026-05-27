@@ -37,25 +37,30 @@ export const endpoints = {
     byId: (id: string) => `/orders/${id}`,
   },
 
-adminOrders: {
-  decide: (orderId: string) => `/admin/orders/${orderId}`,
-  details: (orderId: string) => `/admin/orders/${orderId}`,
-  refund: (orderId: string) => `/admin/orders/${orderId}/refund`,
-  localDeliveryBulkStatus: "/admin/orders/local-delivery/bulk-status",
-  localDeliveryDocuments: (orderId: string) =>
-    `/admin/orders/${orderId}/local-delivery-documents`,
-},
+  adminOrders: {
+    decide: (orderId: string) => `/admin/orders/${orderId}`,
+    details: (orderId: string) => `/admin/orders/${orderId}`,
+    refund: (orderId: string) => `/admin/orders/${orderId}/refund`,
+    localDeliveryBulkStatus: "/admin/orders/local-delivery/bulk-status",
+    localDeliveryDocuments: (orderId: string) =>
+      `/admin/orders/${orderId}/local-delivery-documents`,
+  },
 
-adminOrderShipping: {
-  byOrder: (orderId: string) => `/admin/orders/${orderId}/shipping`,
-  label: (orderId: string) => `/admin/orders/${orderId}/shipping/label`,
-  markPrinted: (orderId: string) => `/admin/orders/${orderId}/shipping/printed`,
-  markPosted: (orderId: string) => `/admin/orders/${orderId}/shipping/posted`,
-  generateLabel: (orderId: string) => `/admin/orders/${orderId}/shipping/correios/generate-label`,
-  reprintLabel: (orderId: string) => `/admin/orders/${orderId}/shipping/correios/reprint-label`,
-  refreshLabel: (orderId: string) =>
-    `/admin/orders/${orderId}/shipping/correios/refresh-label`,
-},
+  adminOrderPrintReadiness: (orderId: string) =>
+    `/admin/orders/${orderId}/print-readiness`,
+  adminOrderPrepareDocuments: (orderId: string) =>
+    `/admin/orders/${orderId}/prepare-documents`,
+
+  adminOrderShipping: {
+    byOrder: (orderId: string) => `/admin/orders/${orderId}/shipping`,
+    label: (orderId: string) => `/admin/orders/${orderId}/shipping/label`,
+    markPrinted: (orderId: string) => `/admin/orders/${orderId}/shipping/printed`,
+    markPosted: (orderId: string) => `/admin/orders/${orderId}/shipping/posted`,
+    generateLabel: (orderId: string) => `/admin/orders/${orderId}/shipping/correios/generate-label`,
+    reprintLabel: (orderId: string) => `/admin/orders/${orderId}/shipping/correios/reprint-label`,
+    refreshLabel: (orderId: string) =>
+      `/admin/orders/${orderId}/shipping/correios/refresh-label`,
+  },
 
 adminLocalDelivery: {
   today: "/admin/local-delivery/today",
