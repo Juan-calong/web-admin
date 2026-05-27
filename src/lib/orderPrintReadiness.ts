@@ -89,7 +89,13 @@ function normalizeToken(value?: string | null) {
 }
 
 function includesToken(value: string, tokens: string[]) {
-  return tokens.some((token) => value === token || value.includes(token));
+  const segments = value.split("_").filter(Boolean);
+
+  return tokens.some((token) => {
+    const normalizedToken = normalizeToken(token);
+
+    return value === normalizedToken || segments.includes(normalizedToken);
+  });
 }
 
 function toneFromStatus(value?: string | null): OrderPrintReadinessTone {
@@ -98,9 +104,10 @@ function toneFromStatus(value?: string | null): OrderPrintReadinessTone {
   if (!normalized) return "na";
   if (includesToken(normalized, ERROR_TOKENS)) return "error";
   if (includesToken(normalized, GENERATING_TOKENS)) return "generating";
-  if (includesToken(normalized, READY_TOKENS)) return "ready";
+  // Check negative/neutral states before READY-like tokens to avoid false positives.
   if (includesToken(normalized, NA_TOKENS)) return "na";
   if (includesToken(normalized, PENDING_TOKENS)) return "pending";
+  if (includesToken(normalized, READY_TOKENS)) return "ready";
 
   return "pending";
 }
