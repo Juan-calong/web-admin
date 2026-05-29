@@ -309,7 +309,7 @@ export default function AdminCategoriesPage() {
                 <div className="space-y-3 lg:hidden">
                   {itemsFiltered.length === 0 ? (
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-                      Nenhuma categoria encontrada.
+                      Nenhuma categoria.
                     </div>
                   ) : (
                     itemsSorted.map((c) => (
