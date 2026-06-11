@@ -158,12 +158,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-[#F7F8FA]">
+      <div className="min-h-screen bg-[#F7F8FA] lg:h-dvh lg:overflow-hidden">
         {hideSidebar ? (
           <main className="min-h-screen">{children}</main>
         ) : (
-          <div className="grid min-h-screen grid-cols-[280px_1fr]">
-            <aside className="border-r bg-white p-4">
+          <div className="grid min-h-screen lg:h-full lg:min-h-0 lg:grid-cols-[280px_1fr]">
+            <aside className="border-r bg-white p-4 lg:flex lg:h-full lg:min-h-0 lg:flex-col lg:overflow-hidden">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-lg font-black leading-tight">KeyFi Admin</div>
@@ -177,7 +177,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               <Separator className="my-4" />
 
-              <nav className="grid gap-1">
+              <nav className="grid gap-1 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-1">
                 <NavItem href="/admin" label="Dashboard" icon={LayoutDashboard} />
                 <NavItem href="/admin/orders" label="Pedidos" icon={ShoppingBag} />
                 <NavItem href="/admin/refund-requests" label="Reembolsos" icon={HandCoins} />
@@ -212,10 +212,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   rightBadge={<CountBadge count={commentUnreadCount} />}
                 />
                 <NavItem href="/admin/integrations/bling" label="Bling / NF-e" icon={ReceiptText} />
+                <NavItem href="/admin/shipping" label="Entrega e frete" icon={Truck} />
               </nav>
-              <NavItem href="/admin/shipping" label="Entrega e frete" icon={Truck} />
 
-              <div className="mt-6">
+              <div className="mt-6 lg:mt-4 lg:shrink-0">
                 <Separator className="my-4" />
                 <Button variant="outline" className="w-full rounded-xl" onClick={logout}>
                   <LogOut className="mr-2 h-4 w-4" />
@@ -224,7 +224,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </div>
             </aside>
 
-            <main className="p-6">
+            <main className="p-6 lg:min-h-0 lg:overflow-y-auto">
               <div className="mx-auto w-full max-w-6xl">{children}</div>
             </main>
           </div>

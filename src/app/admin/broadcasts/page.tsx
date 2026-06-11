@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -32,6 +32,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 
 type BroadcastChannel = "APP" | "WHATSAPP" | "BOTH";
@@ -172,10 +179,127 @@ function formatDateTime(value?: string | null) {
   return d.toLocaleString("pt-BR");
 }
 
+function BroadcastForm({
+  form,
+  setForm,
+  onSubmit,
+  onReset,
+  isSubmitting,
+}: {
+  form: FormState;
+  setForm: Dispatch<SetStateAction<FormState>>;
+  onSubmit: () => void;
+  onReset: () => void;
+  isSubmitting: boolean;
+}) {
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-2">
+        <Label className="text-slate-700">Título</Label>
+        <Input
+          value={form.title}
+          onChange={(e) => setForm((s) => ({ ...s, title: e.target.value }))}
+          placeholder="Ex.: Hoje temos promoções"
+          className="h-11 rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
+        />
+      </div>
+
+      <div className="grid gap-2">
+        <Label className="text-slate-700">Mensagem</Label>
+        <Textarea
+          value={form.body}
+          onChange={(e) => setForm((s) => ({ ...s, body: e.target.value }))}
+          placeholder="Ex.: Aproveite o frete grátis por tempo limitado."
+          className="min-h-[130px] rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
+        />
+      </div>
+
+      <div className="grid gap-2">
+        <Label className="text-slate-700">Público</Label>
+        <select
+          value={form.audience}
+          onChange={(e) =>
+            setForm((s) => ({
+              ...s,
+              audience: e.target.value as BroadcastAudience,
+            }))
+          }
+          className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
+        >
+          <option value="CUSTOMER">Customer</option>
+          <option value="SALON_OWNER">Salão</option>
+          <option value="SELLER">Seller</option>
+          <option value="ALL">Todos</option>
+        </select>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs leading-6 text-slate-600">
+          <p>
+            <strong>Customer:</strong> envia para usuários customer.
+          </p>
+          <p>
+            <strong>Salão:</strong> envia para usuários salão.
+          </p>
+          <p>
+            <strong>Seller:</strong> envia para sellers.
+          </p>
+          <p>
+            <strong>Todos:</strong> envia para customer, salão e seller.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-2">
+        <Label className="text-slate-700">Canal</Label>
+        <Input
+          value="APP"
+          disabled
+          className="h-11 rounded-xl border-slate-300 bg-slate-50 text-slate-900"
+        />
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs leading-6 text-slate-600">
+          Nesta primeira fase, o broadcast é salvo/publicado apenas no canal APP.
+          Push de celular entra no próximo passo.
+        </div>
+      </div>
+
+      <Separator />
+
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Button
+          className="h-11 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
+          onClick={onSubmit}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Criando...
+            </>
+          ) : (
+            <>
+              <Plus className="mr-2 h-4 w-4" />
+              Criar rascunho
+            </>
+          )}
+        </Button>
+
+        <Button
+          variant="outline"
+          className="h-11 rounded-xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+          onClick={onReset}
+          disabled={isSubmitting}
+        >
+          Limpar
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminBroadcastsPage() {
   const qc = useQueryClient();
 
   const [form, setForm] = useState<FormState>(createEmptyForm());
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const broadcastsQ = useQuery({
     queryKey: ["admin-broadcasts"],
@@ -234,6 +358,7 @@ export default function AdminBroadcastsPage() {
     onSuccess: async () => {
       toast.success("Broadcast criado como rascunho.");
       setForm(createEmptyForm());
+      setCreateDialogOpen(false);
       await qc.invalidateQueries({ queryKey: ["admin-broadcasts"] });
     },
     onError: (err) => {
@@ -258,8 +383,32 @@ export default function AdminBroadcastsPage() {
     setForm(createEmptyForm());
   }
 
+  function openCreateDialog() {
+    resetForm();
+    setCreateDialogOpen(true);
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6 px-3 pb-6 lg:px-6">
+      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-slate-900">Novo broadcast</DialogTitle>
+            <DialogDescription className="text-slate-600">
+              Crie uma mensagem simples para testar a comunicação administrativa.
+            </DialogDescription>
+          </DialogHeader>
+
+          <BroadcastForm
+            form={form}
+            setForm={setForm}
+            onSubmit={() => saveM.mutate()}
+            onReset={resetForm}
+            isSubmitting={saveM.isPending}
+          />
+        </DialogContent>
+      </Dialog>
+
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <Card className="border border-slate-200 bg-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)]">
           <CardHeader className="pb-4">
@@ -305,7 +454,7 @@ export default function AdminBroadcastsPage() {
 
               <Button
                 className="h-11 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
-                onClick={resetForm}
+                onClick={openCreateDialog}
               >
                 <Plus className="mr-2 h-4 w-4" />
                 Novo broadcast
@@ -361,120 +510,7 @@ export default function AdminBroadcastsPage() {
         </Card>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[430px_1fr]">
-        <Card className="border border-slate-200 bg-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)] xl:sticky xl:top-4 xl:h-fit">
-          <CardHeader className="border-b border-slate-100 pb-4">
-            <CardTitle className="text-slate-900">Novo broadcast</CardTitle>
-            <CardDescription className="text-slate-600">
-              Crie uma mensagem simples para testar a comunicação administrativa.
-            </CardDescription>
-          </CardHeader>
-
-          <CardContent className="space-y-5 pt-5">
-            <div className="grid gap-2">
-              <Label className="text-slate-700">Título</Label>
-              <Input
-                value={form.title}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, title: e.target.value }))
-                }
-                placeholder="Ex.: Hoje temos promoções"
-                className="h-11 rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label className="text-slate-700">Mensagem</Label>
-              <Textarea
-                value={form.body}
-                onChange={(e) =>
-                  setForm((s) => ({ ...s, body: e.target.value }))
-                }
-                placeholder="Ex.: Aproveite o frete grátis por tempo limitado."
-                className="min-h-[130px] rounded-xl border-slate-300 bg-white text-slate-900 placeholder:text-slate-400"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label className="text-slate-700">Público</Label>
-              <select
-                value={form.audience}
-                onChange={(e) =>
-                  setForm((s) => ({
-                    ...s,
-                    audience: e.target.value as BroadcastAudience,
-                  }))
-                }
-                className="h-11 rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
-              >
-                <option value="CUSTOMER">Customer</option>
-                <option value="SALON_OWNER">Salão</option>
-                <option value="SELLER">Seller</option>
-                <option value="ALL">Todos</option>
-              </select>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs leading-6 text-slate-600">
-                <p>
-                  <strong>Customer:</strong> envia para usuários customer.
-                </p>
-                <p>
-                  <strong>Salão:</strong> envia para usuários salão.
-                </p>
-                <p>
-                  <strong>Seller:</strong> envia para sellers.
-                </p>
-                <p>
-                  <strong>Todos:</strong> envia para customer, salão e seller.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-2">
-              <Label className="text-slate-700">Canal</Label>
-              <Input
-                value="APP"
-                disabled
-                className="h-11 rounded-xl border-slate-300 bg-slate-50 text-slate-900"
-              />
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs leading-6 text-slate-600">
-                Nesta primeira fase, o broadcast é salvo/publicado apenas no canal APP.
-                Push de celular entra no próximo passo.
-              </div>
-            </div>
-
-            <Separator />
-
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button
-                className="h-11 rounded-xl bg-slate-900 text-white hover:bg-slate-800"
-                onClick={() => saveM.mutate()}
-                disabled={saveM.isPending}
-              >
-                {saveM.isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Criando...
-                  </>
-                ) : (
-                  <>
-                    <Plus className="mr-2 h-4 w-4" />
-                    Criar rascunho
-                  </>
-                )}
-              </Button>
-
-              <Button
-                variant="outline"
-                className="h-11 rounded-xl border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
-                onClick={resetForm}
-                disabled={saveM.isPending}
-              >
-                Limpar
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-
+      <div>
         <Card className="border border-slate-200 bg-white shadow-[0_18px_40px_-24px_rgba(15,23,42,0.35)]">
           <CardHeader className="border-b border-slate-100 pb-4">
             <CardTitle className="text-slate-900">Lista de broadcasts</CardTitle>
