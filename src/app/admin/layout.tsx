@@ -158,7 +158,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-[#F7F8FA] lg:h-dvh lg:overflow-hidden">
+      <div
+        className={cn(
+          "min-h-screen bg-[#F7F8FA]",
+          !hideSidebar && "lg:h-dvh lg:overflow-hidden"
+        )}
+      >
         {hideSidebar ? (
           <main className="min-h-screen">{children}</main>
         ) : (
