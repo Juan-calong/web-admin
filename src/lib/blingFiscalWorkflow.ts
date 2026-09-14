@@ -1,4 +1,7 @@
 import { api } from "@/lib/api";
+import { endpoints } from "@/lib/endpoints";
+import type { FiscalAutomationProjection } from "@/lib/fiscalAutomationPresentation";
+import { fiscalNoAuthRetryConfig } from "@/lib/fiscalNoAuthRetry";
 
 export type FiscalWorkflowActionMethod = "POST" | "GET_EXTERNAL";
 
@@ -56,6 +59,7 @@ export type FiscalWorkflowResponse = {
   orderId: string;
   environment?: string | null;
   overallStatus?: string | null;
+  automation?: FiscalAutomationProjection | null;
   summary?: FiscalWorkflowSummary;
   readiness?: Record<string, unknown>;
   documents?: FiscalWorkflowDocuments;
@@ -80,4 +84,13 @@ export async function runOrderBlingFiscalAction(
   const endpoint = action.endpoint.replace(":orderId", orderId);
   const { data } = await api.post(endpoint, {});
   return data as { message?: string };
+}
+
+export async function reprocessOrderFiscalAutomation(orderId: string) {
+  const { data } = await api.post(
+    endpoints.adminOrderFiscal.reprocess(orderId),
+    {},
+    fiscalNoAuthRetryConfig
+  );
+  return data as { orderId?: string; automation?: FiscalAutomationProjection };
 }

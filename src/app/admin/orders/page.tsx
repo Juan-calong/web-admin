@@ -23,6 +23,10 @@ import {
   isOrderPrintReady,
   type OrderPrintReadiness,
 } from "@/lib/orderPrintReadiness";
+import {
+  getFiscalAutomationPresentation,
+  type FiscalAutomationProjection,
+} from "@/lib/fiscalAutomationPresentation";
 import { cn } from "@/lib/utils";
 import { openLocalDeliveryUnifiedBatchPdf } from "@/components/admin/local-delivery/localDeliveryPdf";
 import { openCorreiosBatchLabelsPdf } from "@/components/admin/correios/correiosBatchPdf";
@@ -66,6 +70,7 @@ type Order = {
   shippingServiceCode?: string | null;
   shippingServiceName?: string | null;
   printReadiness?: OrderPrintReadiness | null;
+  fiscalAutomation?: FiscalAutomationProjection | null;
     localDeliveryStatus?:
     | "PENDING_SEPARATION"
     | "PACKED"
@@ -397,6 +402,39 @@ function PrintReadinessBadge({
   );
 }
 
+function FiscalAutomationBadge({
+  automation,
+}: {
+  automation?: FiscalAutomationProjection | null;
+}) {
+  if (automation === null) return null;
+
+  const presentation = getFiscalAutomationPresentation(automation);
+  const toneClass: Record<string, string> = {
+    neutral: "border-zinc-200 bg-zinc-50 text-zinc-700 ring-zinc-200",
+    pending: "border-amber-200 bg-amber-50 text-amber-800 ring-amber-200",
+    processing: "border-blue-200 bg-blue-50 text-blue-800 ring-blue-200",
+    warning: "border-amber-200 bg-amber-50 text-amber-800 ring-amber-200",
+    error: "border-red-200 bg-red-50 text-red-700 ring-red-200",
+    success: "border-emerald-200 bg-emerald-50 text-emerald-700 ring-emerald-200",
+  };
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
+        toneClass[presentation.tone]
+      )}
+      title={presentation.description}
+    >
+      <span className="uppercase tracking-[0.14em] text-[10px] opacity-75">
+        Automação
+      </span>
+      <span>{presentation.label}</span>
+    </span>
+  );
+}
+
 export default function AdminOrdersPage() {
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<"pending" | "approved" | "rejected">("pending");
@@ -540,6 +578,14 @@ const [localStatusFilter, setLocalStatusFilter] =
     () => displayedOrders.filter((order) => selectedOrderIds.has(order.id)),
     [displayedOrders, selectedOrderIds]
   );
+  const selectedWithBlockedFiscalMutations = useMemo(
+    () =>
+      selectedDisplayedOrders.filter((order) =>
+        getFiscalAutomationPresentation(order.fiscalAutomation).blocksLegacyMutations
+      ),
+    [selectedDisplayedOrders]
+  );
+  const fiscalBatchBlocked = selectedWithBlockedFiscalMutations.length > 0;
   const selectedLocalDisplayedOrders = useMemo(
     () =>
       selectedDisplayedOrders.filter(
@@ -735,10 +781,20 @@ const selectedNonCorreiosCount = useMemo(
   });
 
   const prepareDocumentsM = useMutation({
-    mutationFn: async (orderId: string) => {
+    mutationFn: async ({
+      orderId,
+      fiscalAutomation,
+    }: {
+      orderId: string;
+      fiscalAutomation?: FiscalAutomationProjection | null;
+    }) => {
+      if (getFiscalAutomationPresentation(fiscalAutomation).blocksLegacyMutations) {
+        throw new Error("A automação fiscal controla este pedido.");
+      }
       await api.post(endpoints.adminOrderPrepareDocuments(orderId), {});
     },
-    onSuccess: async (_data, orderId) => {
+    retry: false,
+    onSuccess: async (_data, { orderId }) => {
       toast.success(`Preparação de documentos iniciada para o pedido ${orderId.slice(0, 8)}.`);
       await qc.invalidateQueries({ queryKey: ["orders"] });
       await ordersQ.refetch();
@@ -783,21 +839,29 @@ const selectedNonCorreiosCount = useMemo(
 });
 
   const fiscalRunBatchM = useMutation({
-    mutationFn: async (orderIds: string[]) => {
+    mutationFn: async (orders: Order[]) => {
+      if (
+        orders.some((order) =>
+          getFiscalAutomationPresentation(order.fiscalAutomation).blocksLegacyMutations
+        )
+      ) {
+        throw new Error("A seleção inclui pedido controlado pela automação fiscal.");
+      }
       let succeeded = 0;
       let failed = 0;
 
-      for (const orderId of orderIds) {
+      for (const order of orders) {
         try {
-          await api.post(`/admin/orders/${orderId}/bling/fiscal/run`, {});
+          await api.post(endpoints.adminOrderFiscal.run(order.id), {});
           succeeded += 1;
         } catch {
           failed += 1;
         }
       }
 
-      return { processed: orderIds.length, succeeded, failed };
+      return { processed: orders.length, succeeded, failed };
     },
+    retry: false,
     onSuccess: async (result) => {
       if (result.failed === 0) {
         toast.success(
@@ -1719,7 +1783,12 @@ const localStatusClass = (
                 size="sm"
                 variant="outline"
                 className="h-9 rounded-xl border-amber-200 bg-amber-50 px-3 text-xs font-medium text-amber-800 hover:bg-amber-100"
-                disabled={fiscalRunBatchM.isPending || selectedVisibleCount === 0}
+                disabled={fiscalRunBatchM.isPending || selectedVisibleCount === 0 || fiscalBatchBlocked}
+                title={
+                  fiscalBatchBlocked
+                    ? "A seleção inclui pedido controlado pela automação fiscal."
+                    : undefined
+                }
               >
                 {fiscalRunBatchM.isPending
                   ? "Executando fiscal..."
@@ -1741,7 +1810,7 @@ const localStatusClass = (
                 </AlertDialogCancel>
                 <AlertDialogAction
                   className="rounded-2xl bg-amber-600 text-white hover:bg-amber-700"
-                  onClick={() => fiscalRunBatchM.mutate(selectedDisplayedOrders.map((order) => order.id))}
+                  onClick={() => fiscalRunBatchM.mutate(selectedDisplayedOrders)}
                 >
                   Confirmar execução
                 </AlertDialogAction>
@@ -1916,7 +1985,16 @@ const orderStatus = o.orderStatus ?? o.status ?? null;
 const readiness = o.printReadiness ?? null;
 const documentsReady = isOrderPrintReady(readiness);
 const preparingDocuments =
-  prepareDocumentsM.isPending && prepareDocumentsM.variables === o.id;
+  prepareDocumentsM.isPending && prepareDocumentsM.variables?.orderId === o.id;
+const fiscalAutomationPresentation = getFiscalAutomationPresentation(o.fiscalAutomation);
+const prepareDocumentsBlocked = fiscalAutomationPresentation.blocksLegacyMutations;
+const prepareDocumentsTitle = documentsReady
+  ? "Documentos prontos"
+  : prepareDocumentsBlocked
+    ? fiscalAutomationPresentation.ownership === "unknown-contract"
+      ? "Estado fiscal indisponível. Atualize os dados antes de executar ações."
+      : "A automação fiscal controla este pedido."
+    : undefined;
 const deliveryType = resolveDeliveryType(o);
 const deliveryBadge = getDeliveryBadgeMeta(deliveryType);
 const localDeliveryLabel = getLocalDeliveryStatusLabel(
@@ -2031,6 +2109,7 @@ const movementLabel =
         <PrintReadinessBadge kind="danfe" label="DANFE" readiness={readiness} />
         <PrintReadinessBadge kind="xml" label="XML" readiness={readiness} />
         <PrintReadinessBadge kind="bundle" label="Bundle" readiness={readiness} />
+        <FiscalAutomationBadge automation={o.fiscalAutomation} />
 
         {busyThis ? (
           <span className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-white">
@@ -2127,9 +2206,9 @@ const movementLabel =
           variant="outline"
           size="sm"
           className="h-8 rounded-xl border-zinc-200 bg-white px-3 text-xs text-zinc-700 hover:bg-zinc-50"
-          onClick={() => prepareDocumentsM.mutate(o.id)}
-          disabled={documentsReady || preparingDocuments}
-          title={documentsReady ? "Documentos prontos" : undefined}
+          onClick={() => prepareDocumentsM.mutate({ orderId: o.id, fiscalAutomation: o.fiscalAutomation })}
+          disabled={documentsReady || preparingDocuments || prepareDocumentsBlocked}
+          title={prepareDocumentsTitle}
         >
           {preparingDocuments ? (
             <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />

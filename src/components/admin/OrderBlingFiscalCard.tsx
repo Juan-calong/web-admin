@@ -7,9 +7,19 @@ import { toast } from "sonner";
 import { apiErrorMessage } from "@/lib/apiError";
 import {
   getOrderBlingFiscalWorkflow,
+  reprocessOrderFiscalAutomation,
   runOrderBlingFiscalAction,
   type FiscalWorkflowAction,
+  type FiscalWorkflowResponse,
 } from "@/lib/blingFiscalWorkflow";
+import {
+  getFiscalAutomationConflictMessage,
+  getFiscalAutomationConflict,
+  getFiscalAutomationPresentation,
+  isFiscalAutomationReadAction,
+  type FiscalAutomationProjection,
+} from "@/lib/fiscalAutomationPresentation";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
@@ -85,7 +95,29 @@ const getXmlLabel = (xml: { available?: boolean } | undefined) =>
 const isSensitiveFiscalAction = (actionId: string) =>
   actionId === "CREATE_NFE" || actionId === "SEND_NFE";
 
-export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
+const automationToneClass: Record<string, string> = {
+  neutral: "border-zinc-200 bg-zinc-50 text-zinc-700",
+  pending: "border-amber-200 bg-amber-50 text-amber-800",
+  processing: "border-blue-200 bg-blue-50 text-blue-800",
+  warning: "border-amber-200 bg-amber-50 text-amber-800",
+  error: "border-red-200 bg-red-50 text-red-700",
+  success: "border-emerald-200 bg-emerald-50 text-emerald-700",
+};
+
+function getConflict(error: unknown) {
+  const response = (error as {
+    response?: { status?: unknown; data?: { code?: unknown } };
+  })?.response;
+  return getFiscalAutomationConflict(response?.status, response?.data?.code);
+}
+
+export function OrderBlingFiscalCard({
+  orderId,
+  fiscalAutomation,
+}: {
+  orderId?: string;
+  fiscalAutomation?: FiscalAutomationProjection | null;
+}) {
   const [runningActionId, setRunningActionId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -95,13 +127,30 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
     enabled: Boolean(orderId),
     retry: false,
     refetchOnWindowFocus: false,
+    refetchInterval: (query) => {
+      const workflow = query.state.data as FiscalWorkflowResponse | undefined;
+      return getFiscalAutomationPresentation(workflow?.automation).shouldPoll ? 15_000 : false;
+    },
   });
+
+  const automation =
+    workflowQ.data?.automation === undefined
+      ? fiscalAutomation
+      : workflowQ.data.automation;
+  const automationPresentation = getFiscalAutomationPresentation(automation);
 
   const runActionM = useMutation({
     mutationFn: async (action: FiscalWorkflowAction) => {
+      if (
+        !isFiscalAutomationReadAction(action.id, action.method) &&
+        automationPresentation.blocksLegacyMutations
+      ) {
+        throw new Error("A automação fiscal é a única responsável por mutações deste pedido.");
+      }
       setRunningActionId(action.id);
       return runOrderBlingFiscalAction(orderId as string, action);
     },
+    retry: false,
     onSuccess: async (data) => {
       toast.success(data?.message ?? "Ação executada com sucesso.");
       await workflowQ.refetch();
@@ -112,6 +161,34 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
     },
     onSettled: () => setRunningActionId(null),
   });
+
+  const reprocessM = useMutation({
+    mutationFn: () => reprocessOrderFiscalAutomation(orderId as string),
+    retry: false,
+    onSuccess: async () => {
+      toast.success("Automação fiscal recolocada na fila.");
+      await workflowQ.refetch();
+      await queryClient.invalidateQueries({ queryKey: ["admin-order-details", orderId] });
+      await queryClient.invalidateQueries({ queryKey: ["orders"] });
+    },
+    onError: async (error) => {
+      const conflict = getConflict(error);
+      if (conflict.isConflict) {
+        toast.error(
+          getFiscalAutomationConflictMessage(conflict.code, automation?.lastErrorCode)
+        );
+        await workflowQ.refetch();
+        return;
+      }
+      toast.error(apiErrorMessage(error, "Não foi possível reprocessar a automação fiscal."));
+    },
+  });
+
+  const visibleActions = (workflowQ.data?.actions ?? []).filter(
+    (action) =>
+      isFiscalAutomationReadAction(action.id, action.method) ||
+      !automationPresentation.blocksLegacyMutations
+  );
 
   return (
     <Card className="overflow-hidden rounded-[32px] border border-zinc-200/70 bg-white/95 shadow-[0_12px_35px_rgba(15,23,42,0.05)]">
@@ -137,6 +214,48 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
               <Badge variant="outline">{labelFromMap(workflowQ.data.overallStatus, overallStatusLabel)}</Badge>
               <Badge variant="outline">{labelFromMap(workflowQ.data.environment, environmentLabel, "Ambiente não informado")}</Badge>
               <Badge variant="outline">{labelFromMap(workflowQ.data.summary?.nfeStatus, nfeStatusLabel)}</Badge>
+            </div>
+
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <strong>Automação fiscal:</strong>
+                <Badge
+                  variant="outline"
+                  className={cn(automationToneClass[automationPresentation.tone])}
+                >
+                  {automationPresentation.label}
+                </Badge>
+              </div>
+              {automationPresentation.description ? (
+                <p className="mt-2 text-zinc-600">{automationPresentation.description}</p>
+              ) : null}
+              {automation?.nextAttemptAt ? (
+                <p className="mt-2 text-zinc-600">
+                  <strong>Próxima tentativa:</strong>{" "}
+                  {new Date(automation.nextAttemptAt).toLocaleString("pt-BR")}
+                </p>
+              ) : null}
+              {automation?.lastError ? (
+                <p className="mt-2 text-zinc-600">
+                  <strong>Detalhe:</strong> {automation.lastError}
+                </p>
+              ) : null}
+              {automationPresentation.blocksLegacyMutations ? (
+                <p className="mt-2 text-xs text-zinc-600">
+                  A automação fiscal controla as ações de criação, envio e sincronização deste pedido.
+                </p>
+              ) : null}
+              {automationPresentation.canReprocess ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-3"
+                  disabled={reprocessM.isPending}
+                  onClick={() => reprocessM.mutate()}
+                >
+                  {reprocessM.isPending ? "Reprocessando..." : "Reprocessar automação"}
+                </Button>
+              ) : null}
             </div>
 
             <div className="grid gap-2 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm sm:grid-cols-2">
@@ -183,14 +302,14 @@ export function OrderBlingFiscalCard({ orderId }: { orderId?: string }) {
               </div>
             ) : null}
 
-            {(workflowQ.data.actions ?? []).some((action) => isSensitiveFiscalAction(action.id)) ? (
+            {!automationPresentation.blocksLegacyMutations && visibleActions.some((action) => isSensitiveFiscalAction(action.id)) ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
                 Ação sensível disponível: criar NF-e no Bling exige confirmação.
               </div>
             ) : null}
 
             <div className="flex flex-wrap gap-2">
-              {(workflowQ.data.actions ?? []).map((action) => {
+              {visibleActions.map((action) => {
                 const isPrimary = action.id === workflowQ.data?.nextRecommendedAction;
                 const isLoading = runningActionId === action.id && runActionM.isPending;
 

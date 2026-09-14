@@ -17,6 +17,7 @@ export const api = axios.create({
 
 type RetryableRequestConfig = InternalAxiosRequestConfig & {
   _retry?: boolean;
+  skipAuthRetry?: boolean;
 };
 
 const authApi = axios.create({
@@ -152,7 +153,7 @@ api.interceptors.response.use(
       return Promise.reject(err);
     }
 
-    if (!isAuthRefreshCandidate(err)) {
+    if (original.skipAuthRetry || !isAuthRefreshCandidate(err)) {
       return Promise.reject(err);
     }
 
