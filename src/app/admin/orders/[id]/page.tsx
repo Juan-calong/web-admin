@@ -34,6 +34,10 @@ import {
   isOrderPrintReady,
   type OrderPrintReadiness,
 } from "@/lib/orderPrintReadiness";
+import {
+  getFiscalAutomationPresentation,
+  type FiscalAutomationProjection,
+} from "@/lib/fiscalAutomationPresentation";
 import { cn } from "@/lib/utils";
 
 import { Button } from "@/components/ui/button";
@@ -65,6 +69,7 @@ import { OrderBlingFiscalCard } from "@/components/admin/OrderBlingFiscalCard";
 
 type OrderDetails = {
   printReadiness?: OrderPrintReadiness | null;
+  fiscalAutomation?: FiscalAutomationProjection | null;
   order: {
     id: string;
     code?: string | null;
@@ -619,6 +624,9 @@ export default function AdminOrderDetailsPage() {
   });
 
   const order = detailsQ.data?.order;
+  const fiscalAutomationPresentation = getFiscalAutomationPresentation(
+    detailsQ.data?.fiscalAutomation
+  );
 
   const decideM = useMutation({
     mutationFn: async (action: "approve" | "reject") => {
@@ -641,8 +649,12 @@ export default function AdminOrderDetailsPage() {
 
   const prepareDocumentsM = useMutation({
     mutationFn: async () => {
+      if (fiscalAutomationPresentation.blocksLegacyMutations) {
+        throw new Error("A automação fiscal controla este pedido.");
+      }
       await api.post(endpoints.adminOrderPrepareDocuments(id), {});
     },
+    retry: false,
     onSuccess: async () => {
       toast.success("Preparação de documentos iniciada.");
       await qc.invalidateQueries({ queryKey: ["admin-order-details", id] });
@@ -662,6 +674,14 @@ export default function AdminOrderDetailsPage() {
 const isCorreiosDelivery = isCorreiosDeliveryOrder(order);
   const printReadiness = order?.printReadiness ?? detailsQ.data?.printReadiness ?? null;
   const documentsReady = isOrderPrintReady(printReadiness);
+  const prepareDocumentsBlocked = fiscalAutomationPresentation.blocksLegacyMutations;
+  const prepareDocumentsTitle = documentsReady
+    ? "Documentos prontos"
+    : prepareDocumentsBlocked
+      ? fiscalAutomationPresentation.ownership === "unknown-contract"
+        ? "Estado fiscal indisponível. Atualize os dados antes de executar ações."
+        : "A automação fiscal controla este pedido."
+      : undefined;
 
   const salonAddressLines = formatAddressLines(order?.salon ?? null);
   const deliveryAddressLines = formatAddressLines(
@@ -1004,8 +1024,8 @@ const isCorreiosDelivery = isCorreiosDeliveryOrder(order);
                     <Button
                       className="h-11 rounded-2xl"
                       onClick={() => prepareDocumentsM.mutate()}
-                      disabled={documentsReady || prepareDocumentsM.isPending}
-                      title={documentsReady ? "Documentos prontos" : undefined}
+                      disabled={documentsReady || prepareDocumentsM.isPending || prepareDocumentsBlocked}
+                      title={prepareDocumentsTitle}
                     >
                       {prepareDocumentsM.isPending ? (
                         <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -1014,7 +1034,10 @@ const isCorreiosDelivery = isCorreiosDeliveryOrder(order);
                     </Button>
                   </div>
                 </SectionShell>
-                <OrderBlingFiscalCard orderId={id} />
+                <OrderBlingFiscalCard
+                  orderId={id}
+                  fiscalAutomation={detailsQ.data?.fiscalAutomation}
+                />
 
 
 {isLocalDelivery ? (

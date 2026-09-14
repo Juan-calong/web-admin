@@ -50,6 +50,10 @@ export const endpoints = {
     `/admin/orders/${orderId}/print-readiness`,
   adminOrderPrepareDocuments: (orderId: string) =>
     `/admin/orders/${orderId}/prepare-documents`,
+  adminOrderFiscal: {
+    run: (orderId: string) => `/admin/orders/${orderId}/bling/fiscal/run`,
+    reprocess: (orderId: string) => `/admin/orders/${orderId}/fiscal/reprocess`,
+  },
 
   adminOrderShipping: {
     byOrder: (orderId: string) => `/admin/orders/${orderId}/shipping`,
