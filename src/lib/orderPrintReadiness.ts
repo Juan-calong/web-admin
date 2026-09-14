@@ -28,6 +28,12 @@ export type OrderPrintReadiness = {
 
 type OrderPrintReadinessTone = "ready" | "pending" | "generating" | "error" | "na";
 
+type ShippingLabelPresentation = {
+  tone: OrderPrintReadinessTone;
+  label?: string;
+  title?: string;
+};
+
 const READY_TOKENS = [
   "READY",
   "PRONTO",
@@ -150,10 +156,47 @@ function sourceMessage(
   return text ? String(text) : null;
 }
 
+const RECOVERABLE_SHIPPING_CODES = new Set([
+  "PREPOST_DCE_PENDING",
+  "LABEL_ASYNC_PENDING",
+  "LABEL_RECEIPT_FAILED_RETRYABLE",
+  "LABEL_DOWNLOAD_NOT_READY",
+]);
+
+function recoverableShippingPresentation(
+  source?: OrderPrintReadinessStatusSource | null
+): ShippingLabelPresentation | null {
+  const code = normalizeToken(source?.error);
+
+  if (!RECOVERABLE_SHIPPING_CODES.has(code)) return null;
+
+  if (code === "PREPOST_DCE_PENDING") {
+    return {
+      tone: "pending",
+      label: "Analisando...",
+      title: "A pré-postagem está sendo analisada pelos Correios.",
+    };
+  }
+
+  if (code === "LABEL_ASYNC_PENDING") {
+    return {
+      tone: "generating",
+      label: "Processando etiqueta...",
+      title: "A etiqueta está sendo processada pelos Correios.",
+    };
+  }
+
+  return {
+    tone: "pending",
+    label: "Aguardando processamento...",
+    title: "A etiqueta ainda está sendo processada pelos Correios.",
+  };
+}
+
 function resolveSourceForKind(
   kind: OrderPrintReadinessKind,
   readiness?: OrderPrintReadiness | null
-): { raw?: string | null; tone: OrderPrintReadinessTone; title: string } {
+): { raw?: string | null; tone: OrderPrintReadinessTone; title: string; label?: string } {
   const source =
     kind === "shipping"
       ? readiness?.shipping
@@ -193,12 +236,19 @@ function resolveSourceForKind(
   }
 
   const raw = source?.status ?? null;
+  const shippingPresentation =
+    kind === "shipping" ? recoverableShippingPresentation(source) : null;
   const tone = source?.applicable === false ? "na" : toneFromStatus(raw);
 
   return {
     raw,
-    tone,
-    title: sourceMessage(source) || sourceMessage(readiness) || (raw ? String(raw) : kind === "shipping" ? "Etiqueta" : "NF-e"),
+    tone: shippingPresentation?.tone ?? tone,
+    label: shippingPresentation?.label,
+    title:
+      shippingPresentation?.title ??
+      sourceMessage(source) ??
+      sourceMessage(readiness) ??
+      (raw ? String(raw) : kind === "shipping" ? "Etiqueta" : "NF-e"),
   };
 }
 
@@ -213,7 +263,7 @@ export function getOrderPrintReadinessBadgeMeta(
   const resolved = resolveSourceForKind(kind, readiness);
 
   return {
-    label: toneLabel(kind, resolved.tone, resolved.raw),
+    label: resolved.label ?? toneLabel(kind, resolved.tone, resolved.raw),
     className: toneClasses(resolved.tone),
     title: resolved.title,
   };
