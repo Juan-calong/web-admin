@@ -9,6 +9,12 @@ import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
 import { ProductFiscalInput, updateAdminProductFiscal } from "@/lib/productFiscal";
+import { postCreationAction, submitProductWithFiscalRecovery, type FiscalRecoveryResult } from '@/lib/productFiscalRecovery';
+import { checkDecimal, checkDecimalDraft, checkFiscal, checkWholeNumber, checkInteger, validProductPrice, fiscalErrorMessage, wouldExceedTextLimit, parseProductList, checkListChange, clearCorrectedListError, replaceScopedProductErrors, PRODUCT_FORM_LIMITS, resolveImageSelection, resolveVideoSelection, productImageContentType } from '@/lib/productFormRules';
+import { formatProductIssues } from '@/lib/productIssues';
+import { ProductListTextarea } from '@/components/admin/ProductListTextarea';
+import { ProductFieldFeedback } from '@/components/admin/ProductFieldFeedback';
+import { ProductFiscalField } from '@/components/admin/ProductFiscalField';
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -44,14 +50,6 @@ type ProductAudience = "ALL" | "STAFF_ONLY";
 type ProductApiResponse = {
   item?: { id?: string };
   id?: string;
-};
-
-type CreateProductMutationResult = {
-  productId?: string;
-  fiscalAttempted: boolean;
-  fiscalSaved: boolean;
-  fiscalFailed: boolean;
-  redirectTo?: string;
 };
 
 type NewDraft = {
@@ -140,19 +138,11 @@ function stableKey(
 }
 
 function parseHighlights(text: string) {
-  return String(text ?? "")
-    .split("\n")
-    .map((s) => s.trim().replace(/\s+/g, " "))
-    .filter(Boolean)
-    .slice(0, 10)
-    .map((s) => s.slice(0, 60));
+  return parseProductList(text, 'highlights');
 }
 
 function parseStringList(text: string) {
-  return String(text ?? "")
-    .split(/\r?\n|;/g)
-    .map((s) => s.replace(/^\s*[-•\d.)]+\s*/, "").trim())
-    .filter(Boolean);
+  return parseProductList(text);
 }
 
 function normalizeDecimalInput(value: string) {
@@ -310,6 +300,8 @@ export default function NewProductPage() {
   const [packageVolumes, setPackageVolumes] = useState("1");
 
   const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [imageSelectionError, setImageSelectionError] = useState('');
+  const [videoSelectionError, setVideoSelectionError] = useState('');
   const [videoTitle, setVideoTitle] = useState("");
   const [videoDescription, setVideoDescription] = useState("");
   const [videoSortOrder, setVideoSortOrder] = useState("0");
@@ -317,7 +309,32 @@ export default function NewProductPage() {
   const [videoShowInGallery, setVideoShowInGallery] = useState(true);
   const [videoThumbnailUrl, setVideoThumbnailUrl] = useState("");
   const [fiscalForm, setFiscalForm] = useState<FiscalForm>(EMPTY_FISCAL_FORM);
-  const [fiscalErrors, setFiscalErrors] = useState<{ ncm?: string; cest?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [createdProductId, setCreatedProductId] = useState<string | null>(null);
+  const [fiscalRecoveryReason, setFiscalRecoveryReason] = useState<string | null>(null);
+  const [postCreationError, setPostCreationError] = useState<string | null>(null);
+  const [hadFiscalOnCreate, setHadFiscalOnCreate] = useState(false);
+  const createdProductIdRef = useRef<string | null>(null);
+  const submissionInFlightRef = useRef(false);
+  const completedRef = useRef(false);
+  const focusFirstError = (errors: Record<string, string>) => {
+    const key = Object.keys(errors)[0];
+    if (!key) return;
+    requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(`[data-product-field="${key}"]`);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const focusTarget = target?.matches('input, textarea, button') ? target : target?.querySelector<HTMLElement>('input, textarea, button');
+      focusTarget?.focus({ preventScroll: true });
+    });
+  };
+  const acceptDecimal = (key: string, value: string, scale: number, setter: (value: string) => void) => {
+    if (!checkDecimalDraft(value, scale)) {
+      setFieldErrors((prev) => ({ ...prev, [key]: `Use números e até ${scale} casas decimais (vírgula ou ponto).` }));
+      return;
+    }
+    setFieldErrors((prev) => { const next = { ...prev }; delete next[key]; return next; });
+    setter(value);
+  };
 
   useEffect(() => {
     const draft = readDraft();
@@ -465,10 +482,7 @@ export default function NewProductPage() {
     for (let index = 0; index < imageFiles.length; index += 1) {
       const imageFile = imageFiles[index];
 
-      const contentType =
-        imageFile.type === "image/jpg"
-          ? "image/jpeg"
-          : imageFile.type || "application/octet-stream";
+      const contentType = productImageContentType(imageFile.type);
 
       const presignRes = await api.post(
         endpoints.products.images.presign(productId),
@@ -530,6 +544,7 @@ export default function NewProductPage() {
       {
         fileName: file.name,
         contentType: file.type,
+        sortOrder: Number(videoSortOrder),
         scope: "PRODUCT",
         productId,
       }
@@ -666,8 +681,74 @@ export default function NewProductPage() {
     setFiscalForm((prev) => ({ ...prev, unit: prev.unit.trim() ? prev.unit : "UN", tributaryUnit: prev.tributaryUnit.trim() ? prev.tributaryUnit : "UN", gtin: prev.gtin.trim() ? prev.gtin : "SEM GTIN", origin: prev.origin.trim() ? prev.origin : "0", itemType: prev.itemType.trim() ? prev.itemType : "MERCADORIA_REVENDA" }));
   };
 
-  const createM = useMutation<CreateProductMutationResult>({
+  const markProductCreated = (id: string) => {
+    createdProductIdRef.current = id;
+    setCreatedProductId(id);
+  };
+  const saveFiscalProduct = async (id: string, values: FiscalForm) => {
+    const fiscalPayload: ProductFiscalInput = { ...values, unit: values.unit.toUpperCase(), tributaryUnit: values.tributaryUnit.toUpperCase() };
+    await updateAdminProductFiscal(id, fiscalPayload);
+  };
+
+  const createM = useMutation<FiscalRecoveryResult>({
     mutationFn: async () => {
+      if (submissionInFlightRef.current) throw new Error('Envio em andamento. Aguarde.');
+      if (completedRef.current) throw new Error('Este produto já foi salvo.');
+      submissionInFlightRef.current = true;
+      try {
+      const existingProductId = createdProductIdRef.current;
+      if (existingProductId) {
+        const action = postCreationAction({
+          mediaError: Boolean(postCreationError),
+          fiscalError: Boolean(fiscalRecoveryReason),
+          hasFiscalCurrent: hasFiscalDraftValues(fiscalForm),
+        });
+        if (action === 'open-product') {
+          return { status: 'open-product', productId: existingProductId, createdNow: false, mediaPending: Boolean(postCreationError) };
+        }
+        const fiscalErrors: Record<string, string> = {};
+        for (const [key, value] of Object.entries(fiscalForm)) {
+          if (!checkFiscal(key, value)) fiscalErrors[key] = fiscalErrorMessage(key, FISCAL_FIELD_META[key as keyof FiscalForm].label);
+        }
+        setFieldErrors((prev) => replaceScopedProductErrors(prev, fiscalErrors, 'fiscal'));
+        if (Object.keys(fiscalErrors).length) { focusFirstError(fiscalErrors); throw new Error(Object.values(fiscalErrors)[0]); }
+        return submitProductWithFiscalRecovery({
+          createdProductId: existingProductId,
+          fiscalValues: { ...fiscalForm },
+          createProduct: async () => { throw new Error('Produto já criado; novo POST bloqueado.'); },
+          onCreated: markProductCreated,
+          saveFiscal: saveFiscalProduct,
+          mediaPending: Boolean(postCreationError),
+        });
+      }
+      const errors: Record<string, string> = {};
+      if (sku.trim().length < 3) errors.sku = 'SKU deve ter no mínimo 3 caracteres.';
+      if (name.trim().length < 2) errors.name = 'Nome deve ter no mínimo 2 caracteres.';
+      if (!Number.isSafeInteger(stock) || stock < 0) errors.stock = 'Estoque deve ser um inteiro a partir de 0.';
+      if (!validProductPrice(price)) errors.price = 'Preço: use um valor com até 2 casas decimais.';
+      if (!checkDecimal(customerPrice, 2, true)) errors.customerPrice = 'Preço cliente final: use até 2 casas decimais.';
+      if (description.trim().length > PRODUCT_FORM_LIMITS.description) errors.description = 'Descrição do produto: máximo de 2000 caracteres.';
+      for (const [key, value] of Object.entries({ effects: effectsText, benefits: benefitsText, howToUse: howToUseText, highlights: highlightsText }) as [keyof typeof PRODUCT_FORM_LIMITS, string][]) {
+        const result = checkListChange(value, key as 'effects' | 'benefits' | 'howToUse' | 'highlights');
+        if (!result.ok) errors[key] = result.message;
+      }
+      for (const [key, value, scale] of [['weightKg', weightKg, 3], ['heightCm', heightCm, 2], ['widthCm', widthCm, 2], ['lengthCm', lengthCm, 2]] as const) {
+        if (!checkDecimal(value, scale, true)) errors[key] = `Use até ${scale} casas decimais.`;
+      }
+      if (!checkWholeNumber(packageVolumes, 1)) errors.packageVolumes = 'Quantidade de volumes deve ser um inteiro a partir de 1.';
+      if (categoryIds.length + (categoryId && !categoryIds.includes(categoryId) ? 1 : 0) > 20) errors.categoryIds = 'Selecione no máximo 20 categorias, incluindo a principal.';
+      if (hasFiscalDraftValues(fiscalForm)) {
+        for (const [key, value] of Object.entries(fiscalForm)) {
+          if (!checkFiscal(key, value)) errors[key] = fiscalErrorMessage(key, FISCAL_FIELD_META[key as keyof FiscalForm].label);
+        }
+      }
+      if (imageSelectionError) errors.images = imageSelectionError;
+      if (videoSelectionError) errors.video = videoSelectionError;
+      if (resolveImageSelection(files).error) errors.images = resolveImageSelection(files).error;
+      if (videoFile && !videoFile.type.startsWith('video/')) errors.video = 'Selecione um arquivo de vídeo válido.';
+      if (videoFile && !checkInteger(videoSortOrder)) errors.videoSortOrder = 'A ordem do vídeo deve ser um número inteiro.';
+      setFieldErrors(errors);
+      if (Object.keys(errors).length) { focusFirstError(errors); throw new Error(Object.values(errors)[0]); }
       const skuN = sku.trim();
       const nameN = name.trim();
       const priceN = normalizeDecimalInput(price);
@@ -754,75 +835,89 @@ export default function NewProductPage() {
       if (howToUse.length) payload.howToUse = howToUse;
 
       const hasFiscal = hasFiscalDraftValues(fiscalForm);
-      const nextFiscalErrors: { ncm?: string; cest?: string } = {};
-      if (hasFiscal && fiscalForm.ncm.trim() && !/^\d{8}$/.test(fiscalForm.ncm.trim())) nextFiscalErrors.ncm = "NCM deve conter exatamente 8 dígitos.";
-      if (hasFiscal && fiscalForm.cest.trim() && !/^\d{7}$/.test(fiscalForm.cest.trim())) nextFiscalErrors.cest = "CEST deve conter exatamente 7 dígitos.";
-      setFiscalErrors(nextFiscalErrors);
-      if (Object.keys(nextFiscalErrors).length) throw new Error("Validação fiscal");
+      setHadFiscalOnCreate(hasFiscal);
 
-      const createRes = await api.post(endpoints.products.create, payload, {
-        headers: {
-          "Idempotency-Key": stableKey(
-            "product-create",
-            payload.sku || payload.name || "no-key",
-            payload.categoryId ?? "",
-            payload.categoryIds.join(","),
-            payload.audience
-          ),
+      const result = await submitProductWithFiscalRecovery({
+        createdProductId: null,
+        fiscalValues: { ...fiscalForm },
+        createProduct: async () => {
+          const createRes = await api.post(endpoints.products.create, payload, {
+            headers: {
+              "Idempotency-Key": stableKey(
+                "product-create",
+                payload.sku || payload.name || "no-key",
+                payload.categoryId ?? "",
+                payload.categoryIds.join(","),
+                payload.audience
+              ),
+            },
+          });
+          const created = createRes.data as ProductApiResponse;
+          return created?.item?.id ?? created?.id ?? '';
         },
+        onCreated: markProductCreated,
+        afterCreate: async (productId) => {
+          if (files.length) await uploadProductImages(productId, files);
+          if (videoFile) await uploadProductVideo(productId, videoFile);
+        },
+        saveFiscal: hasFiscal ? saveFiscalProduct : null,
       });
 
-      const created = createRes.data as ProductApiResponse;
-      const productId = created?.item?.id ?? created?.id;
-
-      if (files.length > 0) {
-        if (!productId) throw new Error("Produto criado, mas sem ID para enviar imagem.");
-        await uploadProductImages(productId, files);
+      return result;
+      } finally {
+        submissionInFlightRef.current = false;
       }
-
-      let fiscalSaved = false;
-      let fiscalFailed = false;
-
-      if (hasFiscal && productId) {
-        try {
-          const fiscalPayload: ProductFiscalInput = { ...fiscalForm, unit: fiscalForm.unit.toUpperCase(), tributaryUnit: fiscalForm.tributaryUnit.toUpperCase() };
-          await updateAdminProductFiscal(productId, fiscalPayload);
-          fiscalSaved = true;
-        } catch {
-          fiscalFailed = true;
-        }
-      }
-
-      if (videoFile) {
-        if (!productId) throw new Error("Produto criado, mas sem ID para enviar vídeo.");
-        await uploadProductVideo(productId, videoFile);
-      }
-        return {
-        productId,
-        fiscalAttempted: hasFiscal,
-        fiscalSaved: hasFiscal ? fiscalSaved : false,
-        fiscalFailed,
-        redirectTo: fiscalFailed && productId ? `/admin/products/${productId}` : returnTo,
-      };
     },
     onSuccess: async (data) => {
-      clearDraft();
-      await qc.invalidateQueries({ queryKey: ["products"] });
-      if (data.fiscalFailed) {
-        toast.error("Produto criado, mas não foi possível salvar os dados fiscais.");
-        router.replace(data.redirectTo ?? returnTo);
+      if (data.status === 'media-error') {
+        const reason = apiErrorMessage(data.error, 'Falha ao enviar imagens ou vídeo.');
+        setPostCreationError(reason);
+        await qc.invalidateQueries({ queryKey: ["products"] });
+        toast.error(`Produto criado, mas o envio de mídia não foi concluído. ${reason}`);
+        return;
+      }
+      if (data.status === 'fiscal-recovery') {
+        const response = (data.error as { response?: { data?: { issues?: unknown[] } } })?.response?.data;
+        const details = formatProductIssues(response);
+        const reason = Array.isArray(response?.issues) && response.issues.length
+          ? details.message
+          : apiErrorMessage(data.error, 'Não foi possível salvar os dados fiscais.');
+        setFiscalRecoveryReason(reason);
+        setFieldErrors((prev) => replaceScopedProductErrors(prev, details.fields, 'fiscal'));
+        if (Object.keys(details.fields).length) focusFirstError(details.fields);
+        await qc.invalidateQueries({ queryKey: ["products"] });
+        toast.error(`${data.mediaPending ? 'Produto criado; o envio de mídia está pendente. ' : ''}Dados fiscais não salvos. ${reason}`);
         return;
       }
 
-      if (data.fiscalSaved) {
-        toast.success("Produto e dados fiscais salvos com sucesso.");
+      completedRef.current = true;
+      clearDraft();
+      setFiscalRecoveryReason(null);
+      setPostCreationError(null);
+      setFiscalForm(EMPTY_FISCAL_FORM);
+      await qc.invalidateQueries({ queryKey: ["products"] });
+      if (data.status === 'open-product') {
+        toast.info('Produto já criado. Revise os dados pendentes na edição.');
+      } else if (data.mediaPending) {
+        toast.success('Dados fiscais salvos. Revise imagens e vídeo na edição.');
+      } else if (data.fiscalSaved) {
+        toast.success(data.createdNow ? "Produto e dados fiscais salvos com sucesso." : "Dados fiscais salvos com sucesso.");
       } else {
         toast.success(files.length ? "Produto criado com imagens." : "Produto criado.");
       }
 
-      router.replace(data.redirectTo ?? returnTo);
+      router.replace(data.status === 'open-product' || data.mediaPending ? `/admin/products/${data.productId}` : returnTo);
     },
-    onError: (e) => toast.error(apiErrorMessage(e, "Falha ao criar produto.")),
+    onError: (e) => {
+      const details = formatProductIssues((e as { response?: { data?: unknown } })?.response?.data);
+      if (createdProductIdRef.current) {
+        const reason = Object.keys(details.fields).length ? details.message : apiErrorMessage(e, 'Não foi possível concluir a etapa posterior à criação.');
+        if (Object.keys(details.fields).length) { setFieldErrors(details.fields); focusFirstError(details.fields); }
+        setFiscalRecoveryReason(reason);
+        toast.error(`Produto já criado. ${reason}`);
+      } else if (Object.keys(details.fields).length) { setFieldErrors(details.fields); focusFirstError(details.fields); toast.error(details.message); }
+      else toast.error(apiErrorMessage(e, "Falha ao criar produto."));
+    },
   });
 
   return (
@@ -831,23 +926,31 @@ export default function NewProductPage() {
         <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="text-[34px] font-bold tracking-[-0.03em] text-slate-950 sm:text-[40px]">
-              Novo Produto
+              {createdProductId ? 'Produto criado' : 'Novo Produto'}
             </div>
             <div className="mt-1 text-sm text-slate-600 sm:text-base">
-              Preencha as informações para criar o produto no catálogo
+              {createdProductId ? postCreationError
+                ? `Produto ${createdProductId} já cadastrado. Revise a mídia na edição${hasFiscalDraftValues(fiscalForm) ? ' após salvar os dados fiscais' : ''}.`
+                : `Produto ${createdProductId} já cadastrado. Corrija e salve os dados fiscais.`
+                : 'Preencha as informações para criar o produto no catálogo'}
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            <Button
+            {(!createdProductId || !hasFiscalDraftValues(fiscalForm)) && <Button
               type="button"
               variant="outline"
               className="h-12 rounded-2xl border-slate-200 bg-white px-6 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
-              onClick={() => router.replace(returnTo)}
+              onClick={() => {
+                if (createdProductId) {
+                  clearDraft();
+                  router.replace(`/admin/products/${createdProductId}`);
+                } else router.replace(returnTo);
+              }}
               disabled={createM.isPending}
             >
-              Cancelar
-            </Button>
+              {createdProductId ? 'Abrir produto criado' : 'Cancelar'}
+            </Button>}
 
             <Button
               type="submit"
@@ -855,10 +958,30 @@ export default function NewProductPage() {
               disabled={createM.isPending}
               className="h-12 rounded-2xl bg-[#18a999] px-6 text-sm font-semibold text-white shadow-sm hover:bg-[#159989]"
             >
-              {createM.isPending ? "Criando..." : "Criar Produto"}
+              {createM.isPending ? (createdProductId ? 'Concluindo...' : 'Criando...') : createdProductId
+                ? postCreationAction({ mediaError: Boolean(postCreationError), fiscalError: Boolean(fiscalRecoveryReason), hasFiscalCurrent: hasFiscalDraftValues(fiscalForm) }) === 'open-product'
+                  ? 'Abrir produto criado'
+                  : fiscalRecoveryReason ? 'Tentar salvar dados fiscais novamente' : 'Salvar dados fiscais e abrir produto'
+                : 'Criar Produto'}
             </Button>
           </div>
         </div>
+
+        {createdProductId && postCreationError ? (
+          <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
+            <p className="font-semibold">Produto criado, mas o envio de imagens ou vídeo não foi concluído.</p>
+            <p className="mt-1">{postCreationError}</p>
+            <p className="mt-1">O produto já existe. Abra a edição para conferir imagens e vídeo.</p>
+            {hadFiscalOnCreate && hasFiscalDraftValues(fiscalForm) && <p className="mt-1">Os dados fiscais preenchidos ainda não foram salvos.</p>}
+          </div>
+        ) : null}
+        {createdProductId && fiscalRecoveryReason ? (
+          <div className="mb-6 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
+            <p className="font-semibold">Produto criado, mas os dados fiscais não foram salvos.</p>
+            <p className="mt-1">Última falha: {fiscalRecoveryReason}</p>
+            <p className="mt-1">Corrija os campos fiscais e tente novamente. O produto não será criado outra vez.</p>
+          </div>
+        ) : null}
 
         <form
           id="new-product-form"
@@ -883,9 +1006,11 @@ export default function NewProductPage() {
                     <Input
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
                       value={sku}
-                      onChange={(e) => setSku(e.target.value)}
+                      data-product-field="sku"
+                      onChange={(e) => { setSku(e.target.value); setFieldErrors((p) => { const next = { ...p }; delete next.sku; return next; }); }}
                       placeholder="Ex: SHAMPOO-001"
                     />
+                    <ProductFieldFeedback hint="Mínimo de 3 caracteres." error={fieldErrors.sku} />
                   </div>
 
                   <div className="space-y-2 xl:col-span-2">
@@ -893,9 +1018,11 @@ export default function NewProductPage() {
                     <Input
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
                       value={name}
-                      onChange={(e) => setName(e.target.value)}
+                      data-product-field="name"
+                      onChange={(e) => { setName(e.target.value); setFieldErrors((p) => { const next = { ...p }; delete next.name; return next; }); }}
                       placeholder="Ex: Shampoo Premium"
                     />
+                    <ProductFieldFeedback hint="Mínimo de 2 caracteres." error={fieldErrors.name} />
                   </div>
 
                   <div className="space-y-2 xl:col-span-2">
@@ -903,9 +1030,12 @@ export default function NewProductPage() {
                     <Input
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
                       value={brand}
+                      data-product-field="brand"
+                      maxLength={PRODUCT_FORM_LIMITS.brand}
                       onChange={(e) => setBrand(e.target.value)}
                       placeholder="Ex: Wella"
                     />
+                    <ProductFieldFeedback count={brand.length} max={PRODUCT_FORM_LIMITS.brand} error={fieldErrors.brand} />
                   </div>
 
                   <div className="space-y-2 xl:col-span-2">
@@ -915,9 +1045,12 @@ export default function NewProductPage() {
                     <Input
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
                       value={line}
+                      data-product-field="line"
+                      maxLength={PRODUCT_FORM_LIMITS.line}
                       onChange={(e) => setLine(e.target.value)}
                       placeholder="Ex: Fusion"
                     />
+                    <ProductFieldFeedback count={line.length} max={PRODUCT_FORM_LIMITS.line} error={fieldErrors.line} />
                   </div>
 
                   <div className="space-y-2 xl:col-span-2">
@@ -925,11 +1058,12 @@ export default function NewProductPage() {
                     <Input
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
                       value={volume}
+                      data-product-field="volume"
                       onChange={(e) => setVolume(e.target.value)}
                       placeholder="Ex: 500ml"
                       maxLength={20}
                     />
-                    <FieldHint>Máx. 20 caracteres.</FieldHint>
+                    <ProductFieldFeedback count={volume.length} max={PRODUCT_FORM_LIMITS.volume} error={fieldErrors.volume} />
                   </div>
 
                   <div className="space-y-2 xl:col-span-2">
@@ -942,9 +1076,16 @@ export default function NewProductPage() {
                       step={1}
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
                       value={String(stock)}
-                      onChange={(e) => setStock(Math.max(0, Number(e.target.value || 0)))}
+                      data-product-field="stock"
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (raw && !checkWholeNumber(raw, 0)) { setFieldErrors((prev) => ({ ...prev, stock: 'Estoque deve ser um inteiro a partir de 0.' })); return; }
+                        setFieldErrors((prev) => { const next = { ...prev }; delete next.stock; return next; });
+                        setStock(Number(raw || 0));
+                      }}
                       placeholder="0"
                     />
+                    <ProductFieldFeedback hint="Inteiro a partir de 0." error={fieldErrors.stock} />
                   </div>
 
                   <div className="space-y-2 xl:col-span-2">
@@ -954,11 +1095,12 @@ export default function NewProductPage() {
                     <Input
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
                       value={price}
-                      onChange={(e) => setPrice(e.target.value)}
+                      data-product-field="price"
+                      onChange={(e) => acceptDecimal('price', e.target.value, 2, setPrice)}
                       placeholder="59.90"
                       inputMode="decimal"
                     />
-                    <FieldHint>Use o formato que seu backend espera.</FieldHint>
+                    <ProductFieldFeedback hint="Obrigatório • até 2 casas decimais (vírgula ou ponto)." error={fieldErrors.price} />
                   </div>
 
                   <div className="space-y-2 xl:col-span-2">
@@ -968,11 +1110,12 @@ export default function NewProductPage() {
                     <Input
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
                       value={customerPrice}
-                      onChange={(e) => setCustomerPrice(e.target.value)}
+                      data-product-field="customerPrice"
+                      onChange={(e) => acceptDecimal('customerPrice', e.target.value, 2, setCustomerPrice)}
                       placeholder="49.90"
                       inputMode="decimal"
                     />
-                    <FieldHint>Se vazio, cliente final usa o preço padrão.</FieldHint>
+                    <ProductFieldFeedback hint="Opcional • até 2 casas decimais." error={fieldErrors.customerPrice} />
                   </div>
 
                   <div className="space-y-2 xl:col-span-4">
@@ -980,55 +1123,27 @@ export default function NewProductPage() {
                       Descrição do produto
                     </Label>
                     <Textarea
+                      data-product-field="description"
+                      maxLength={PRODUCT_FORM_LIMITS.description}
                       className="min-h-[110px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
                       value={description}
-                      onChange={(e) => setDescription(e.target.value)}
+                      onPaste={(e) => {
+                        const input = e.currentTarget;
+                        if (wouldExceedTextLimit(description, input.selectionStart, input.selectionEnd, e.clipboardData.getData('text'), PRODUCT_FORM_LIMITS.description)) {
+                          e.preventDefault();
+                          setFieldErrors((p) => ({ ...p, description: 'Descrição do produto: máximo de 2000 caracteres. A colagem foi recusada.' }));
+                        }
+                      }}
+                      onChange={(e) => { setDescription(e.target.value); setFieldErrors((p) => { const next = { ...p }; delete next.description; return next; }); }}
                       placeholder="Texto principal que o usuário verá primeiro."
                     />
-                    <FieldHint>
-                      Essa será a descrição exibida no app.
-                    </FieldHint>
+                    <ProductFieldFeedback count={description.length} max={PRODUCT_FORM_LIMITS.description} error={fieldErrors.description} />
                   </div>
-                  <div className="space-y-2 xl:col-span-2">
-                    <Label className="text-sm font-medium text-slate-800">
-                      Benefício
-                    </Label>
-                    <Textarea
-                      className="min-h-[140px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
-                      value={effectsText}
-                      onChange={(e) => setEffectsText(e.target.value)}
-                      placeholder={"Um por linha\nBrilho intenso\nRedução de frizz"}
-                    />
-                    <FieldHint>Um item por linha.</FieldHint>
-                  </div>
+                  <div className="xl:col-span-2"><ProductListTextarea field="effects" value={effectsText} onChange={(value) => { setEffectsText(value); setFieldErrors((prev) => clearCorrectedListError(prev, 'effects', value)); }} error={fieldErrors.effects} className="min-h-[140px] rounded-[24px]" placeholder={"Um por linha\nBrilho intenso\nRedução de frizz"} /></div>
 
-                  <div className="space-y-2 xl:col-span-2">
-                    <Label className="text-sm font-medium text-slate-800">
-                      Ativos e funções
-                    </Label>
-                    <Textarea
-                      className="min-h-[140px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
-                      value={benefitsText}
-                      onChange={(e) => setBenefitsText(e.target.value)}
-                      placeholder={"Um por linha\nHidratação profunda\nMaciez"}
-                    />
-                    <FieldHint>Um item por linha.</FieldHint>
-                  </div>
+                  <div className="xl:col-span-2"><ProductListTextarea field="benefits" value={benefitsText} onChange={(value) => { setBenefitsText(value); setFieldErrors((prev) => clearCorrectedListError(prev, 'benefits', value)); }} error={fieldErrors.benefits} className="min-h-[140px] rounded-[24px]" placeholder={"Um por linha\nHidratação profunda\nMaciez"} /></div>
 
-                  <div className="space-y-2 xl:col-span-4">
-                    <Label className="text-sm font-medium text-slate-800">
-                      Modo de uso
-                    </Label>
-                    <Textarea
-                      className="min-h-[150px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
-                      value={howToUseText}
-                      onChange={(e) => setHowToUseText(e.target.value)}
-                      placeholder={
-                        "Um passo por linha\nAplique nos cabelos úmidos\nMassageie\nEnxágue"
-                      }
-                    />
-                    <FieldHint>Um passo por linha.</FieldHint>
-                  </div>
+                  <div className="xl:col-span-4"><ProductListTextarea field="howToUse" value={howToUseText} onChange={(value) => { setHowToUseText(value); setFieldErrors((prev) => clearCorrectedListError(prev, 'howToUse', value)); }} error={fieldErrors.howToUse} className="min-h-[150px] rounded-[24px]" placeholder={"Um passo por linha\nAplique nos cabelos úmidos\nMassageie\nEnxágue"} /></div>
 
 <div className="xl:col-span-4 rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
   <div className="mb-4">
@@ -1058,13 +1173,15 @@ export default function NewProductPage() {
       <Input
         className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
         value={weightKg}
-        onChange={(e) => setWeightKg(e.target.value)}
+        data-product-field="weightKg"
+        onChange={(e) => acceptDecimal('weightKg', e.target.value, 3, setWeightKg)}
         placeholder="Ex.: 0.200"
         inputMode="decimal"
       />
 
       <div className="mt-2 min-h-[20px]">
         <FieldHint>{describeWeight(weightKg)}</FieldHint>
+        <ProductFieldFeedback hint="Até 3 casas decimais." error={fieldErrors.weightKg} />
       </div>
     </div>
 
@@ -1078,13 +1195,15 @@ export default function NewProductPage() {
       <Input
         className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
         value={heightCm}
-        onChange={(e) => setHeightCm(e.target.value)}
+        data-product-field="heightCm"
+        onChange={(e) => acceptDecimal('heightCm', e.target.value, 2, setHeightCm)}
         placeholder="Ex.: 10"
         inputMode="decimal"
       />
 
       <div className="mt-2 min-h-[20px]">
         <FieldHint>{describeDimension(heightCm)}</FieldHint>
+        <ProductFieldFeedback hint="Até 2 casas decimais." error={fieldErrors.heightCm} />
       </div>
     </div>
 
@@ -1098,13 +1217,15 @@ export default function NewProductPage() {
       <Input
         className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
         value={widthCm}
-        onChange={(e) => setWidthCm(e.target.value)}
+        data-product-field="widthCm"
+        onChange={(e) => acceptDecimal('widthCm', e.target.value, 2, setWidthCm)}
         placeholder="Ex.: 15"
         inputMode="decimal"
       />
 
       <div className="mt-2 min-h-[20px]">
         <FieldHint>{describeDimension(widthCm)}</FieldHint>
+        <ProductFieldFeedback hint="Até 2 casas decimais." error={fieldErrors.widthCm} />
       </div>
     </div>
 
@@ -1118,13 +1239,15 @@ export default function NewProductPage() {
       <Input
         className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
         value={lengthCm}
-        onChange={(e) => setLengthCm(e.target.value)}
+        data-product-field="lengthCm"
+        onChange={(e) => acceptDecimal('lengthCm', e.target.value, 2, setLengthCm)}
         placeholder="Ex.: 10"
         inputMode="decimal"
       />
 
       <div className="mt-2 min-h-[20px]">
         <FieldHint>{describeDimension(lengthCm)}</FieldHint>
+        <ProductFieldFeedback hint="Até 2 casas decimais." error={fieldErrors.lengthCm} />
       </div>
     </div>
 
@@ -1141,13 +1264,20 @@ export default function NewProductPage() {
         step={1}
         className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
         value={packageVolumes}
-        onChange={(e) => setPackageVolumes(e.target.value)}
+        data-product-field="packageVolumes"
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw && !checkWholeNumber(raw, 1)) { setFieldErrors((p) => ({ ...p, packageVolumes: 'Use um inteiro a partir de 1.' })); return; }
+          setFieldErrors((p) => { const next = { ...p }; delete next.packageVolumes; return next; });
+          setPackageVolumes(raw);
+        }}
         placeholder="1"
         inputMode="numeric"
       />
 
       <div className="mt-2 min-h-[20px]">
         <FieldHint>{describeVolumes(packageVolumes)}</FieldHint>
+        <ProductFieldFeedback hint="Inteiro a partir de 1." error={fieldErrors.packageVolumes} />
       </div>
     </div>
   </div>
@@ -1171,10 +1301,16 @@ export default function NewProductPage() {
                           <input
                             id="product-image-input"
                             type="file"
-                            accept="image/*"
+                            accept="image/jpeg,image/png,image/webp"
                             multiple
                             className="hidden"
-                            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+                            onChange={(e) => {
+                              const selection = resolveImageSelection(Array.from(e.target.files ?? []));
+                              setFiles(selection.files);
+                              setImageSelectionError(selection.error);
+                              setFieldErrors((prev) => { const errors = { ...prev }; if (selection.error) errors.images = selection.error; else delete errors.images; return errors; });
+                              if (selection.error) e.target.value = '';
+                            }}
                           />
 
                           <Button
@@ -1190,7 +1326,7 @@ export default function NewProductPage() {
                           </Button>
 
                           <span className="text-sm text-slate-500">
-                            JPG, PNG ou WEBP
+                            JPG, PNG ou WEBP • até 5 MB por imagem
                           </span>
                         </div>
                       </div>
@@ -1236,6 +1372,7 @@ export default function NewProductPage() {
                         </div>
                       ) : null}
                     </div>
+                    <div data-product-field="images"><ProductFieldFeedback error={fieldErrors.images} /></div>
                   </div>
                 </div>
               </CardContent>
@@ -1248,8 +1385,8 @@ export default function NewProductPage() {
                   <p className="font-medium">{hasFiscalDraftValues(fiscalForm) ? "Os dados fiscais serão salvos junto com o produto." : "Dados fiscais ainda não preenchidos. Você pode completar depois."}</p>
                 </div>
                 <div className="mt-4 space-y-4">
-                  <div className="rounded-2xl border border-slate-200 p-4"><h4 className="mb-3 text-sm font-semibold text-slate-900">Dados principais</h4><div className="grid gap-4 md:grid-cols-2">{FISCAL_MAIN_FIELDS.map((key) => (<div key={key} className="grid gap-2"><Label>{FISCAL_FIELD_META[key].label}</Label><Input placeholder={FISCAL_FIELD_META[key].placeholder} className="h-11 rounded-2xl border-slate-200 bg-slate-50/60" value={fiscalForm[key]} onChange={(e) => setFiscalForm((p) => ({ ...p, [key]: e.target.value }))} />{FISCAL_FIELD_META[key].help ? <div className="text-xs text-slate-500">{FISCAL_FIELD_META[key].help}</div> : null}{key === "ncm" && fiscalErrors.ncm ? <div className="text-xs text-rose-600">{fiscalErrors.ncm}</div> : null}{key === "cest" && fiscalErrors.cest ? <div className="text-xs text-rose-600">{fiscalErrors.cest}</div> : null}</div>))}</div></div>
-                  <div className="rounded-2xl border border-slate-200 p-4"><h4 className="mb-3 text-sm font-semibold text-slate-900">Tributação avançada</h4><div className="grid gap-4 md:grid-cols-2">{FISCAL_TAX_FIELDS.map((key) => (<div key={key} className="grid gap-2"><Label>{FISCAL_FIELD_META[key].label}</Label><Input placeholder={FISCAL_FIELD_META[key].placeholder} className="h-11 rounded-2xl border-slate-200 bg-slate-50/60" value={fiscalForm[key]} onChange={(e) => setFiscalForm((p) => ({ ...p, [key]: e.target.value }))} /></div>))}</div></div>
+                  <div className="rounded-2xl border border-slate-200 p-4"><h4 className="mb-3 text-sm font-semibold text-slate-900">Dados principais</h4><div className="grid gap-4 md:grid-cols-2">{FISCAL_MAIN_FIELDS.map((key) => <ProductFiscalField key={key} field={key} label={FISCAL_FIELD_META[key].label} placeholder={FISCAL_FIELD_META[key].placeholder} help={FISCAL_FIELD_META[key].help} value={fiscalForm[key]} onChange={(value) => { setFiscalForm((p) => ({ ...p, [key]: value })); setFieldErrors((p) => { const next = { ...p }; delete next[key]; return next; }); }} error={fieldErrors[key]} />)}</div></div>
+                  <div className="rounded-2xl border border-slate-200 p-4"><h4 className="mb-3 text-sm font-semibold text-slate-900">Tributação avançada</h4><div className="grid gap-4 md:grid-cols-2">{FISCAL_TAX_FIELDS.map((key) => <ProductFiscalField key={key} field={key} label={FISCAL_FIELD_META[key].label} placeholder={FISCAL_FIELD_META[key].placeholder} value={fiscalForm[key]} onChange={(value) => { setFiscalForm((p) => ({ ...p, [key]: value })); setFieldErrors((p) => { const next = { ...p }; delete next[key]; return next; }); }} error={fieldErrors[key]} />)}</div></div>
                   <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={applyFiscalBasicDefaults}>Aplicar padrão básico</Button><p className="self-center text-sm text-slate-600">Os dados fiscais serão salvos junto com o produto.</p></div>
                 </div>
               </CardContent>
@@ -1274,6 +1411,7 @@ export default function NewProductPage() {
                       onChange={(e) => setVideoTitle(e.target.value)}
                       placeholder="Ex: Como aplicar corretamente"
                     />
+                    <FieldHint>Opcional; se vazio, usa o nome do produto ou arquivo.</FieldHint>
                   </div>
 
                   <div className="space-y-2">
@@ -1282,9 +1420,11 @@ export default function NewProductPage() {
                       className="h-12 rounded-2xl border-slate-200 bg-white text-[15px] shadow-none placeholder:text-slate-400"
                       type="number"
                       value={videoSortOrder}
+                      data-product-field="videoSortOrder"
                       onChange={(e) => setVideoSortOrder(e.target.value)}
                       placeholder="0"
                     />
+                    <ProductFieldFeedback hint="Número inteiro." error={fieldErrors.videoSortOrder} />
                   </div>
                 </div>
 
@@ -1345,7 +1485,13 @@ export default function NewProductPage() {
                           type="file"
                           accept="video/*"
                           className="hidden"
-                          onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
+                          onChange={(e) => {
+                            const selection = resolveVideoSelection(e.target.files?.[0] ?? null);
+                            setVideoFile(selection.file);
+                            setVideoSelectionError(selection.error);
+                            setFieldErrors((prev) => { const errors = { ...prev }; if (selection.error) errors.video = selection.error; else delete errors.video; return errors; });
+                            if (selection.error) e.target.value = '';
+                          }}
                         />
 
                         <Button
@@ -1358,7 +1504,7 @@ export default function NewProductPage() {
                           Enviar vídeo
                         </Button>
 
-                        <span className="text-sm text-slate-500">MP4, MOV ou WEBM</span>
+                        <span className="text-sm text-slate-500">Arquivo de vídeo reconhecido pelo navegador</span>
                       </div>
                     </div>
 
@@ -1382,26 +1528,14 @@ export default function NewProductPage() {
                     ) : null}
                   </div>
 
-                  <FieldHint>O vídeo será enviado após criar o produto.</FieldHint>
+                  <div data-product-field="video"><FieldHint>Arquivo de vídeo; será enviado após criar o produto.</FieldHint><ProductFieldFeedback error={fieldErrors.video} /></div>
                 </div>
 
                 <Separator className="my-7" />
 
                 <div className="grid gap-6 xl:grid-cols-2">
                   <div>
-                    <div className="mb-2 flex items-center gap-3">
-                      <Label className="text-sm font-medium text-slate-800">
-                        Destaques (1 por linha)
-                      </Label>
-                      <span className="text-sm text-slate-400">Máx. 10</span>
-                    </div>
-
-                    <Textarea
-                      className="min-h-[180px] rounded-[24px] border-slate-200 bg-white px-4 py-3 text-[15px] shadow-none placeholder:text-slate-400"
-                      value={highlightsText}
-                      onChange={(e) => setHighlightsText(e.target.value)}
-                      placeholder={"Um destaque por linha\nSem sal\nUso profissional"}
-                    />
+                    <ProductListTextarea field="highlights" value={highlightsText} onChange={(value) => { setHighlightsText(value); setFieldErrors((prev) => clearCorrectedListError(prev, 'highlights', value)); }} error={fieldErrors.highlights} className="min-h-[180px] rounded-[24px]" placeholder={"Um destaque por linha\nSem sal\nUso profissional"} />
                   </div>
 
                   <div className="rounded-[24px] border border-slate-200 bg-slate-50/70 p-4">
@@ -1485,8 +1619,8 @@ export default function NewProductPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="ALL">ALL</SelectItem>
-                        <SelectItem value="STAFF_ONLY">STAFF_ONLY</SelectItem>
+                        <SelectItem value="ALL">Todos os clientes</SelectItem>
+                        <SelectItem value="STAFF_ONLY">Somente equipe</SelectItem>
                       </SelectContent>
                     </Select>
 
@@ -1531,7 +1665,7 @@ export default function NewProductPage() {
                 <div className="mb-5 text-[18px] font-semibold text-slate-900">Categorias</div>
 
                 <div className="space-y-6">
-                  <div className="space-y-2">
+                  <div className="space-y-2" data-product-field="categoryId">
                     <Label className="text-sm font-medium text-slate-800">
                       Categoria principal <span className="text-slate-400">(opcional)</span>
                     </Label>
@@ -1540,6 +1674,10 @@ export default function NewProductPage() {
                       value={categoryId || "none"}
                       onValueChange={(v: string) => {
                         const next = v === "none" ? "" : v;
+                        if (next && next !== categoryId && categoryIds.length >= PRODUCT_FORM_LIMITS.categories && !categoryIds.includes(next) && !categoryId) {
+                          setFieldErrors((prev) => ({ ...prev, categoryIds: 'Selecione no máximo 20 categorias, incluindo a principal.' }));
+                          return;
+                        }
                         setCategoryId(next);
                         setCatSearch("");
                         if (next) setCategoryIds((prev) => prev.filter((x) => x !== next));
@@ -1580,6 +1718,7 @@ export default function NewProductPage() {
                         "Nenhuma categoria principal."
                       )}
                     </div>
+                    <ProductFieldFeedback error={fieldErrors.categoryId} />
                   </div>
 
                   <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
@@ -1588,7 +1727,7 @@ export default function NewProductPage() {
                         Categorias adicionais
                       </div>
                       <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700">
-                        {categoryIds.length}
+                        {categoryIds.length + (categoryId ? 1 : 0)}/{PRODUCT_FORM_LIMITS.categories}
                       </span>
                     </div>
 
@@ -1637,9 +1776,14 @@ export default function NewProductPage() {
                             <input
                               type="checkbox"
                               checked={checked}
-                              onChange={() =>
-                                setCategoryIds((prev) => toggleCategoryId(c.id, prev))
-                              }
+                              onChange={() => {
+                                if (!checked && categoryIds.length + (categoryId ? 1 : 0) >= PRODUCT_FORM_LIMITS.categories) {
+                                  setFieldErrors((prev) => ({ ...prev, categoryIds: 'Selecione no máximo 20 categorias, incluindo a principal.' }));
+                                  return;
+                                }
+                                setFieldErrors((prev) => { const next = { ...prev }; delete next.categoryIds; return next; });
+                                setCategoryIds((prev) => toggleCategoryId(c.id, prev));
+                              }}
                             />
                             <span className="truncate">{c.name}</span>
                           </label>
@@ -1653,10 +1797,7 @@ export default function NewProductPage() {
                       ) : null}
                     </div>
 
-                    <div className="mt-3 text-xs text-slate-500">
-                      Preenche <code>categoryIds</code>. A principal (
-                      <code>categoryId</code>) é opcional.
-                    </div>
+                    <div data-product-field="categoryIds"><ProductFieldFeedback hint="Até 20 categorias, incluindo a principal." error={fieldErrors.categoryIds} /></div>
                   </div>
                 </div>
               </CardContent>

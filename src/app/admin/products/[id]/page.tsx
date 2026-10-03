@@ -20,6 +20,11 @@ import {
   Loader2,
 } from "lucide-react";
 import { ProductStatusPanel } from "@/components/admin/ProductStatusPanel";
+import { ProductListTextarea } from '@/components/admin/ProductListTextarea';
+import { ProductFieldFeedback } from '@/components/admin/ProductFieldFeedback';
+import { ProductFiscalField } from '@/components/admin/ProductFiscalField';
+import { checkDecimal, checkDecimalDraft, checkFiscal, checkWholeNumber, checkInteger, validProductPrice, fiscalErrorMessage, wouldExceedTextLimit, parseProductList, checkListChange, clearCorrectedListError, replaceScopedProductErrors, PRODUCT_FORM_LIMITS, resolveImageSelection, resolveVideoSelection, productImageContentType } from '@/lib/productFormRules';
+import { formatProductIssues } from '@/lib/productIssues';
 
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
@@ -451,19 +456,11 @@ function formatBytes(value?: number | null) {
 }
 
 function parseHighlights(text: string) {
-  return String(text ?? "")
-    .split("\n")
-    .map((s) => s.trim().replace(/\s+/g, " "))
-    .filter(Boolean)
-    .slice(0, 10)
-    .map((s) => s.slice(0, 60));
+  return parseProductList(text, 'highlights');
 }
 
 function parseStringList(text: string) {
-  return String(text ?? "")
-    .split(/\r?\n|;/g)
-    .map((s) => s.replace(/^\s*[-•\d.)]+\s*/, "").trim())
-    .filter(Boolean);
+  return parseProductList(text);
 }
 
 function toggleCategoryId(id: string, prev: string[]) {
@@ -631,7 +628,25 @@ export default function EditProductPage() {
   const [lengthCm, setLengthCm] = useState("");
   const [packageVolumes, setPackageVolumes] = useState("1");
   const [fiscalForm, setFiscalForm] = useState<FiscalForm>(EMPTY_FISCAL_FORM);
-  const [fiscalErrors, setFiscalErrors] = useState<{ ncm?: string; cest?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const focusFirstError = (errors: Record<string, string>) => {
+    const key = Object.keys(errors)[0];
+    if (!key) return;
+    requestAnimationFrame(() => {
+      const target = document.querySelector<HTMLElement>(`[data-product-field="${key}"]`);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const focusTarget = target?.matches('input, textarea, button') ? target : target?.querySelector<HTMLElement>('input, textarea, button');
+      focusTarget?.focus({ preventScroll: true });
+    });
+  };
+  const acceptDecimal = (key: string, value: string, scale: number, setter: (value: string) => void) => {
+    if (!checkDecimalDraft(value, scale)) {
+      setFieldErrors((prev) => ({ ...prev, [key]: `Use números e até ${scale} casas decimais (vírgula ou ponto).` }));
+      return;
+    }
+    setFieldErrors((prev) => { const next = { ...prev }; delete next[key]; return next; });
+    setter(value);
+  };
     const applyFiscalBasicDefaults = () => {
     setFiscalForm((prev) => ({
       ...prev,
@@ -684,13 +699,12 @@ export default function EditProductPage() {
 
   const saveFiscalM = useMutation({
     mutationFn: async () => {
-      const nextErrors: { ncm?: string; cest?: string } = {};
-      if (fiscalForm.ncm.trim() && !/^\d{8}$/.test(fiscalForm.ncm.trim()))
-        nextErrors.ncm = "NCM deve conter exatamente 8 dígitos.";
-      if (fiscalForm.cest.trim() && !/^\d{7}$/.test(fiscalForm.cest.trim()))
-        nextErrors.cest = "CEST deve conter exatamente 7 dígitos.";
-      setFiscalErrors(nextErrors);
-      if (Object.keys(nextErrors).length) throw new Error("Validação fiscal");
+      const errors: Record<string, string> = {};
+      for (const [key, value] of Object.entries(fiscalForm)) {
+        if (!checkFiscal(key, value)) errors[key] = fiscalErrorMessage(key, FISCAL_FIELD_META[key as keyof FiscalForm].label);
+      }
+      setFieldErrors((prev) => replaceScopedProductErrors(prev, errors, 'fiscal'));
+      if (Object.keys(errors).length) { focusFirstError(errors); throw new Error(Object.values(errors)[0]); }
       const payload: ProductFiscalInput = {
         ...fiscalForm,
         unit: fiscalForm.unit.toUpperCase(),
@@ -702,7 +716,11 @@ export default function EditProductPage() {
       toast.success("Dados fiscais salvos com sucesso.");
       await qc.invalidateQueries({ queryKey: ["product-fiscal", id] });
     },
-    onError: (err) => toast.error(apiErrorMessage(err, "Falha ao salvar dados fiscais.")),
+    onError: (err) => {
+      const details = formatProductIssues((err as { response?: { data?: unknown } })?.response?.data);
+      if (Object.keys(details.fields).length) { setFieldErrors((prev) => replaceScopedProductErrors(prev, details.fields, 'fiscal')); focusFirstError(details.fields); toast.error(details.message); }
+      else toast.error(apiErrorMessage(err, 'Falha ao salvar dados fiscais.'));
+    },
   });
     const hasUnsavedFiscalChanges = useMemo(
     () => hasUnsavedFiscalFormChanges(fiscalForm, fiscalQ.data?.fiscalData as Partial<FiscalForm> | undefined),
@@ -935,6 +953,24 @@ useEffect(() => {
 
   const saveM = useMutation({
     mutationFn: async () => {
+      const errors: Record<string, string> = {};
+      if (!sku.trim()) errors.sku = 'SKU é obrigatório.';
+      if (!name.trim()) errors.name = 'Nome é obrigatório.';
+      if (!Number.isSafeInteger(stock) || stock < 0) errors.stock = 'Estoque deve ser um inteiro a partir de 0.';
+      if (!validProductPrice(price)) errors.price = 'Preço: use até 2 casas decimais.';
+      if (!checkDecimal(customerPrice, 2, true)) errors.customerPrice = 'Preço cliente final: use até 2 casas decimais.';
+      if (description.trim().length > PRODUCT_FORM_LIMITS.description) errors.description = 'Descrição do produto: máximo de 2000 caracteres.';
+      for (const [key, value] of Object.entries({ effects: effectsText, benefits: benefitsText, howToUse: howToUseText, highlights: highlightsText }) as ['effects' | 'benefits' | 'howToUse' | 'highlights', string][]) {
+        const result = checkListChange(value, key);
+        if (!result.ok) errors[key] = result.message;
+      }
+      for (const [key, value, scale] of [['weightKg', weightKg, 3], ['heightCm', heightCm, 2], ['widthCm', widthCm, 2], ['lengthCm', lengthCm, 2]] as const) {
+        if (!checkDecimal(value, scale, true)) errors[key] = `Use até ${scale} casas decimais.`;
+      }
+      if (!checkWholeNumber(packageVolumes, 1)) errors.packageVolumes = 'Quantidade de volumes deve ser um inteiro a partir de 1.';
+      if (categoryIds.length + (categoryId && !categoryIds.includes(categoryId) ? 1 : 0) > 20) errors.categoryIds = 'Selecione no máximo 20 categorias, incluindo a principal.';
+      setFieldErrors((prev) => replaceScopedProductErrors(prev, errors, 'product'));
+      if (Object.keys(errors).length) { focusFirstError(errors); throw new Error(Object.values(errors)[0]); }
       const skuN = sku.trim();
       const nameN = name.trim();
 
@@ -942,7 +978,6 @@ useEffect(() => {
       if (!nameN) throw new Error("Nome é obrigatório.");
 
       const priceSan = normalizeMoney(price);
-      const priceNum = parseNumberBR(priceSan);
       const weightKgSan = weightKg.trim() ? normalizeMoney(weightKg) : null;
       const heightCmSan = heightCm.trim() ? normalizeMoney(heightCm) : null;
       const widthCmSan = widthCm.trim() ? normalizeMoney(widthCm) : null;
@@ -951,10 +986,6 @@ useEffect(() => {
       const packageVolumesNum = packageVolumes.trim()
         ? Math.max(1, Math.trunc(Number(packageVolumes)))
         : 1;
-
-      if (!Number.isFinite(priceNum) || priceNum <= 0) {
-        throw new Error("Preço inválido. Use um valor maior que 0 (ex.: 59,90).");
-      }
 
       const stockSafe = Number.isFinite(stock) ? Math.max(0, Math.trunc(stock)) : 0;
       const highlights = parseHighlights(highlightsText);
@@ -1002,7 +1033,11 @@ useEffect(() => {
       await qc.invalidateQueries({ queryKey: ["product", id] });
       router.replace(returnTo);
     },
-    onError: (err: unknown) => toast.error(apiErrorMessage(err, "Falha ao salvar.")),
+    onError: (err: unknown) => {
+      const details = formatProductIssues((err as { response?: { data?: unknown } })?.response?.data);
+      if (Object.keys(details.fields).length) { setFieldErrors((prev) => replaceScopedProductErrors(prev, details.fields, 'product')); focusFirstError(details.fields); toast.error(details.message); }
+      else toast.error(apiErrorMessage(err, 'Falha ao salvar.'));
+    },
   });
 
   const uploadM = useMutation({
@@ -1013,10 +1048,7 @@ useEffect(() => {
       for (let index = 0; index < files.length; index += 1) {
         const file = files[index];
 
-        const contentType =
-          file.type === "image/jpg"
-            ? "image/jpeg"
-            : file.type || "application/octet-stream";
+        const contentType = productImageContentType(file.type);
 
         const presignRes = await api.post(
           endpoints.products.images.presign(id),
@@ -1175,12 +1207,17 @@ useEffect(() => {
       if (!videoFile.type.startsWith("video/")) {
         throw new Error("Arquivo inválido. Envie um vídeo.");
       }
+      if (!checkInteger(videoSortOrder)) {
+        setFieldErrors((prev) => ({ ...prev, videoSortOrder: 'A ordem do vídeo deve ser um número inteiro.' }));
+        throw new Error('A ordem do vídeo deve ser um número inteiro.');
+      }
 
       const initResponse = await api.post(
         endpoints.adminTrainingVideos.initUpload(id),
         {
           fileName: videoFile.name,
           contentType: videoFile.type,
+          sortOrder: Number(videoSortOrder),
           scope: "PRODUCT",
           productId: id,
         }
@@ -1737,8 +1774,10 @@ useEffect(() => {
                   <Input
                     className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
                     value={sku}
-                    onChange={(e) => setSku(e.target.value)}
+                    data-product-field="sku"
+                    onChange={(e) => { setSku(e.target.value); setFieldErrors((p) => { const next = { ...p }; delete next.sku; return next; }); }}
                   />
+                  <ProductFieldFeedback hint="Obrigatório." error={fieldErrors.sku} />
                 </div>
 
                 <div className="grid gap-2">
@@ -1748,13 +1787,15 @@ useEffect(() => {
                     min={0}
                     className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
                     value={stock}
+                    data-product-field="stock"
                     onChange={(e) => {
                       const raw = e.target.value;
-                      const clean = sanitizeIntInput(raw);
-                      const n = clean ? Number(clean) : 0;
-                      setStock(Number.isFinite(n) ? Math.max(0, n) : 0);
+                      if (raw && !checkWholeNumber(raw, 0)) { setFieldErrors((prev) => ({ ...prev, stock: 'Estoque deve ser um inteiro a partir de 0.' })); return; }
+                      setFieldErrors((prev) => { const next = { ...prev }; delete next.stock; return next; });
+                      setStock(Number(raw || 0));
                     }}
                   />
+                  <ProductFieldFeedback hint="Inteiro a partir de 0." error={fieldErrors.stock} />
                 </div>
               </div>
 
@@ -1763,8 +1804,10 @@ useEffect(() => {
                 <Input
                   className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  data-product-field="name"
+                  onChange={(e) => { setName(e.target.value); setFieldErrors((p) => { const next = { ...p }; delete next.name; return next; }); }}
                 />
+                <ProductFieldFeedback hint="Obrigatório." error={fieldErrors.name} />
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
@@ -1773,9 +1816,12 @@ useEffect(() => {
                   <Input
                     className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
                     value={brand}
+                    data-product-field="brand"
+                    maxLength={PRODUCT_FORM_LIMITS.brand}
                     onChange={(e) => setBrand(e.target.value)}
                     placeholder="Ex.: Wella"
                   />
+                  <ProductFieldFeedback count={brand.length} max={PRODUCT_FORM_LIMITS.brand} error={fieldErrors.brand} />
                 </div>
 
                 <div className="grid gap-2">
@@ -1783,9 +1829,12 @@ useEffect(() => {
                   <Input
                     className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
                     value={line}
+                    data-product-field="line"
+                    maxLength={PRODUCT_FORM_LIMITS.line}
                     onChange={(e) => setLine(e.target.value)}
                     placeholder="Ex.: Fusion"
                   />
+                  <ProductFieldFeedback count={line.length} max={PRODUCT_FORM_LIMITS.line} error={fieldErrors.line} />
                 </div>
               </div>
 
@@ -1795,11 +1844,12 @@ useEffect(() => {
     <Input
       className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
       value={volume}
+      data-product-field="volume"
       onChange={(e) => setVolume(e.target.value)}
       placeholder="Ex.: 500ml"
       maxLength={20}
     />
-    <div className="text-xs text-slate-500">Máx. 20 caracteres.</div>
+    <ProductFieldFeedback count={volume.length} max={PRODUCT_FORM_LIMITS.volume} error={fieldErrors.volume} />
   </div>
 
   <div className="grid gap-2">
@@ -1807,9 +1857,19 @@ useEffect(() => {
 <Textarea
   className="min-h-[110px] rounded-2xl border-slate-200 bg-slate-50/60"
   value={description}
-  onChange={(e) => setDescription(e.target.value)}
+  onPaste={(e) => {
+    const input = e.currentTarget;
+    if (wouldExceedTextLimit(description, input.selectionStart, input.selectionEnd, e.clipboardData.getData('text'), PRODUCT_FORM_LIMITS.description)) {
+      e.preventDefault();
+      setFieldErrors((p) => ({ ...p, description: 'Descrição do produto: máximo de 2000 caracteres. A colagem foi recusada.' }));
+    }
+  }}
+  data-product-field="description"
+  maxLength={PRODUCT_FORM_LIMITS.description}
+  onChange={(e) => { setDescription(e.target.value); setFieldErrors((p) => { const next = { ...p }; delete next.description; return next; }); }}
   placeholder="Texto principal exibido no app."
 />
+<ProductFieldFeedback count={description.length} max={PRODUCT_FORM_LIMITS.description} error={fieldErrors.description} />
   </div>
 </div>
 
@@ -1841,13 +1901,15 @@ useEffect(() => {
       <Input
         className="h-11 rounded-2xl border-slate-200 bg-white"
         value={weightKg}
-        onChange={(e) => setWeightKg(sanitizeMoneyInput(e.target.value))}
+        data-product-field="weightKg"
+        onChange={(e) => acceptDecimal('weightKg', e.target.value, 3, setWeightKg)}
         placeholder="Ex.: 0,200"
         inputMode="decimal"
       />
 
       <div className="mt-2 min-h-[20px] text-xs text-slate-500">
         {describeWeight(weightKg)}
+        <ProductFieldFeedback hint="Até 3 casas decimais." error={fieldErrors.weightKg} />
       </div>
     </div>
 
@@ -1861,13 +1923,15 @@ useEffect(() => {
       <Input
         className="h-11 rounded-2xl border-slate-200 bg-white"
         value={heightCm}
-        onChange={(e) => setHeightCm(sanitizeMoneyInput(e.target.value))}
+        data-product-field="heightCm"
+        onChange={(e) => acceptDecimal('heightCm', e.target.value, 2, setHeightCm)}
         placeholder="Ex.: 10"
         inputMode="decimal"
       />
 
       <div className="mt-2 min-h-[20px] text-xs text-slate-500">
         {describeDimension(heightCm)}
+        <ProductFieldFeedback hint="Até 2 casas decimais." error={fieldErrors.heightCm} />
       </div>
     </div>
 
@@ -1881,13 +1945,15 @@ useEffect(() => {
       <Input
         className="h-11 rounded-2xl border-slate-200 bg-white"
         value={widthCm}
-        onChange={(e) => setWidthCm(sanitizeMoneyInput(e.target.value))}
+        data-product-field="widthCm"
+        onChange={(e) => acceptDecimal('widthCm', e.target.value, 2, setWidthCm)}
         placeholder="Ex.: 15"
         inputMode="decimal"
       />
 
       <div className="mt-2 min-h-[20px] text-xs text-slate-500">
         {describeDimension(widthCm)}
+        <ProductFieldFeedback hint="Até 2 casas decimais." error={fieldErrors.widthCm} />
       </div>
     </div>
 
@@ -1901,13 +1967,15 @@ useEffect(() => {
       <Input
         className="h-11 rounded-2xl border-slate-200 bg-white"
         value={lengthCm}
-        onChange={(e) => setLengthCm(sanitizeMoneyInput(e.target.value))}
+        data-product-field="lengthCm"
+        onChange={(e) => acceptDecimal('lengthCm', e.target.value, 2, setLengthCm)}
         placeholder="Ex.: 20"
         inputMode="decimal"
       />
 
       <div className="mt-2 min-h-[20px] text-xs text-slate-500">
         {describeDimension(lengthCm)}
+        <ProductFieldFeedback hint="Até 2 casas decimais." error={fieldErrors.lengthCm} />
       </div>
     </div>
 
@@ -1924,13 +1992,20 @@ useEffect(() => {
         step={1}
         className="h-11 rounded-2xl border-slate-200 bg-white"
         value={packageVolumes}
-        onChange={(e) => setPackageVolumes(sanitizeIntInput(e.target.value))}
+        data-product-field="packageVolumes"
+        onChange={(e) => {
+          const raw = e.target.value;
+          if (raw && !checkWholeNumber(raw, 1)) { setFieldErrors((p) => ({ ...p, packageVolumes: 'Use um inteiro a partir de 1.' })); return; }
+          setFieldErrors((p) => { const next = { ...p }; delete next.packageVolumes; return next; });
+          setPackageVolumes(raw);
+        }}
         placeholder="1"
         inputMode="numeric"
       />
 
       <div className="mt-2 min-h-[20px] text-xs text-slate-500">
         {describeVolumes(packageVolumes)}
+        <ProductFieldFeedback hint="Inteiro a partir de 1." error={fieldErrors.packageVolumes} />
       </div>
     </div>
   </div>
@@ -1951,13 +2026,12 @@ useEffect(() => {
                     <Input
                       className="h-11 rounded-2xl border-slate-200 bg-white"
                       value={price}
-                      onChange={(e) => setPrice(sanitizeMoneyInput(e.target.value))}
+                      data-product-field="price"
+                      onChange={(e) => acceptDecimal('price', e.target.value, 2, setPrice)}
                       placeholder="Ex.: 59,90"
                       inputMode="decimal"
                     />
-                    <div className="text-xs text-slate-500">
-                      Somente números. Valor deve ser maior que 0.
-                    </div>
+                    <ProductFieldFeedback hint="Até 2 casas decimais (vírgula ou ponto)." error={fieldErrors.price} />
                   </div>
                 </div>
 
@@ -1967,61 +2041,25 @@ useEffect(() => {
                     <Input
                       className="h-11 rounded-2xl border-slate-200 bg-white"
                       value={customerPrice}
-                      onChange={(e) => setCustomerPrice(sanitizeMoneyInput(e.target.value))}
+                      data-product-field="customerPrice"
+                      onChange={(e) => acceptDecimal('customerPrice', e.target.value, 2, setCustomerPrice)}
                       placeholder="Ex.: 49,90"
                       inputMode="decimal"
                     />
-                    <div className="text-xs text-slate-500">
-                      Se vazio, cliente final usa o preço padrão.
-                    </div>
+                    <ProductFieldFeedback hint="Opcional • até 2 casas decimais." error={fieldErrors.customerPrice} />
                   </div>
                 </div>
               </div>
 
 <div className="grid gap-4 md:grid-cols-2">
-  <div className="grid gap-2">
-    <Label>Benefício (1 por linha)</Label>
-    <Textarea
-      className="min-h-[130px] rounded-2xl border-slate-200 bg-slate-50/60"
-      value={effectsText}
-      onChange={(e) => setEffectsText(e.target.value)}
-      placeholder={`Ex.:\nBrilho intenso\nRedução de frizz`}
-    />
-  </div>
+  <ProductListTextarea field="effects" value={effectsText} onChange={(value) => { setEffectsText(value); setFieldErrors((prev) => clearCorrectedListError(prev, 'effects', value)); }} error={fieldErrors.effects} className="min-h-[130px] rounded-2xl" placeholder={`Ex.:\nBrilho intenso\nRedução de frizz`} />
 
-  <div className="grid gap-2">
-    <Label>Ativos e funções (1 por linha)</Label>
-    <Textarea
-      className="min-h-[130px] rounded-2xl border-slate-200 bg-slate-50/60"
-      value={benefitsText}
-      onChange={(e) => setBenefitsText(e.target.value)}
-      placeholder={`Ex.:\nHidratação\nMaciez`}
-    />
-  </div>
+  <ProductListTextarea field="benefits" value={benefitsText} onChange={(value) => { setBenefitsText(value); setFieldErrors((prev) => clearCorrectedListError(prev, 'benefits', value)); }} error={fieldErrors.benefits} className="min-h-[130px] rounded-2xl" placeholder={`Ex.:\nHidratação\nMaciez`} />
 </div>
 
-<div className="grid gap-2">
-  <Label>Modo de uso (1 por linha)</Label>
-  <Textarea
-    className="min-h-[140px] rounded-2xl border-slate-200 bg-slate-50/60"
-    value={howToUseText}
-    onChange={(e) => setHowToUseText(e.target.value)}
-    placeholder={`Ex.:\nAplique nos cabelos úmidos\nMassageie\nEnxágue`}
-  />
-</div>
+<ProductListTextarea field="howToUse" value={howToUseText} onChange={(value) => { setHowToUseText(value); setFieldErrors((prev) => clearCorrectedListError(prev, 'howToUse', value)); }} error={fieldErrors.howToUse} className="min-h-[140px] rounded-2xl" placeholder={`Ex.:\nAplique nos cabelos úmidos\nMassageie\nEnxágue`} />
 
-              <div className="grid gap-2">
-                <Label>Destaques (1 por linha)</Label>
-                <Textarea
-                  className="min-h-[110px] rounded-2xl border-slate-200 bg-slate-50/60"
-                  value={highlightsText}
-                  onChange={(e) => setHighlightsText(e.target.value)}
-                  placeholder={`Ex.:\nBrilho\nHidratação\nReconstrução`}
-                />
-                <div className="text-xs text-slate-500">
-                  Máx: 10 itens • 60 caracteres por linha.
-                </div>
-              </div>
+              <ProductListTextarea field="highlights" value={highlightsText} onChange={(value) => { setHighlightsText(value); setFieldErrors((prev) => clearCorrectedListError(prev, 'highlights', value)); }} error={fieldErrors.highlights} className="min-h-[110px] rounded-2xl" placeholder={`Ex.:\nBrilho\nHidratação\nReconstrução`} />
 
               <Separator />
 
@@ -2440,13 +2478,7 @@ onClick={() => {
                       <h4 className="mb-3 text-sm font-semibold text-slate-900">Dados principais</h4>
                       <div className="grid gap-4 md:grid-cols-2">
                         {FISCAL_MAIN_FIELDS.map((key) => (
-                          <div key={key} className="grid gap-2">
-                            <Label>{FISCAL_FIELD_META[key].label}</Label>
-                            <Input placeholder={FISCAL_FIELD_META[key].placeholder} className="h-11 rounded-2xl border-slate-200 bg-slate-50/60" value={fiscalForm[key]} onChange={(e) => setFiscalForm((p) => ({ ...p, [key]: e.target.value }))} />
-                            {FISCAL_FIELD_META[key].help ? <div className="text-xs text-slate-500">{FISCAL_FIELD_META[key].help}</div> : null}
-                            {key === "ncm" && fiscalErrors.ncm ? <div className="text-xs text-rose-600">{fiscalErrors.ncm}</div> : null}
-                            {key === "cest" && fiscalErrors.cest ? <div className="text-xs text-rose-600">{fiscalErrors.cest}</div> : null}
-                          </div>
+                          <ProductFiscalField key={key} field={key} label={FISCAL_FIELD_META[key].label} placeholder={FISCAL_FIELD_META[key].placeholder} help={FISCAL_FIELD_META[key].help} value={fiscalForm[key]} onChange={(value) => { setFiscalForm((p) => ({ ...p, [key]: value })); setFieldErrors((p) => { const next = { ...p }; delete next[key]; return next; }); }} error={fieldErrors[key]} />
                         ))}
                       </div>
                     </div>
@@ -2455,10 +2487,7 @@ onClick={() => {
                       <h4 className="mb-3 text-sm font-semibold text-slate-900">Tributação avançada</h4>
                       <div className="grid gap-4 md:grid-cols-2">
                         {FISCAL_TAX_FIELDS.map((key) => (
-                          <div key={key} className="grid gap-2">
-                            <Label>{FISCAL_FIELD_META[key].label}</Label>
-                            <Input placeholder={FISCAL_FIELD_META[key].placeholder} className="h-11 rounded-2xl border-slate-200 bg-slate-50/60" value={fiscalForm[key]} onChange={(e) => setFiscalForm((p) => ({ ...p, [key]: e.target.value }))} />
-                          </div>
+                          <ProductFiscalField key={key} field={key} label={FISCAL_FIELD_META[key].label} placeholder={FISCAL_FIELD_META[key].placeholder} value={fiscalForm[key]} onChange={(value) => { setFiscalForm((p) => ({ ...p, [key]: value })); setFieldErrors((p) => { const next = { ...p }; delete next[key]; return next; }); }} error={fieldErrors[key]} />
                         ))}
                       </div>
                     </div>
@@ -2552,11 +2581,17 @@ onClick={() => {
     <div className="space-y-3">
       <Input
         type="file"
-        accept="image/*"
+        accept="image/jpeg,image/png,image/webp"
         multiple
-        onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+        onChange={(e) => {
+          const selection = resolveImageSelection(Array.from(e.target.files ?? []));
+          setFiles(selection.files);
+          setUploadErr(selection.error || null);
+          if (selection.error) e.target.value = '';
+        }}
         className="rounded-2xl"
       />
+      <p className="text-xs text-slate-500">JPG, PNG ou WEBP • até 5 MB por imagem.</p>
 
       <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
         {files.length
@@ -2735,14 +2770,17 @@ onClick={() => {
                         onChange={(e) => setVideoTitle(e.target.value)}
                         placeholder="Título do vídeo"
                       />
+                      <p className="text-xs text-slate-500">Opcional; se vazio, usa o nome do produto ou arquivo.</p>
 
                       <Input
                         className="h-11 rounded-2xl border-slate-200 bg-slate-50/60"
                         type="number"
                         value={videoSortOrder}
+                        data-product-field="videoSortOrder"
                         onChange={(e) => setVideoSortOrder(e.target.value)}
                         placeholder="Ordem"
                       />
+                      <ProductFieldFeedback hint="Número inteiro." error={fieldErrors.videoSortOrder} />
 
                       <Textarea
                         className="min-h-[90px] rounded-2xl border-slate-200 bg-slate-50/60"
@@ -2783,7 +2821,11 @@ onClick={() => {
                           type="file"
                           accept="video/*"
                           className="rounded-xl border-0 bg-transparent p-0 shadow-none"
-                          onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
+                          onChange={(e) => {
+                            const selection = resolveVideoSelection(e.target.files?.[0] ?? null);
+                            setVideoFile(selection.file);
+                            if (selection.error) { e.target.value = ''; toast.error(selection.error); }
+                          }}
                         />
                       </div>
 
@@ -2958,7 +3000,7 @@ onClick={() => {
                     />
                   </div>
 
-                  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
+                  <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4" data-product-field="categoryId">
                     <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Categoria principal
                     </div>
@@ -2968,6 +3010,10 @@ onClick={() => {
                       value={categoryId}
                       onChange={(e) => {
                         const v = e.target.value;
+                        if (v && !categoryId && categoryIds.length >= PRODUCT_FORM_LIMITS.categories && !categoryIds.includes(v)) {
+                          setFieldErrors((prev) => ({ ...prev, categoryIds: 'Selecione no máximo 20 categorias, incluindo a principal.' }));
+                          return;
+                        }
                         setCategoryId(v);
                         setCategoryIds((prev) => prev.filter((x) => x !== v));
                       }}
@@ -2990,6 +3036,7 @@ onClick={() => {
                         categoryId ? "Categoria principal definida." : "Nenhuma categoria principal."
                       ) : null}
                     </div>
+                    <ProductFieldFeedback error={fieldErrors.categoryId} />
                   </div>
 
                   <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
@@ -2998,7 +3045,7 @@ onClick={() => {
                         Categorias adicionais
                       </div>
                       <Badge variant="secondary" className="rounded-full">
-                        {categoryIds.length}
+                        {categoryIds.length + (categoryId ? 1 : 0)}/{PRODUCT_FORM_LIMITS.categories}
                       </Badge>
                     </div>
 
@@ -3018,9 +3065,14 @@ onClick={() => {
                             <input
                               type="checkbox"
                               checked={checked}
-                              onChange={() =>
-                                setCategoryIds((prev) => toggleCategoryId(c.id, prev))
-                              }
+                              onChange={() => {
+                                if (!checked && categoryIds.length + (categoryId ? 1 : 0) >= PRODUCT_FORM_LIMITS.categories) {
+                                  setFieldErrors((prev) => ({ ...prev, categoryIds: 'Selecione no máximo 20 categorias, incluindo a principal.' }));
+                                  return;
+                                }
+                                setFieldErrors((prev) => { const next = { ...prev }; delete next.categoryIds; return next; });
+                                setCategoryIds((prev) => toggleCategoryId(c.id, prev));
+                              }}
                             />
                             <span className="truncate">{c.name}</span>
                           </label>
@@ -3028,9 +3080,7 @@ onClick={() => {
                       })}
                     </div>
 
-                    <div className="mt-3 text-xs text-slate-500">
-                      Preenche <code>categoryIds</code>. A principal (<code>categoryId</code>) é opcional.
-                    </div>
+                    <div data-product-field="categoryIds"><ProductFieldFeedback hint="Até 20 categorias, incluindo a principal." error={fieldErrors.categoryIds} /></div>
                   </div>
 
                   <div className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4">
