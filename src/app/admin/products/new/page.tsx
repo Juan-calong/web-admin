@@ -119,7 +119,7 @@ const FISCAL_FIELD_META: Record<keyof FiscalForm, { label: string; placeholder?:
   cest: { label: "CEST", placeholder: "Opcional", help: "Obrigatório somente em alguns cenários fiscais." },
   itemType: { label: "Tipo do item", placeholder: "MERCADORIA_REVENDA" },
   fiscalDescription: { label: "Descrição fiscal", placeholder: "Nome fiscal do produto" },
-  defaultCfop: { label: "CFOP padrão", placeholder: "5102" },
+  defaultCfop: { label: "CFOP informado", help: "Preencha conforme orientação da responsável fiscal e configuração do Bling." },
   icmsCst: { label: "ICMS CST" }, icmsCsosn: { label: "ICMS CSOSN" }, pisCst: { label: "PIS CST" }, cofinsCst: { label: "COFINS CST" }, ipiCst: { label: "IPI CST" },
   blingProductId: { label: "ID Produto Bling", help: "Campo técnico preenchido quando houver vínculo com o Bling." },
 };

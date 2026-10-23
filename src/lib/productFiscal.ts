@@ -29,9 +29,11 @@ export type ProductFiscalResponse = {
   productId: string;
   fiscalData: ProductFiscalData | null;
   readiness: ProductFiscalReadiness;
+  syncPlan?: ProductFiscalSyncPlan;
 };
 
 export type ProductFiscalInput = ProductFiscalData;
+export type ProductFiscalSyncPlan = { blocked: boolean; reason?: string | null; legacyRevision: number | null; requiresRevision: boolean };
 
 export async function getAdminProductFiscal(productId: string) {
   const { data } = await api.get(endpoints.adminProductFiscal.get(productId));
@@ -39,9 +41,10 @@ export async function getAdminProductFiscal(productId: string) {
 }
 
 function cleanField(value?: string | null, options?: { uppercase?: boolean }) {
+  if (value === null) return null;
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
-  if (!trimmed) return undefined;
+  if (!trimmed) return null;
   return options?.uppercase ? trimmed.toUpperCase() : trimmed;
 }
 
@@ -65,8 +68,14 @@ export function normalizeFiscalInput(input: ProductFiscalInput): ProductFiscalIn
   };
 }
 
-export async function updateAdminProductFiscal(productId: string, input: ProductFiscalInput) {
-  const payload = normalizeFiscalInput(input);
+export async function updateAdminProductFiscal(productId: string, input: ProductFiscalInput, saved?: ProductFiscalData | null) {
+  let payload = normalizeFiscalInput(input);
+  if (saved) {
+    const baseline = normalizeFiscalInput(saved);
+    payload = Object.fromEntries(Object.entries(payload).filter(([field, value]) =>
+      value !== undefined && (value ?? null) !== (baseline[field as keyof ProductFiscalData] ?? null)
+    ));
+  }
   const { data } = await api.put(endpoints.adminProductFiscal.save(productId), payload);
   return (data?.item ?? data) as ProductFiscalResponse;
 }
@@ -83,7 +92,11 @@ export type ProductBlingSyncResponse = {
   syncedAt?: string;
 };
 
-export async function syncAdminProductToBling(productId: string) {
-  const { data } = await api.post(endpoints.adminProductBling.sync(productId), {});
+export async function syncAdminProductToBling(productId: string, plan?: ProductFiscalSyncPlan, confirmedRevision = false) {
+  if (!plan || plan.blocked) throw new Error("Sincronização indisponível: atualize o cadastro e verifique pendências de reconciliação.");
+  if (plan.requiresRevision && (!confirmedRevision || !Number.isSafeInteger(plan.legacyRevision) || (plan.legacyRevision ?? 0) < 1)) {
+    throw new Error("Confirme explicitamente a revisão fiscal proposta antes de sincronizar.");
+  }
+  const { data } = await api.post(endpoints.adminProductBling.sync(productId), plan.requiresRevision ? { legacyRevision: plan.legacyRevision } : {});
   return (data?.item ?? data) as ProductBlingSyncResponse;
 }

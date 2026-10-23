@@ -154,7 +154,7 @@ const FISCAL_FIELD_META: Record<keyof FiscalForm, FiscalFieldMeta> = {
   cest: { label: "CEST", placeholder: "Opcional", help: "Obrigatório somente em alguns cenários fiscais." },
   itemType: { label: "Tipo do item", placeholder: "MERCADORIA_REVENDA" },
   fiscalDescription: { label: "Descrição fiscal", placeholder: "Nome fiscal do produto" },
-  defaultCfop: { label: "CFOP padrão", placeholder: "5102" },
+  defaultCfop: { label: "CFOP informado", help: "Preencha conforme orientação da responsável fiscal e configuração do Bling." },
   icmsCst: { label: "ICMS CST" },
   icmsCsosn: { label: "ICMS CSOSN" },
   pisCst: { label: "PIS CST" },
@@ -172,7 +172,9 @@ const READINESS_MISSING_LABELS: Record<string, string> = {
   "items.fiscalData": "Dados fiscais dos itens",
 };
 const READINESS_WARNING_LABELS: Record<string, string> = {
-  gtin: "GTIN/EAN",
+  defaultCfop: "CFOP não informado; confirme a parametrização da operação no Bling.",
+  "icmsCst|icmsCsosn": "CST/CSOSN de ICMS não informado. A responsável fiscal deve confirmar se a parametrização no Bling é suficiente.",
+  gtin: "GTIN/EAN não informado; confirme se o produto possui identificação aplicável.",
   itemType: "Tipo do item",
   tributaryUnit: "Unidade tributável",
 };
@@ -680,8 +682,11 @@ export default function EditProductPage() {
     });
   }, [fiscalQ.data]);
 
+  const [confirmedFiscalRevision, setConfirmedFiscalRevision] = useState<string | null>(null);
+  const fiscalRevisionKey = JSON.stringify([fiscalQ.data?.syncPlan, fiscalQ.data?.fiscalData]);
+  const revisionConfirmed = confirmedFiscalRevision === fiscalRevisionKey;
     const syncBlingM = useMutation({
-    mutationFn: async () => syncAdminProductToBling(id),
+    mutationFn: async () => syncAdminProductToBling(id, fiscalQ.data?.syncPlan, revisionConfirmed),
     onSuccess: async (data) => {
       if (data?.created) {
         toast.success("Produto criado no Bling.");
@@ -694,6 +699,8 @@ export default function EditProductPage() {
     },
     onError: (err) => {
       toast.error(apiErrorMessage(err, "Falha ao sincronizar produto com Bling."));
+      void qc.invalidateQueries({ queryKey: ["product-fiscal", id] });
+      setConfirmedFiscalRevision(null);
     },
   });
 
@@ -710,10 +717,11 @@ export default function EditProductPage() {
         unit: fiscalForm.unit.toUpperCase(),
         tributaryUnit: fiscalForm.tributaryUnit.toUpperCase(),
       };
-      return updateAdminProductFiscal(id, payload);
+      return updateAdminProductFiscal(id, payload, fiscalQ.data?.fiscalData);
     },
     onSuccess: async () => {
-      toast.success("Dados fiscais salvos com sucesso.");
+      toast.success("Dados fiscais salvos na KeyFi. A sincronização com o Bling é uma etapa separada.");
+      setConfirmedFiscalRevision(null);
       await qc.invalidateQueries({ queryKey: ["product-fiscal", id] });
     },
     onError: (err) => {
@@ -727,7 +735,7 @@ export default function EditProductPage() {
     [fiscalForm, fiscalQ.data?.fiscalData],
   );
   const syncDisabled =
-    fiscalQ.data?.readiness?.ready !== true || saveFiscalM.isPending || syncBlingM.isPending || hasUnsavedFiscalChanges;
+    fiscalQ.data?.readiness?.ready !== true || !fiscalQ.data?.syncPlan || fiscalQ.data.syncPlan.blocked || (fiscalQ.data.syncPlan.requiresRevision && !revisionConfirmed) || saveFiscalM.isPending || syncBlingM.isPending || hasUnsavedFiscalChanges;
   const syncDisabledTitle =
     fiscalQ.data?.readiness?.ready !== true
       ? "Complete os dados fiscais obrigatórios antes de sincronizar."
@@ -2455,7 +2463,7 @@ onClick={() => {
               {!fiscalQ.isLoading && !fiscalQ.isError ? (
                 <>
                   <div className={`rounded-2xl border p-3 text-sm ${fiscalQ.data?.readiness?.ready ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
-                    <p className="font-medium">{fiscalQ.data?.readiness?.ready ? "Produto pronto para uso fiscal." : "Produto com pendências fiscais."}</p>
+                    <p className="font-medium">{fiscalQ.data?.readiness?.ready ? "Cadastro técnico mínimo preenchido. Tributação não validada pelo sistema." : "Produto com pendências fiscais."}</p>
                     {!!fiscalQ.data?.readiness?.missing?.length && (
                       <div className="mt-2">
                         <p className="text-xs font-semibold uppercase tracking-wide">Pendências obrigatórias</p>
@@ -2473,6 +2481,15 @@ onClick={() => {
                       </div>
                     )}
                   </div>
+                  <p className="text-sm text-slate-600">Salvar estes dados não confirma o enquadramento tributário nem sua aplicação na NF-e. Confira a parametrização da operação no Bling com a responsável fiscal.</p>
+                  {!fiscalQ.data?.syncPlan && <p className="text-sm text-amber-700">Não foi possível obter a revisão atual. Recarregue o cadastro antes de sincronizar.</p>}
+                  {fiscalQ.data?.syncPlan?.blocked && <p className="text-sm text-amber-700">Sincronização bloqueada. Verifique a autoridade fiscal e pendências de reconciliação antes de tentar novamente.</p>}
+                  {fiscalQ.data?.syncPlan?.requiresRevision && !fiscalQ.data.syncPlan.blocked && (
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={revisionConfirmed} onChange={(event) => setConfirmedFiscalRevision(event.target.checked ? fiscalRevisionKey : null)} />
+                      Confirmo a sincronização dos dados salvos na revisão {fiscalQ.data.syncPlan.legacyRevision}. Esta confirmação não aprova o enquadramento tributário.
+                    </label>
+                  )}
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 p-4">
                       <h4 className="mb-3 text-sm font-semibold text-slate-900">Dados principais</h4>

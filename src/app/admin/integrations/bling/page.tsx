@@ -145,7 +145,7 @@ export default function AdminBlingIntegrationPage() {
   const readinessText = useMemo(() => {
     if (!fiscalQ.data) return "";
     return fiscalQ.data.ready
-      ? "Configuração fiscal pronta para criação de NF-e."
+      ? "Configuração técnica preenchida. Confirme a parametrização tributária no Bling com a responsável fiscal."
       : "Configuração fiscal incompleta.";
   }, [fiscalQ.data]);
 
