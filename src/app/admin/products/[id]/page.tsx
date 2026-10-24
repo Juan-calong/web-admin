@@ -152,7 +152,7 @@ const FISCAL_FIELD_META: Record<keyof FiscalForm, FiscalFieldMeta> = {
   tributaryUnit: { label: "Unidade tributável", placeholder: "UN", help: "Normalmente igual à unidade comercial." },
   gtin: { label: "GTIN/EAN", placeholder: "SEM GTIN", help: "Use SEM GTIN quando o produto não possuir código de barras." },
   cest: { label: "CEST", placeholder: "Opcional", help: "Obrigatório somente em alguns cenários fiscais." },
-  itemType: { label: "Tipo do item", placeholder: "MERCADORIA_REVENDA" },
+  itemType: { label: "Código SPED do item", help: "Informe o código de dois dígitos aprovado pela responsável fiscal. Rótulos antigos não são convertidos automaticamente." },
   fiscalDescription: { label: "Descrição fiscal", placeholder: "Nome fiscal do produto" },
   defaultCfop: { label: "CFOP informado", help: "Preencha conforme orientação da responsável fiscal e configuração do Bling." },
   icmsCst: { label: "ICMS CST" },
@@ -170,6 +170,7 @@ const READINESS_MISSING_LABELS: Record<string, string> = {
   origin: "Origem",
   unit: "Unidade comercial",
   "items.fiscalData": "Dados fiscais dos itens",
+  "itemType:invalid": "Tipo SPED legado ou inválido: confirme o código com a responsável fiscal.",
 };
 const READINESS_WARNING_LABELS: Record<string, string> = {
   defaultCfop: "CFOP não informado; confirme a parametrização da operação no Bling.",
@@ -656,7 +657,7 @@ export default function EditProductPage() {
       tributaryUnit: prev.tributaryUnit.trim() ? prev.tributaryUnit : "UN",
       gtin: prev.gtin.trim() ? prev.gtin : "SEM GTIN",
       origin: prev.origin.trim() ? prev.origin : "0",
-      itemType: prev.itemType.trim() ? prev.itemType : "MERCADORIA_REVENDA",
+      itemType: prev.itemType,
     }));
   };
   const product = productQ.data ?? null;

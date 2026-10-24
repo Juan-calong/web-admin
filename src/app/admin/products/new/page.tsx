@@ -117,7 +117,7 @@ const FISCAL_FIELD_META: Record<keyof FiscalForm, { label: string; placeholder?:
   tributaryUnit: { label: "Unidade tributável", placeholder: "UN", help: "Normalmente igual à unidade comercial." },
   gtin: { label: "GTIN/EAN", placeholder: "SEM GTIN", help: "Use SEM GTIN quando o produto não possuir código de barras." },
   cest: { label: "CEST", placeholder: "Opcional", help: "Obrigatório somente em alguns cenários fiscais." },
-  itemType: { label: "Tipo do item", placeholder: "MERCADORIA_REVENDA" },
+  itemType: { label: "Código SPED do item", help: "Informe o código aprovado pela responsável fiscal, sem conversão automática de rótulos." },
   fiscalDescription: { label: "Descrição fiscal", placeholder: "Nome fiscal do produto" },
   defaultCfop: { label: "CFOP informado", help: "Preencha conforme orientação da responsável fiscal e configuração do Bling." },
   icmsCst: { label: "ICMS CST" }, icmsCsosn: { label: "ICMS CSOSN" }, pisCst: { label: "PIS CST" }, cofinsCst: { label: "COFINS CST" }, ipiCst: { label: "IPI CST" },
@@ -678,7 +678,7 @@ export default function NewProductPage() {
   }, [weightKg, heightCm, widthCm, lengthCm, packageVolumes]);
 
   const applyFiscalBasicDefaults = () => {
-    setFiscalForm((prev) => ({ ...prev, unit: prev.unit.trim() ? prev.unit : "UN", tributaryUnit: prev.tributaryUnit.trim() ? prev.tributaryUnit : "UN", gtin: prev.gtin.trim() ? prev.gtin : "SEM GTIN", origin: prev.origin.trim() ? prev.origin : "0", itemType: prev.itemType.trim() ? prev.itemType : "MERCADORIA_REVENDA" }));
+    setFiscalForm((prev) => ({ ...prev, unit: prev.unit.trim() ? prev.unit : "UN", tributaryUnit: prev.tributaryUnit.trim() ? prev.tributaryUnit : "UN", gtin: prev.gtin.trim() ? prev.gtin : "SEM GTIN", origin: prev.origin.trim() ? prev.origin : "0", itemType: prev.itemType }));
   };
 
   const markProductCreated = (id: string) => {

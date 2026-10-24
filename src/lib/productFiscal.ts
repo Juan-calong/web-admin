@@ -76,6 +76,9 @@ export async function updateAdminProductFiscal(productId: string, input: Product
       value !== undefined && (value ?? null) !== (baseline[field as keyof ProductFiscalData] ?? null)
     ));
   }
+  if (payload.itemType != null && payload.itemType !== "" && !/^(?:0[0-9]|10|99)$/.test(payload.itemType)) {
+    throw new Error("Informe o código SPED aprovado pela responsável fiscal; rótulos legados precisam de revisão.");
+  }
   const { data } = await api.put(endpoints.adminProductFiscal.save(productId), payload);
   return (data?.item ?? data) as ProductFiscalResponse;
 }
