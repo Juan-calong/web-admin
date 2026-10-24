@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { localDeliveryActionBlock, localDeliveryResultMessage, localDeliveryRefreshComplete, type LocalDeliveryAction, type LocalDeliveryResult } from "@/lib/localDeliveryActions";
 import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
 import {
@@ -912,34 +913,57 @@ if (!selectedLocalOrderIds.length) {
   correiosBatchPdfM.mutate(selectedCorreiosOrderIds);
 }
 
+  const [localDeliveryFeedback, setLocalDeliveryFeedback] = useState<string[]>([]);
+  const [localDeliveryNeedsRefresh, setLocalDeliveryNeedsRefresh] = useState(false);
+  const [localDeliveryRefreshing, setLocalDeliveryRefreshing] = useState(false);
+  const localDeliveryRequestInFlight = useRef(false);
+  // Ref closes the same-render double-click window; state drives the UI.
+  const localDeliveryRefreshRequired = useRef(false);
+  const localDeliveryRefreshTargets = useRef<string[]>([]);
+  async function refreshLocalDeliveryState() {
+    setLocalDeliveryRefreshing(true);
+    try {
+      const [freshOrders] = await Promise.all([ordersQ.refetch({ throwOnError: true }), localTodayQ.refetch({ throwOnError: true })]);
+      if (!localDeliveryRefreshComplete(freshOrders.data ?? [], localDeliveryRefreshTargets.current)) {
+        setLocalDeliveryFeedback(previous => [...previous, "Pedido fora da lista atual. Consulte seu detalhe; nenhuma nova tentativa foi liberada."]);
+        throw new Error("LOCAL_DELIVERY_REFRESH_INCOMPLETE");
+      }
+      localDeliveryRefreshRequired.current = false;
+      setLocalDeliveryNeedsRefresh(false);
+      return true;
+    } catch {
+      localDeliveryRefreshRequired.current = true;
+      setLocalDeliveryNeedsRefresh(true);
+      return false;
+    } finally { setLocalDeliveryRefreshing(false); }
+  }
   const localDeliveryBulkStatusM = useMutation({
-    mutationFn: async (vars: {
-      orderIds: string[];
-      status: "PACKED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "DELIVERY_PROBLEM";
-      note?: string;
-    }) => {
-      const { data } = await api.post(
-        endpoints.adminOrders.localDeliveryBulkStatus,
-        vars
-      );
-      return data as { updated?: number; skipped?: number };
+    retry: false,
+    mutationFn: async (vars: { orderIds: string[]; status: LocalDeliveryAction; note?: string }) => {
+      const { data } = await api.post(endpoints.adminOrders.localDeliveryBulkStatus, vars);
+      return data as { updated?: number; skipped?: number; items?: LocalDeliveryResult[] };
     },
     onSuccess: async (data) => {
-      toast.success(`Status local atualizado: ${data.updated ?? 0} pedido(s).`);
-
-      if ((data.skipped ?? 0) > 0) {
-        toast.warning(`${data.skipped} pedido(s) foram ignorados.`);
-      }
-
-      await qc.invalidateQueries({ queryKey: ["orders"] });
-      await ordersQ.refetch();
+      setLocalDeliveryFeedback((data.items ?? []).map(item => localDeliveryResultMessage(item, selectedLocalDisplayedOrders)));
+      if ((data.updated ?? 0) > 0) toast.success(`Etapa registrada em ${data.updated} pedido(s).`);
+      else toast.info("Nenhuma etapa alterada. Confira o resultado de cada pedido.");
+      if (!await refreshLocalDeliveryState()) toast.warning("Atualização pendente. Consulte o estado antes de outra ação.");
     },
-    onError: (err) => {
-      toast.error(
-        apiErrorMessage(err, "Não foi possível atualizar os pedidos locais.")
-      );
+    onError: async (err) => {
+      localDeliveryRefreshRequired.current = true;
+      setLocalDeliveryNeedsRefresh(true);
+      setLocalDeliveryFeedback(["Resultado não confirmado. Os dados serão consultados antes de permitir outra tentativa."]);
+      toast.error(apiErrorMessage(err, "Resultado não confirmado; não repita a ação sem atualizar os dados."));
+      await refreshLocalDeliveryState();
     },
+    onSettled: () => { localDeliveryRequestInFlight.current = false; },
   });
+  function localDeliveryDisabledReason(status: LocalDeliveryAction) {
+    if (localDeliveryNeedsRefresh || localDeliveryRefreshing) return "Atualize o estado dos pedidos antes de continuar.";
+    if (localDeliveryBulkStatusM.isPending) return "Aguarde a confirmação da operação.";
+    if (!selectedLocalDisplayedOrders.length) return "Selecione um pedido de entrega local.";
+    return selectedLocalDisplayedOrders.map(order => localDeliveryActionBlock(order, status)).find(Boolean) ?? null;
+  }
     const createLocalDeliveryExceptionM = useMutation({
     mutationFn: async (body: {
       date: string;
@@ -964,15 +988,15 @@ if (!selectedLocalOrderIds.length) {
   function handleBulkLocalDeliveryStatus(
     status: "PACKED" | "OUT_FOR_DELIVERY" | "DELIVERED" | "DELIVERY_PROBLEM"
   ) {
-    if (!selectedLocalOrderIds.length) {
-      toast.error("Selecione pelo menos um pedido de entrega local.");
-      return;
-    }
-
+    if (localDeliveryRequestInFlight.current || localDeliveryRefreshRequired.current) return;
+    const blocked = localDeliveryDisabledReason(status);
+    if (blocked) { toast.warning(blocked); return; }
     if (selectedNonLocalCount > 0) {
       toast.warning("Pedidos que não são entrega local serão ignorados.");
     }
 
+    localDeliveryRequestInFlight.current = true;
+    localDeliveryRefreshTargets.current = [...selectedLocalOrderIds];
     localDeliveryBulkStatusM.mutate({
       orderIds: selectedLocalOrderIds,
       status,
@@ -1845,6 +1869,13 @@ const localStatusClass = (
           ) : null}
         </div>
 
+        <p className="text-sm text-zinc-600">Sequência: Empacotado → Em rota → Entregue. A saída exige liberação fiscal. Retomar após problema preserva o primeiro horário de saída.</p>
+        {localDeliveryFeedback.length > 0 && (
+          <ul role="status" aria-live="polite" className="list-disc pl-5 text-sm">
+            {localDeliveryFeedback.map((message, index) => <li key={index}>{message}</li>)}
+          </ul>
+        )}
+        {localDeliveryNeedsRefresh && <Button type="button" variant="outline" disabled={localDeliveryRefreshing} onClick={() => { void refreshLocalDeliveryState(); }}>Atualizar estado antes de continuar</Button>}
         <div className="flex flex-wrap gap-2">
           <Button
             type="button"
@@ -1852,10 +1883,8 @@ const localStatusClass = (
             variant="outline"
             className="h-8 rounded-full border-zinc-200 bg-white px-3 text-xs font-medium hover:bg-zinc-50"
             onClick={() => handleBulkLocalDeliveryStatus("PACKED")}
-            disabled={
-              selectedLocalOrderIds.length === 0 ||
-              localDeliveryBulkStatusM.isPending
-            }
+            title={localDeliveryDisabledReason("PACKED") ?? undefined}
+            disabled={Boolean(localDeliveryDisabledReason("PACKED"))}
           >
             Marcar empacotado
           </Button>
@@ -1866,10 +1895,8 @@ const localStatusClass = (
             variant="outline"
             className="h-8 rounded-full border-zinc-200 bg-white px-3 text-xs font-medium hover:bg-zinc-50"
             onClick={() => handleBulkLocalDeliveryStatus("OUT_FOR_DELIVERY")}
-            disabled={
-              selectedLocalOrderIds.length === 0 ||
-              localDeliveryBulkStatusM.isPending
-            }
+            title={localDeliveryDisabledReason("OUT_FOR_DELIVERY") ?? undefined}
+            disabled={Boolean(localDeliveryDisabledReason("OUT_FOR_DELIVERY"))}
           >
             Saiu para entrega
           </Button>
@@ -1881,10 +1908,8 @@ const localStatusClass = (
                 size="sm"
                 variant="outline"
                 className="h-8 rounded-full border-zinc-200 bg-white px-3 text-xs font-medium hover:bg-zinc-50"
-                disabled={
-                  selectedLocalOrderIds.length === 0 ||
-                  localDeliveryBulkStatusM.isPending
-                }
+                title={localDeliveryDisabledReason("DELIVERED") ?? undefined}
+                disabled={Boolean(localDeliveryDisabledReason("DELIVERED"))}
               >
                 Marcar entregue
               </Button>
@@ -1919,10 +1944,8 @@ const localStatusClass = (
                 size="sm"
                 variant="outline"
                 className="h-8 rounded-full border-red-200 bg-red-50 px-3 text-xs font-medium text-red-700 hover:bg-red-100"
-                disabled={
-                  selectedLocalOrderIds.length === 0 ||
-                  localDeliveryBulkStatusM.isPending
-                }
+                title={localDeliveryDisabledReason("DELIVERY_PROBLEM") ?? undefined}
+                disabled={Boolean(localDeliveryDisabledReason("DELIVERY_PROBLEM"))}
               >
                 Problema
               </Button>
