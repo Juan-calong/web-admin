@@ -1,3 +1,4 @@
+import type { FiscalWorkflowWriteSafety } from "@/lib/fiscalWorkflowSafety";
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 import type { FiscalAutomationProjection } from "@/lib/fiscalAutomationPresentation";
@@ -59,6 +60,7 @@ export type FiscalWorkflowResponse = {
   orderId: string;
   environment?: string | null;
   overallStatus?: string | null;
+  writeSafety?: FiscalWorkflowWriteSafety | null;
   automation?: FiscalAutomationProjection | null;
   summary?: FiscalWorkflowSummary;
   readiness?: Record<string, unknown>;
