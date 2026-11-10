@@ -1,5 +1,7 @@
 "use client";
 
+import { applyFiscalWorkflowSafety } from "@/lib/fiscalWorkflowSafety";
+
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -37,6 +39,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const overallStatusLabel: Record<string, string> = {
   NOT_READY: "Não pronto",
+  RECONCILIATION_REQUIRED: "Reconciliação fiscal necessária",
+  WRITES_BLOCKED: "Escritas fiscais bloqueadas",
   READY_FOR_SALES_ORDER: "Pronto para criar pedido Bling",
   SALES_ORDER_CREATED: "Pedido Bling criado",
   READY_FOR_NFE_CREATE: "Pronto para criar NF-e",
@@ -147,6 +151,8 @@ export function OrderBlingFiscalCard({
       ) {
         throw new Error("A automação fiscal é a única responsável por mutações deste pedido.");
       }
+      const currentAction = applyFiscalWorkflowSafety({ actions: workflowQ.data?.actions, writeSafety: workflowQ.data?.writeSafety }).find(candidate => candidate.id === action.id);
+      if (!currentAction?.enabled) throw new Error(currentAction?.reason || "Ação fiscal indisponível.");
       setRunningActionId(action.id);
       return runOrderBlingFiscalAction(orderId as string, action);
     },
@@ -184,7 +190,7 @@ export function OrderBlingFiscalCard({
     },
   });
 
-  const visibleActions = (workflowQ.data?.actions ?? []).filter(
+  const visibleActions = applyFiscalWorkflowSafety({ actions: workflowQ.data?.actions, writeSafety: workflowQ.data?.writeSafety }).filter(
     (action) =>
       isFiscalAutomationReadAction(action.id, action.method) ||
       !automationPresentation.blocksLegacyMutations
@@ -215,6 +221,18 @@ export function OrderBlingFiscalCard({
               <Badge variant="outline">{labelFromMap(workflowQ.data.environment, environmentLabel, "Ambiente não informado")}</Badge>
               <Badge variant="outline">{labelFromMap(workflowQ.data.summary?.nfeStatus, nfeStatusLabel)}</Badge>
             </div>
+
+            {workflowQ.data.writeSafety?.writesAllowed !== true ? (
+              <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                {workflowQ.data.writeSafety?.reason || "Não foi possível confirmar a segurança das escritas fiscais."}
+                <p className="mt-1">Consultas e documentos disponíveis continuam acessíveis.</p>
+              </div>
+            ) : null}
+            {workflowQ.data.writeSafety?.individualAuthorization ? (
+              <p className="text-sm text-zinc-600">
+                Autorização individual válida para {labelFromMap(workflowQ.data.writeSafety.individualAuthorization.action, actionLabel)} até {new Date(workflowQ.data.writeSafety.individualAuthorization.expiresAt).toLocaleString("pt-BR")}. Execute pelo fluxo de autorização individual.
+              </p>
+            ) : null}
 
             <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 text-sm">
               <div className="flex flex-wrap items-center gap-2">
@@ -250,7 +268,7 @@ export function OrderBlingFiscalCard({
                   type="button"
                   variant="outline"
                   className="mt-3"
-                  disabled={reprocessM.isPending}
+                  disabled={reprocessM.isPending || workflowQ.data?.writeSafety?.writesAllowed !== true}
                   onClick={() => reprocessM.mutate()}
                 >
                   {reprocessM.isPending ? "Reprocessando..." : "Reprocessar automação"}
