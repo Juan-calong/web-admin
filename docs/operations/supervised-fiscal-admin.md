@@ -126,3 +126,46 @@ usa withCredentials. Restrições de cookies de terceiros podem impedir envio;
 não alterar proteções do Chrome, CORS ou atributos do cookie para mascarar isso.
 
 Mantido NO-GO para merge até o reteste visual e a publicação prévia do backend #39.
+
+## Atualização mínima das dependências de runtime
+
+Base da correção: 8263b77335ff7f01931d816100dde136b75c1335.
+Next 16.2.4 -> 16.4.1; Axios 1.15.2 -> 1.20.0;
+eslint-config-next alinhado em 16.4.1. São as únicas três declarações alteradas.
+React/React DOM 19.2.3 e o código fiscal/autenticação permanecem inalterados.
+
+Transitivos corrigidos no lockfile: sharp 0.35.5 (libvips 8.18.7/librsvg 2.63.2),
+follow-redirects 1.16.3, form-data 4.0.6, PostCSS 8.5.23, nanoid 3.3.20,
+source-map-js 1.2.2, baseline-browser-mapping 2.11.37 e fflate 0.8.3.
+As demais mudanças pertencem à árvore desses pacotes atualizados, incluindo
+binários opcionais por plataforma. Sem audit fix, force ou atualização geral.
+
+Fontes: https://github.com/vercel/next.js/releases/tag/v16.4.1,
+https://github.com/advisories/GHSA-2464-fhr4-w9xw,
+https://github.com/advisories/GHSA-wq5f-xc86-pv6w e
+https://github.com/axios/axios/releases/tag/v1.20.0.
+
+Validação com Node 22.23.2, instalação própria do worktree:
+- npm ci: aprovado; nenhum grupo de secrets ou arquivo ENV utilizado.
+- npm run build e TypeScript standalone: aprovados.
+- 48 testes direcionados: aprovados, zero falhas/skips (sem somar repetições).
+- Lint do escopo: zero erros, duas advertências da nova regra de navegação
+  sobre código preexistente.
+- npm run lint completo: falhou com 33 erros; comparação com eslint-config-next
+  16.2.4 preservado confirmou os mesmos 33 erros, sem nenhum erro novo.
+  Estão em telas fora deste patch; não foram corrigidos nem desabilitados.
+- npm audit --omit=dev: de 1 crítica/7 altas/2 moderadas para zero vulnerabilidades,
+  exit code 0. A árvore incluindo desenvolvimento ainda reporta quatro altas;
+  não representa o resultado de runtime e não foi ampliada esta correção.
+- npm ci avisou que o postinstall de unrs-resolver não estava autorizado;
+  não houve aprovação de script. Build e lint do escopo funcionaram mesmo assim.
+
+A compatibilidade de login/refresh e tela fiscal foi verificada pelos 48 testes
+locais simulados existentes. GET anônimo local de /login retornou 200; a página
+usa Suspense e a hidratação do formulário depende do navegador. Nenhuma sessão
+real, preview sinalizado, operação fiscal ou backend de produção foi acessado.
+Nenhum gate, ENV, dependência do backend, Worker ou cadastro fiscal foi alterado.
+
+Correção de segurança validada. O lint global não está verde e precisa de
+tratamento ou aceitação explícita da dívida preexistente antes de declarar a
+validação integral para merge. Não considerar somente o sucesso do build.
