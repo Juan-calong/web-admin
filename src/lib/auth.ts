@@ -9,19 +9,26 @@ export type MeUser = {
 
 const ACCESS_TOKEN_KEY = "accessToken";
 const ME_KEY = "me";
+let accessToken: string | null = null;
+let sessionVersion = 0;
 
 export const authStore = {
+    getSessionVersion() { return sessionVersion; },
     getAccessToken(): string | null {
         if (typeof window === "undefined") return null;
-        return localStorage.getItem(ACCESS_TOKEN_KEY);
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        return accessToken;
     },
 
     setAccessToken(token: string) {
         if (typeof window === "undefined") return;
-        localStorage.setItem(ACCESS_TOKEN_KEY, token);
+        localStorage.removeItem(ACCESS_TOKEN_KEY);
+        accessToken = token;
     },
 
     clearAccessToken() {
+        sessionVersion += 1;
+        accessToken = null;
         if (typeof window === "undefined") return;
         localStorage.removeItem(ACCESS_TOKEN_KEY);
     },
@@ -44,6 +51,8 @@ export const authStore = {
     },
 
     clearAll() {
+        sessionVersion += 1;
+        accessToken = null;
         if (typeof window === "undefined") return;
         localStorage.removeItem(ACCESS_TOKEN_KEY);
         localStorage.removeItem(ME_KEY);
