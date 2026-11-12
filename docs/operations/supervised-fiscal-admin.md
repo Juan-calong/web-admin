@@ -90,3 +90,39 @@ Após publicar o backend mediante autorização própria, validar no Admin:
 Os cenários de 401 fiscal e timeout são simulados localmente, sem provocar
 emissão real para testar falhas. Merge e publicação dependem dessa validação visual;
 este patch não os executa nem ativa Worker/P3/gates.
+
+## Correção da sessão após F5
+
+Reprodução local do corpo real do AuthGuard com agendamento controlado de efeitos:
+setup/cleanup/setup emitia dois POSTs /auth/refresh; um efeito descartado ainda
+podia limpar a sessão e redirecionar. O App Router habilita Strict Mode por padrão
+no desenvolvimento. O backend publicado rotaciona o refresh token e trata reuse
+como motivo para revogar as sessões. Isso comprova a corrida possível, não a
+causa exclusiva do incidente no Chrome sem o Network daquela execução.
+
+AuthGuard e interceptor agora usam o mesmo single-flight por contexto JavaScript.
+Efeitos desmontados não alteram estado/navegação após a espera. Uma geração de
+sessão, somente em memória, impede resposta atrasada de repor o access token ou
+apagar um login posterior após clearAll/clearAccessToken. Cookies, backend,
+ENVs e política skipAuthRetry dos POSTs fiscais permanecem iguais.
+
+8 testes novos aprovados, além dos 40 anteriores, sem falhas/skips. Os novos
+simulam login com token em memória, F5 e recargas consecutivas concluídas,
+setup/cleanup/setup, refresh junto de reads expirados, falha após desmontagem,
+logout e recarga após logout. Comando adicional:
+`node --experimental-test-module-mocks --import ./scripts/test-admin-loader.mjs src/components/__test__/AuthGuard.session.test.mjs`.
+O mock controla hooks/navegação e HTTP, sem substituir o corpo do AuthGuard.
+Não é um teste visual nem comprova a persistência real do cookie no Chrome.
+
+Repetir visualmente no localhost: login, um F5, dois F5 após cada carregamento,
+logout e F5. O single-flight não coordena abas ou páginas diferentes nem resolve
+uma navegação interrompida enquanto um refresh anterior ainda é processado.
+Se falhar, anotar apenas quantidade de refreshes, status HTTP e erro curto:
+`Sem refresh token` distingue ausência do cookie de `Refresh reuse detectado`.
+No DevTools, conferir somente presença e atributos de rt e motivo de bloqueio em
+Network/Cookies ou Issues, sem copiar valores, headers, HAR, senhas ou tokens.
+O backend usa HttpOnly/Secure/SameSite=None/Path=/auth em production e o cliente
+usa withCredentials. Restrições de cookies de terceiros podem impedir envio;
+não alterar proteções do Chrome, CORS ou atributos do cookie para mascarar isso.
+
+Mantido NO-GO para merge até o reteste visual e a publicação prévia do backend #39.

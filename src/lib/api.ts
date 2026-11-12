@@ -26,7 +26,7 @@ const authApi = axios.create({
   timeout: 5000,
 });
 
-let refreshing: Promise<string> | null = null;
+let refreshing: { version:number; promise:Promise<string> } | null = null;
 
 function extractAccessToken(data: unknown): string | null {
   if (!data || typeof data !== "object") return null;
@@ -108,24 +108,25 @@ function isAuthRefreshCandidate(err: AxiosError): boolean {
   return authHints.some((hint) => text.includes(hint));
 }
 
-async function refreshAccessToken(): Promise<string> {
-  if (!refreshing) {
-    refreshing = (async () => {
-      const res = await authApi.post(endpoints.auth.refresh, {});
-      const token = extractAccessToken(res.data);
+export function refreshAccessToken(): Promise<string> {
+  const version = authStore.getSessionVersion();
+  if (refreshing?.version === version) return refreshing.promise;
 
-      if (!token) {
-        throw new Error("Refresh OK mas não retornou accessToken");
-      }
-
-      authStore.setAccessToken(token);
-      return token;
-    })().finally(() => {
-      refreshing = null;
-    });
-  }
-
-  return refreshing;
+  const flight = {version, promise: (async () => {
+    const res = await authApi.post(endpoints.auth.refresh, {});
+    const token = extractAccessToken(res.data);
+    if (!token) throw new Error("Refresh OK mas não retornou accessToken");
+    if (authStore.getSessionVersion() !== version) throw new Error("Sessão alterada durante o refresh");
+    authStore.setAccessToken(token);
+    const user = res.data?.user ?? res.data?.data?.user;
+    if (user) authStore.setMe(user);
+    return token;
+  })()};
+  flight.promise = flight.promise.finally(() => {
+    if (refreshing === flight) refreshing = null;
+  });
+  refreshing = flight;
+  return flight.promise;
 }
 
 api.interceptors.request.use((config) => {
@@ -162,15 +163,18 @@ api.interceptors.response.use(
     }
 
     original._retry = true;
+    const version = authStore.getSessionVersion();
 
     try {
       const newToken = await refreshAccessToken();
+      if (authStore.getSessionVersion() !== version) throw new Error("Sessão alterada");
 
       original.headers = original.headers ?? {};
       original.headers.Authorization = `Bearer ${newToken}`;
 
       return api(original);
     } catch (refreshErr) {
+      if (authStore.getSessionVersion() !== version) return Promise.reject(refreshErr);
       authStore.clearAll();
 
       if (typeof window !== "undefined") {
