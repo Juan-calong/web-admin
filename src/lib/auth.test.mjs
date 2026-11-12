@@ -14,3 +14,25 @@ test('fiscal POST uses existing auth and never refreshes/replays on 401',async()
   assert.equal(requests.some(r=>r.url.includes('/auth/refresh')),false);
   assert.equal(writes.some(([k])=>k==='accessToken'),false);authStore.clearAll();
 });
+
+
+test('existing HTTP auth contract supports cookie refresh after memory loss and logout without persisting token',async()=>{
+  const {api}=await import('./api.ts');const {endpoints}=await import('./endpoints.ts');
+  const requests=[];const previous=api.defaults.adapter;
+  api.defaults.adapter=async config=>{requests.push(config);return {status:200,statusText:'OK',headers:{},config,data:config.url===endpoints.auth.logout?{}:{accessToken:'synthetic-memory-only',user:{id:'admin',role:'ADMIN'}}};};
+  try{
+    const login=await api.post(endpoints.auth.login,{email:'synthetic@example.test',password:'synthetic'});
+    authStore.setAccessToken(login.data.accessToken);authStore.setMe(login.data.user);
+    assert.equal(authStore.getAccessToken(),'synthetic-memory-only');
+    const {readFile}=await import('node:fs/promises');const {default:ts}=await import('typescript');
+    const source=await readFile(new URL('./auth.ts',import.meta.url),'utf8');
+    const fresh=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext}}).outputText).toString('base64'));
+    assert.equal(fresh.authStore.getAccessToken(),null);
+    authStore.clearAccessToken();const refreshed=await api.post(endpoints.auth.refresh,{});authStore.setAccessToken(refreshed.data.accessToken);
+    assert.equal(requests[1].withCredentials,true);assert.equal(requests[1].headers.Authorization,undefined);
+    await api.post(endpoints.auth.logout,{});authStore.clearAll();
+    assert.equal(authStore.getAccessToken(),null);assert.equal(authStore.getMe(),null);
+    assert.deepEqual(requests.map(r=>r.url),[endpoints.auth.login,endpoints.auth.refresh,endpoints.auth.logout]);
+    assert.equal(writes.some(([k])=>k==='accessToken'),false);
+  }finally{api.defaults.adapter=previous;authStore.clearAll();}
+});

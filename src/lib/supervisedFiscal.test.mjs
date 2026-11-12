@@ -4,7 +4,7 @@ const m=await import('./supervisedFiscal.ts').catch(e=>{if(e.code==='ERR_MODULE_
 const ORDER='8ebe6309-8d79-4fd7-82b1-5e55aef5b7c4';
 const snap=()=>({orderId:ORDER,environment:'PRODUCTION',ready:true,authority:'LEGACY',reconciliation:false,automation:null,document:null,danfeUrl:null,xmlUrl:null});
 const binding={orderId:ORDER,documentId:'document',automationId:'automation'};
-const prepared=()=>({...snap(),document:{id:'document',status:'NOT_CREATED'},automation:{automationStatus:'QUEUED'},approvedId:'approval'});
+const prepared=()=>({...snap(),document:{id:'document',status:'NOT_CREATED'},automation:{automationStatus:'QUEUED'},individualBinding:binding,approvedId:'approval'});
 let fixtureNumber=0;
 function fixture(){const approvalId='approval-'+(++fixtureNumber);let state={...prepared(),approvedId:approvalId};const calls=[];const data=new Map([['keyfi-fiscal:'+ORDER,JSON.stringify(binding)]]);let post=async()=>({approvalId,action:'CREATE_SALES_ORDER',expiresAt:'2026-11-12T10:05:00Z',transportAuthorized:false});return {calls,data,approvalId,set state(v){state={...v,approvedId:v.approvedId==='approval'?approvalId:v.approvedId};},set post(v){post=v;},client:()=>m.createSupervisedFiscalClient({read:async()=>state,post:async(...args)=>{calls.push(args);return post(...args);},storage:{getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)},now:()=>Date.parse('2026-11-12T10:00:00Z'),id:()=> 'synthetic',authorized:()=>true})};}
 test('global writes false is not required by individual policy',()=>{assert.equal(m.fiscalStage(prepared(),binding).action,'CREATE_SALES_ORDER');});
@@ -28,16 +28,18 @@ test('non-admin or insufficient scope is never presented as authorized',()=>{
 test('an authorized document with missing remote links never creates or sends a replacement',()=>{
   const s={...prepared(),document:{id:'document',status:'AUTHORIZED'},danfeUrl:'https://example.test/d',xmlUrl:'https://example.test/x'};
   assert.equal(m.fiscalStage(s,binding).action,null);
+  assert.equal(m.fiscalStage({...s,automation:null},null).action,null);
+  assert.equal(m.fiscalStage({...s,automation:{automationStatus:'COMPLETED'}},binding).reason,'NF-e autorizada. Novo envio bloqueado.');
 });
 
 test('approval absent from server validated projection cannot execute',async()=>{const f=fixture();f.state={...prepared(),approvedId:null};await assert.rejects(()=>f.client().execute(ORDER,{approvalId:f.approvalId,action:'CREATE_SALES_ORDER',expiresAt:'2026-11-12T10:05:00Z',transportAuthorized:false}));assert.equal(f.calls.length,0);});
 test('archived files without URLs never trigger a second download',()=>{const s={...prepared(),document:{id:'document',status:'AUTHORIZED',blingOrderId:'sale',blingNfeId:'nfe'},danfeStored:true,xmlStored:true};assert.equal(m.fiscalStage(s,binding).action,null);});
 
-test('preparation sends the supported confirmation and stores only order/document/automation IDs',async()=>{
+test('preparation sends the supported confirmation without persisting authoritative IDs',async()=>{
   const f=fixture();f.state=snap();f.post=async()=>({automationId:'created-auto',documentId:'created-doc',transportAuthorized:false});
   await f.client().prepare(ORDER);
   assert.deepEqual(f.calls[0][1],{confirmation:'PREPARE_ORD_L3F0HN_BEFORE_LABEL_LOCAL_ONLY'});
-  assert.deepEqual(JSON.parse(f.data.get('keyfi-fiscal:'+ORDER)),{orderId:ORDER,documentId:'created-doc',automationId:'created-auto'});
+  assert.equal(f.data.has('keyfi-fiscal:'+ORDER),false);
   assert.equal(f.calls.length,1);
 });
 test('backend rejection is shown by code and is never retried',async()=>{
@@ -49,4 +51,37 @@ test('backend rejection is shown by code and is never retried',async()=>{
 test('client without an explicit legitimate admin check cannot POST',async()=>{
   let calls=0;const c=m.createSupervisedFiscalClient({read:async()=>prepared(),post:async()=>{calls++;},storage:{getItem:()=>null,setItem(){},removeItem(){}}});
   await assert.rejects(()=>c.prepare(ORDER));assert.equal(calls,0);
+});
+
+
+test('cold page recovers the trusted binding through GET with no prepare or cached IDs',async()=>{
+  const f=fixture();f.data.clear();const c=f.client();await c.read(ORDER);
+  assert.deepEqual(c.binding(ORDER),binding);await c.approve(ORDER,'CREATE_SALES_ORDER');
+  assert.equal(f.calls.length,1);assert.doesNotMatch(f.calls[0][0],/prepare/);
+});
+test('operator or stale session IDs cannot replace the GET binding',async()=>{
+  const f=fixture();f.data.set('keyfi-fiscal:'+ORDER,JSON.stringify({...binding,automationId:'arbitrary'}));
+  const c=f.client();await c.approve(ORDER,'CREATE_SALES_ORDER');
+  assert.match(f.calls[0][0],/automations\/automation\/approvals$/);
+});
+test('absent, cross-order and cross-document GET bindings block all POSTs',async()=>{
+  for(const b of [null,{...binding,orderId:'other'},{...binding,documentId:'other'},{...binding,automationId:''}]){
+    const f=fixture();f.state={...prepared(),individualBinding:b};const c=f.client();await c.read(ORDER);
+    assert.equal(c.binding(ORDER),null);await assert.rejects(()=>c.approve(ORDER,'CREATE_SALES_ORDER'));assert.equal(f.calls.length,0);
+  }
+});
+test('lost preparation response recovers only from a consistent GET, without POST replay',async()=>{
+  const f=fixture();f.state=snap();f.post=async()=>{f.state=prepared();throw new Error('response lost');};const c=f.client();
+  await assert.rejects(()=>c.prepare(ORDER));assert.equal(c.isUncertain(ORDER),true);
+  await c.read(ORDER);assert.equal(c.isUncertain(ORDER),false);assert.deepEqual(c.binding(ORDER),binding);assert.equal(f.calls.length,1);
+});
+test('GET cannot clear preparation uncertainty with inconsistent binding or UNKNOWN',async()=>{
+  for(const changes of [{individualBinding:null},{reconciliation:true}]){
+    const f=fixture();f.state={...prepared(),...changes};f.data.set('keyfi-fiscal:'+ORDER+':uncertain',JSON.stringify({action:'PREPARE'}));
+    const c=f.client();await c.read(ORDER);assert.equal(c.isUncertain(ORDER),true);assert.equal(f.calls.length,0);
+  }
+});
+test('ineligible ORD-AO6TTY stays blocked even with a recovered binding',()=>{
+  const orderId='ORD-AO6TTY';const s={...prepared(),orderId,ready:false,document:{id:'document',status:'ERROR'},missing:['FISCAL_LOGISTICS_BLOCKED']};
+  assert.equal(m.fiscalStage(s,{...binding,orderId}).action,null);
 });

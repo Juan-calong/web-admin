@@ -62,6 +62,7 @@ export type FiscalWorkflowResponse = {
   overallStatus?: string | null;
   writeSafety?: FiscalWorkflowWriteSafety | null;
   automation?: FiscalAutomationProjection | null;
+  individualBinding?: {orderId:string; documentId:string; automationId:string} | null;
   summary?: FiscalWorkflowSummary;
   readiness?: Record<string, unknown>;
   documents?: FiscalWorkflowDocuments;

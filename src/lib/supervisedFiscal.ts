@@ -3,6 +3,7 @@ export type FiscalApproval = {approvalId:string; action:Exclude<FiscalAction,'PR
 export type FiscalBinding = {orderId:string; documentId:string; automationId:string};
 export type FiscalSnapshot = {
   orderId:string; environment?:string|null; ready:boolean; authority?:string; reconciliation:boolean;
+  individualBinding?:FiscalBinding|null;
   automation:{automationStatus:string|null; isProcessing?:boolean; nextAttemptAt?:string|null; lastErrorCode?:string|null}|null|undefined;
   document:{id:string; status:string; blingOrderId?:string|null; blingNfeId?:string|null; number?:string|null; series?:string|null; accessKey?:string|null; protocol?:string|null; sent?:boolean}|null;
   danfeUrl:string|null; xmlUrl:string|null; danfeStored?:boolean; xmlStored?:boolean; approvedId?:string|null; missing?:string[];
@@ -22,6 +23,7 @@ export function fiscalStage(s:FiscalSnapshot,b:FiscalBinding|null,now=Date.now()
   if(s.environment!=='PRODUCTION'||s.authority!=='LEGACY')return no('Ambiente ou autoridade individual não confirmados.');
   const d=s.document,a=s.automation;
   if(d&&['CANCELED','CANCELLED','REJECTED','DENIED','ERROR','UNKNOWN'].includes(d.status))return no('Estado fiscal bloqueado: '+d.status+'. Revisão necessária.');
+  if(d?.status==='AUTHORIZED'&&(!a||a.automationStatus==='COMPLETED'))return no('NF-e autorizada. Novo envio bloqueado.');
   if(a&&(!['QUEUED','RETRY_SCHEDULED'].includes(a.automationStatus??'')||a.isProcessing||a.lastErrorCode==='NFE_SEND_RECONCILIATION_PENDING'))return no('Automação indisponível: '+a.automationStatus+'.');
   if(a?.nextAttemptAt&&Date.parse(a.nextAttemptAt)>now)return no('Aguardando o prazo de uma tentativa anterior.');
   if(!s.ready)return no('Pré-condições fiscais pendentes. Consulte os impedimentos.');
@@ -29,7 +31,7 @@ export function fiscalStage(s:FiscalSnapshot,b:FiscalBinding|null,now=Date.now()
     if(d?.blingOrderId||d?.blingNfeId)return no('Documento existente sem automação individual identificada.');
     return [BURITI_ORDER,HISTORICAL_ORDER].includes(s.orderId)?yes('PREPARE'):no('O backend não disponibiliza preparação individual para este pedido.');
   }
-  if(!d||!b||b.orderId!==s.orderId||b.documentId!==d.id||!idPattern.test(b.automationId))return no('Vínculo da automação indisponível nesta aba. Não prepare novamente nem informe IDs manualmente.');
+  if(!d||!b||b.orderId!==s.orderId||b.documentId!==d.id||!idPattern.test(b.automationId))return no('Vínculo da automação não confirmado pelo servidor. Não prepare novamente nem informe IDs manualmente.');
   if(d.status==='AUTHORIZED'){
     if(!s.danfeUrl&&!s.danfeStored)return yes('DOWNLOAD_DANFE');
     if(!s.xmlUrl&&!s.xmlStored)return yes('DOWNLOAD_XML');
@@ -49,12 +51,20 @@ export function createSupervisedFiscalClient({read,post,storage,now=Date.now,id=
 }){
   const key=(orderId:string)=>'keyfi-fiscal:'+orderId;
   const uncertain=(orderId:string)=>key(orderId)+':uncertain';
-  function binding(orderId:string):FiscalBinding|null{try{const b=JSON.parse(storage.getItem(key(orderId))??'null');return b&&b.orderId===orderId&&idPattern.test(b.documentId)&&idPattern.test(b.automationId)?b:null;}catch{return null;}}
+  const verifiedBindings=new Map<string,FiscalBinding>();
+  function binding(orderId:string):FiscalBinding|null{return verifiedBindings.get(orderId)??null;}
   async function refresh(orderId:string){
+    verifiedBindings.delete(orderId);
     const s=await read(orderId);check(s.orderId===orderId,'Pedido divergente.');
+    const b=s.individualBinding;
+    if(s.automation&&s.document&&b&&b.orderId===orderId&&b.documentId===s.document.id&&idPattern.test(b.documentId)&&idPattern.test(b.automationId)){
+      verifiedBindings.set(orderId,{orderId,documentId:b.documentId,automationId:b.automationId});
+    }
+    // Legacy session IDs are never an authority, including after reload or a lost response.
+    storage.removeItem(key(orderId));
     const prior=storage.getItem(uncertain(orderId));
     if(prior){let action;try{action=JSON.parse(prior).action;}catch{action=null;}
-      const confirmed=(action==='CREATE_SALES_ORDER'&&s.document?.blingOrderId)||(action==='CREATE_NFE'&&s.document?.blingNfeId)||(action==='SEND_NFE'&&['PENDING','AUTHORIZED'].includes(s.document?.status??''))||(action==='DOWNLOAD_DANFE'&&(s.danfeUrl||s.danfeStored))||(action==='DOWNLOAD_XML'&&(s.xmlUrl||s.xmlStored));
+      const confirmed=(action==='PREPARE'&&binding(orderId)&&s.document?.status==='NOT_CREATED'&&!s.document.blingOrderId&&!s.document.blingNfeId&&!s.automation?.isProcessing&&s.automation?.automationStatus==='QUEUED')||(action==='CREATE_SALES_ORDER'&&s.document?.blingOrderId)||(action==='CREATE_NFE'&&s.document?.blingNfeId)||(action==='SEND_NFE'&&['PENDING','AUTHORIZED'].includes(s.document?.status??''))||(action==='DOWNLOAD_DANFE'&&(s.danfeUrl||s.danfeStored))||(action==='DOWNLOAD_XML'&&(s.xmlUrl||s.xmlStored));
       if(confirmed&&!s.reconciliation)storage.removeItem(uncertain(orderId));
     }
     return s;
@@ -85,7 +95,7 @@ export function createSupervisedFiscalClient({read,post,storage,now=Date.now,id=
     const body=orderId===BURITI_ORDER?{confirmation:'PREPARE_ORD_L3F0HN_BEFORE_LABEL_LOCAL_ONLY'}:{};
     const r=await submit(orderId,'PREPARE',`/admin/orders/${encodeURIComponent(orderId)}/fiscal/individual/prepare`,body) as {automationId:string;documentId:string;transportAuthorized:boolean};
     check(r&&idPattern.test(r.automationId)&&idPattern.test(r.documentId)&&r.transportAuthorized===false,'Preparação não confirmada.');
-    storage.setItem(key(orderId),JSON.stringify({orderId,documentId:r.documentId,automationId:r.automationId}));return r;
+    return r; // The next GET must independently prove the persisted binding.
   });}
   return {read:refresh,prepare,approve,execute,binding,isUncertain:(orderId:string)=>{try{return Boolean(storage.getItem(uncertain(orderId)));}catch{return true;}}};
 }
