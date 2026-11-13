@@ -23,15 +23,20 @@ import { ProductStatusPanel } from "@/components/admin/ProductStatusPanel";
 import { ProductListTextarea } from '@/components/admin/ProductListTextarea';
 import { ProductFieldFeedback } from '@/components/admin/ProductFieldFeedback';
 import { ProductFiscalField } from '@/components/admin/ProductFiscalField';
-import { checkDecimal, checkDecimalDraft, checkFiscal, checkWholeNumber, checkInteger, validProductPrice, fiscalErrorMessage, wouldExceedTextLimit, parseProductList, checkListChange, clearCorrectedListError, replaceScopedProductErrors, PRODUCT_FORM_LIMITS, resolveImageSelection, resolveVideoSelection, productImageContentType } from '@/lib/productFormRules';
+import { productActivationPatch, checkDecimal, checkDecimalDraft, checkFiscal, checkWholeNumber, checkInteger, validProductPrice, fiscalErrorMessage, wouldExceedTextLimit, parseProductList, checkListChange, clearCorrectedListError, replaceScopedProductErrors, PRODUCT_FORM_LIMITS, resolveImageSelection, resolveVideoSelection, productImageContentType } from '@/lib/productFormRules';
 import { formatProductIssues } from '@/lib/productIssues';
 
 import { api } from "@/lib/api";
+import { authStore } from "@/lib/auth";
 import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
 import { cn } from "@/lib/utils";
 import {
   getAdminProductFiscal,
+  productSyncStatus,
+  productSyncConfirmation,
+  productSyncPlanUsable,
+  type ProductFiscalSyncPlan,
   syncAdminProductToBling,
   updateAdminProductFiscal,
   type ProductFiscalInput,
@@ -683,25 +688,34 @@ export default function EditProductPage() {
     });
   }, [fiscalQ.data]);
 
-  const [confirmedFiscalRevision, setConfirmedFiscalRevision] = useState<string | null>(null);
-  const fiscalRevisionKey = JSON.stringify([fiscalQ.data?.syncPlan, fiscalQ.data?.fiscalData]);
-  const revisionConfirmed = confirmedFiscalRevision === fiscalRevisionKey;
     const syncBlingM = useMutation({
-    mutationFn: async () => syncAdminProductToBling(id, fiscalQ.data?.syncPlan, revisionConfirmed),
-    onSuccess: async (data) => {
-      if (data?.created) {
+    mutationFn: async ({plan,confirmedRevision}:{plan:ProductFiscalSyncPlan;confirmedRevision:boolean}) => syncAdminProductToBling(id, plan, confirmedRevision, true),
+    onSuccess: async (data, {plan}) => {
+      if (plan.action === "RECONCILE" && data?.accountBlocked === true) {
+        toast.warning("Reconciliação consultada. A conta continua bloqueada por outra pendência; nenhum envio foi repetido.");
+      } else if (plan.action === "RECONCILE") {
+        toast.success("Reconciliação consultada. Confira a situação atualizada do produto. Nenhuma escrita externa foi repetida.");
+      } else if (data?.created) {
         toast.success("Produto criado no Bling.");
       } else if (data?.updated) {
         toast.success("Produto atualizado no Bling.");
       } else {
-        toast.success("Produto sincronizado com Bling.");
+        toast.success("Operação concluída. Confira a situação atualizada do produto no Bling.");
       }
-      await qc.invalidateQueries({ queryKey: ["product-fiscal", id] });
     },
     onError: (err) => {
-      toast.error(apiErrorMessage(err, "Falha ao sincronizar produto com Bling."));
-      void qc.invalidateQueries({ queryKey: ["product-fiscal", id] });
-      setConfirmedFiscalRevision(null);
+      toast.error(apiErrorMessage(err, "Operação não confirmada. Atualize o cadastro e verifique a situação antes de confirmar novamente. Nenhuma repetição automática foi realizada."));
+    },
+    onSettled: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["product-fiscal", id] }),
+        qc.invalidateQueries({ queryKey: ["product", id] }),
+        qc.invalidateQueries({ queryKey: ["products"] }),
+      ]);
+      const refreshed = qc.getQueryData<Product>(["product", id]);
+      if (refreshed && refreshed.name !== product?.name) {
+        setName(current => current === product?.name ? refreshed.name : current);
+      }
     },
   });
 
@@ -722,7 +736,6 @@ export default function EditProductPage() {
     },
     onSuccess: async () => {
       toast.success("Dados fiscais salvos na KeyFi. A sincronização com o Bling é uma etapa separada.");
-      setConfirmedFiscalRevision(null);
       await qc.invalidateQueries({ queryKey: ["product-fiscal", id] });
     },
     onError: (err) => {
@@ -736,9 +749,9 @@ export default function EditProductPage() {
     [fiscalForm, fiscalQ.data?.fiscalData],
   );
   const syncDisabled =
-    fiscalQ.data?.readiness?.ready !== true || !fiscalQ.data?.syncPlan || fiscalQ.data.syncPlan.blocked || (fiscalQ.data.syncPlan.requiresRevision && !revisionConfirmed) || saveFiscalM.isPending || syncBlingM.isPending || hasUnsavedFiscalChanges;
+    authStore.getMe()?.role !== "ADMIN" || fiscalQ.isFetching || fiscalQ.isError || (fiscalQ.data?.syncPlan?.action !== "RECONCILE" && fiscalQ.data?.readiness?.ready !== true) || !productSyncPlanUsable(fiscalQ.data?.syncPlan) || saveFiscalM.isPending || syncBlingM.isPending || hasUnsavedFiscalChanges;
   const syncDisabledTitle =
-    fiscalQ.data?.readiness?.ready !== true
+    fiscalQ.data?.syncPlan?.action !== "RECONCILE" && fiscalQ.data?.readiness?.ready !== true
       ? "Complete os dados fiscais obrigatórios antes de sincronizar."
       : hasUnsavedFiscalChanges
         ? "Salve os dados fiscais antes de sincronizar com o Bling."
@@ -1008,7 +1021,7 @@ useEffect(() => {
         description: description.trim() ? description.trim() : null,
         price: priceSan,
         customerPrice: customerPrice.trim() ? normalizeMoney(customerPrice) : null,
-        active: Boolean(active),
+        ...productActivationPatch(Boolean(active), product?.active),
         stock: stockSafe,
         categoryId: categoryId ? categoryId : null,
         categoryIds: Array.from(new Set([...(categoryIds ?? []), ...(categoryId ? [categoryId] : [])])),
@@ -2484,13 +2497,7 @@ onClick={() => {
                   </div>
                   <p className="text-sm text-slate-600">Salvar estes dados não confirma o enquadramento tributário nem sua aplicação na NF-e. Confira a parametrização da operação no Bling com a responsável fiscal.</p>
                   {!fiscalQ.data?.syncPlan && <p className="text-sm text-amber-700">Não foi possível obter a revisão atual. Recarregue o cadastro antes de sincronizar.</p>}
-                  {fiscalQ.data?.syncPlan?.blocked && <p className="text-sm text-amber-700">Sincronização bloqueada. Verifique a autoridade fiscal e pendências de reconciliação antes de tentar novamente.</p>}
-                  {fiscalQ.data?.syncPlan?.requiresRevision && !fiscalQ.data.syncPlan.blocked && (
-                    <label className="flex items-center gap-2 text-sm">
-                      <input type="checkbox" checked={revisionConfirmed} onChange={(event) => setConfirmedFiscalRevision(event.target.checked ? fiscalRevisionKey : null)} />
-                      Confirmo a sincronização dos dados salvos na revisão {fiscalQ.data.syncPlan.legacyRevision}. Esta confirmação não aprova o enquadramento tributário.
-                    </label>
-                  )}
+                  {fiscalQ.data?.syncPlan?.blocked && <p className="text-sm text-amber-700">Sincronização bloqueada. {fiscalQ.data.syncPlan.reason || "Verifique a autoridade fiscal e pendências de reconciliação antes de tentar novamente."}</p>}
                   <div className="space-y-4">
                     <div className="rounded-2xl border border-slate-200 p-4">
                       <h4 className="mb-3 text-sm font-semibold text-slate-900">Dados principais</h4>
@@ -2516,16 +2523,24 @@ onClick={() => {
                         <Label>{FISCAL_FIELD_META.blingProductId.label}</Label>
                         <Input className="h-11 rounded-2xl border-slate-200 bg-slate-100" value={fiscalForm.blingProductId} readOnly />
                         <div className="text-xs text-slate-500">{FISCAL_FIELD_META.blingProductId.help}</div>
-                        <div className="text-xs text-slate-500">Use a sincronização para criar ou atualizar este produto no Bling com os dados fiscais atuais.</div>
+                        <p role="status" className="text-sm font-medium">{productSyncStatus(fiscalQ.data?.syncPlan)}</p>
+                        <div className="text-xs text-slate-500">Confirme os dados antes de sincronizar. Resultados desconhecidos exigem reconciliação somente leitura.</div>
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => syncBlingM.mutate()}
+                          onClick={() => {
+                            const plan = fiscalQ.data?.syncPlan;
+                            if (syncDisabled || !plan || !product) return;
+                            if (window.confirm(productSyncConfirmation({name:product.name,sku:product.sku,gtin:fiscalQ.data?.fiscalData?.gtin,plan}))) {
+                              syncBlingM.mutate({plan,confirmedRevision:true});
+                            }
+                          }}
                           disabled={syncDisabled}
                           title={syncDisabledTitle}
                         >
-                          {syncBlingM.isPending ? "Sincronizando…" : "Sincronizar com Bling"}
+                          {syncBlingM.isPending ? "Aguarde…" : fiscalQ.data?.syncPlan?.action === "RECONCILE" ? "Reconciliar com Bling" : "Sincronizar com Bling"}
                         </Button>
+                        <Button type="button" variant="ghost" disabled={fiscalQ.isFetching || syncBlingM.isPending} onClick={() => { void fiscalQ.refetch(); }}>Atualizar situação no Bling</Button>
                           {hasUnsavedFiscalChanges ? (
                           <div className="text-xs text-amber-700">
                             Existem alterações fiscais não salvas. Salve antes de sincronizar.

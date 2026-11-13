@@ -112,3 +112,10 @@ export function checkInteger(value: string): boolean {
 export function wouldExceedTextLimit(current: string, start: number, end: number, insert: string, max: number): boolean {
   return current.length - (end - start) + insert.length > max;
 }
+
+export function productActivationPatch(active: boolean): { active: false };
+export function productActivationPatch(active: boolean, savedActive: boolean | undefined): { active?: boolean };
+export function productActivationPatch(active: boolean, savedActive?: boolean): { active?: boolean } {
+  if (savedActive === undefined) return { active: false };
+  return active === savedActive ? {} : { active };
+}

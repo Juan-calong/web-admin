@@ -1,6 +1,4 @@
 "use client";
-import {UMBRELLA_ORDER} from '@/lib/umbrellaRegularization';
-import {UmbrellaRegularization} from '@/components/admin/UmbrellaRegularization';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {useQuery,useQueryClient} from '@tanstack/react-query';
 import {authStore} from '@/lib/auth';
@@ -46,14 +44,12 @@ function Panel({orderId}:{orderId:string}){
   }
   const s=state.data;
   const stage=s?fiscalStage(s,client.binding(orderId),now):null;
-  const regularizationRequired=orderId===UMBRELLA_ORDER&&stage?.action==='PREPARE';
   const uncertain=typeof window!=='undefined'&&client.isUncertain(orderId);
-  const reason=!admin?'Acesso ADMIN com escopo de pedidos necessário.':state.isError?'Não foi possível confirmar o estado atual. Nenhuma operação permitida.':regularizationRequired?'Conclua a regularização supervisionada e use Preparar pedido regularizado.':uncertain?'Resultado anterior não confirmado. Atualize e reconcilie antes de qualquer novo POST.':stage?.reason??'';
-  const enabled=admin&&!state.isFetching&&!state.isError&&!uncertain&&!busy&&!regularizationRequired;
+  const reason=!admin?'Acesso ADMIN com escopo de pedidos necessário.':state.isError?'Não foi possível confirmar o estado atual. Nenhuma operação permitida.':uncertain?'Resultado anterior não confirmado. Atualize e reconcilie antes de qualquer novo POST.':stage?.reason??'';
+  const enabled=admin&&!state.isFetching&&!state.isError&&!uncertain&&!busy;
   return <Card className="rounded-[28px] border-zinc-200 bg-white">
     <CardHeader><CardTitle>Fiscal / Bling — emissão supervisionada</CardTitle><p className="text-sm text-zinc-600">Use sua sessão administrativa. Nenhum token precisa ser copiado.</p></CardHeader>
     <CardContent className="space-y-4">
-      <UmbrellaRegularization orderId={orderId}/>
       <Button type="button" variant="outline" disabled={busy||state.isFetching||!admin} onClick={()=>{void refresh();}}>Atualizar situação fiscal</Button>
       {state.isLoading?<p role="status">Consultando situação fiscal…</p>:null}
       {error?<p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>:null}
