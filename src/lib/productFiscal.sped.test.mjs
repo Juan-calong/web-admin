@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import ts from 'typescript';
 const calls=[];
 globalThis.__sped={api:{put:async(_p,data)=>{calls.push(JSON.parse(JSON.stringify(data)));return {data:{}};}},endpoints:{adminProductFiscal:{save:id=>id}}};
-const source=fs.readFileSync(new URL('./productFiscal.ts',import.meta.url),'utf8').replace(/^import .* from "@\/lib\/(api|endpoints)";\n/gm,'');
-const js=ts.transpileModule('const {api,endpoints}=globalThis.__sped;\n'+source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const source=fs.readFileSync(new URL('./productFiscal.ts',import.meta.url),'utf8').replace(/^import .* from "@\/lib\/(api|endpoints|auth|fiscalNoAuthRetry)";\n/gm,'');
+const js=ts.transpileModule('const authStore={getMe:()=>({role:"ADMIN"})}; const fiscalNoAuthRetryConfig={skipAuthRetry:true}; const {api,endpoints}=globalThis.__sped;\n'+source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 const fiscal=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 test('invalid changed SPED labels never reach save; no automatic conversion',async()=>{
  for(const itemType of ['PERODUTO_REVENDA','PRODUTO_REVENDA','MERCADORIA_REVENDA','0','11']){

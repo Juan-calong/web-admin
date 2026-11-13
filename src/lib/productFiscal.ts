@@ -1,3 +1,5 @@
+import { authStore } from "@/lib/auth";
+import { fiscalNoAuthRetryConfig } from "@/lib/fiscalNoAuthRetry";
 import { api } from "@/lib/api";
 import { endpoints } from "@/lib/endpoints";
 
@@ -33,7 +35,28 @@ export type ProductFiscalResponse = {
 };
 
 export type ProductFiscalInput = ProductFiscalData;
-export type ProductFiscalSyncPlan = { blocked: boolean; reason?: string | null; legacyRevision: number | null; requiresRevision: boolean };
+export type ProductFiscalSyncPlan = {
+  blocked: boolean; reason?: string | null; legacyRevision: number | null; requiresRevision: boolean;
+  status: 'NOT_SYNCED' | 'SYNCED' | 'ERROR' | 'UNKNOWN'; action: 'SYNC' | 'RECONCILE';
+  snapshotHash: string; proposedName?: string; identityConfirmationRequired: boolean;
+};
+
+export function productSyncStatus(plan?: ProductFiscalSyncPlan) {
+  return plan ? ({NOT_SYNCED:'Não sincronizado',SYNCED:'Sincronizado',ERROR:'Erro na sincronização',UNKNOWN:'Resultado desconhecido — reconciliação necessária'}[plan.status] ?? 'Situação não confirmada') : 'Situação não confirmada';
+}
+export function productSyncConfirmation({name,sku,gtin,plan}:{name:string;sku:string;gtin?:string|null;plan:ProductFiscalSyncPlan}) {
+  return [plan.action==='RECONCILE' ? 'Confirmar reconciliação com Bling somente leitura? Nenhum produto será criado ou atualizado.' : 'Confirmar sincronização deste produto com Bling? A API poderá criar, associar ou atualizar o produto.',
+    `Produto: ${name}`, `SKU: ${sku}`, `GTIN: ${gtin || 'Não informado'}`,
+    plan.proposedName ? `Nome proposto: ${plan.proposedName}` : '',
+    plan.requiresRevision ? `Confirmo a sincronização dos dados salvos na revisão ${plan.legacyRevision}.` : '',
+    plan.identityConfirmationRequired ? 'Confirmo como ADMIN que estes dados identificam a apresentação real do produto, incluindo as unidades já vendidas.' : 'Confirmo esta operação como ADMIN.',
+    'Esta confirmação não aprova o enquadramento tributário. Não haverá repetição automática.'
+  ].filter(Boolean).join('\n');
+}
+export function productSyncPlanUsable(plan?: ProductFiscalSyncPlan) {
+  return !!plan && plan.blocked===false && typeof plan.requiresRevision==='boolean' && /^[a-f0-9]{64}$/i.test(plan.snapshotHash) && typeof plan.identityConfirmationRequired==='boolean' &&
+    (plan.status==='UNKNOWN' ? plan.action==='RECONCILE' : ['NOT_SYNCED','SYNCED','ERROR'].includes(plan.status) && plan.action==='SYNC');
+}
 
 export async function getAdminProductFiscal(productId: string) {
   const { data } = await api.get(endpoints.adminProductFiscal.get(productId));
@@ -83,6 +106,7 @@ export async function updateAdminProductFiscal(productId: string, input: Product
   return (data?.item ?? data) as ProductFiscalResponse;
 }
 export type ProductBlingSyncResponse = {
+  accountBlocked?: boolean;
   productId: string;
   sku?: string | null;
   name?: string | null;
@@ -95,11 +119,21 @@ export type ProductBlingSyncResponse = {
   syncedAt?: string;
 };
 
-export async function syncAdminProductToBling(productId: string, plan?: ProductFiscalSyncPlan, confirmedRevision = false) {
-  if (!plan || plan.blocked) throw new Error("Sincronização indisponível: atualize o cadastro e verifique pendências de reconciliação.");
+const pendingProductSync = new Set<string>();
+export async function syncAdminProductToBling(productId: string, plan?: ProductFiscalSyncPlan, confirmedRevision = false, confirmed = false) {
+  if (authStore.getMe()?.role !== 'ADMIN' || !confirmed) throw new Error("Confirmação ADMIN necessária antes de sincronizar ou reconciliar.");
+  if (!productSyncPlanUsable(plan) || !plan) throw new Error("Sincronização indisponível: atualize o cadastro e verifique pendências de reconciliação.");
   if (plan.requiresRevision && (!confirmedRevision || !Number.isSafeInteger(plan.legacyRevision) || (plan.legacyRevision ?? 0) < 1)) {
     throw new Error("Confirme explicitamente a revisão fiscal proposta antes de sincronizar.");
   }
-  const { data } = await api.post(endpoints.adminProductBling.sync(productId), plan.requiresRevision ? { legacyRevision: plan.legacyRevision } : {});
-  return (data?.item ?? data) as ProductBlingSyncResponse;
+  if (pendingProductSync.has(productId)) throw new Error("Operação em andamento. Aguarde e atualize a situação antes de tentar novamente.");
+  pendingProductSync.add(productId);
+  try {
+    const { data } = await api.post(endpoints.adminProductBling.sync(productId), {
+      requestId: crypto.randomUUID(), snapshotHash: plan.snapshotHash, identityConfirmed: true,
+      confirmation: plan.action==='RECONCILE' ? 'RECONCILE_PRODUCT_READ_ONLY' : 'SYNC_PRODUCT_WITH_BLING',
+      ...(plan.requiresRevision ? {legacyRevision: plan.legacyRevision} : {}),
+    }, fiscalNoAuthRetryConfig);
+    return (data?.item ?? data) as ProductBlingSyncResponse;
+  } finally { pendingProductSync.delete(productId); }
 }

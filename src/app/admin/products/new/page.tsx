@@ -10,7 +10,7 @@ import { endpoints } from "@/lib/endpoints";
 import { apiErrorMessage } from "@/lib/apiError";
 import { ProductFiscalInput, updateAdminProductFiscal } from "@/lib/productFiscal";
 import { postCreationAction, submitProductWithFiscalRecovery, type FiscalRecoveryResult } from '@/lib/productFiscalRecovery';
-import { checkDecimal, checkDecimalDraft, checkFiscal, checkWholeNumber, checkInteger, validProductPrice, fiscalErrorMessage, wouldExceedTextLimit, parseProductList, checkListChange, clearCorrectedListError, replaceScopedProductErrors, PRODUCT_FORM_LIMITS, resolveImageSelection, resolveVideoSelection, productImageContentType } from '@/lib/productFormRules';
+import { productActivationPatch, checkDecimal, checkDecimalDraft, checkFiscal, checkWholeNumber, checkInteger, validProductPrice, fiscalErrorMessage, wouldExceedTextLimit, parseProductList, checkListChange, clearCorrectedListError, replaceScopedProductErrors, PRODUCT_FORM_LIMITS, resolveImageSelection, resolveVideoSelection, productImageContentType } from '@/lib/productFormRules';
 import { formatProductIssues } from '@/lib/productIssues';
 import { ProductListTextarea } from '@/components/admin/ProductListTextarea';
 import { ProductFieldFeedback } from '@/components/admin/ProductFieldFeedback';
@@ -277,7 +277,7 @@ export default function NewProductPage() {
   const [howToUseText, setHowToUseText] = useState("");
 
   const [stock, setStock] = useState<number>(0);
-  const [active, setActive] = useState(true);
+  const [active, setActive] = useState(false);
 
   const [categoryId, setCategoryId] = useState<string>("");
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
@@ -355,7 +355,7 @@ export default function NewProductPage() {
       setStock(
         Number.isFinite(Number(draft.stock)) ? Math.max(0, Number(draft.stock)) : 0
       );
-      setActive(!!draft.active);
+      setActive(false);
       setCategoryId(draft.categoryId ?? "");
       setCategoryIds(Array.isArray(draft.categoryIds) ? draft.categoryIds : []);
       setCatSearch(draft.catSearch ?? "");
@@ -802,7 +802,7 @@ export default function NewProductPage() {
         name: nameN,
         price: priceN,
         customerPrice: customerPriceN ? customerPriceN : null,
-        active: Boolean(active),
+        ...productActivationPatch(active),
         stock: stockSafe,
         categoryId: categoryId ? categoryId : null,
         categoryIds: Array.from(
@@ -1585,7 +1585,7 @@ export default function NewProductPage() {
                     ].join(" ")}
                   >
                     <CheckCircle2 className="h-4 w-4" />
-                    {active ? "Ativo" : "Inativo"}
+                    {active ? "Ativo" : "Rascunho"}
                   </div>
                 </div>
 
@@ -1596,13 +1596,13 @@ export default function NewProductPage() {
                         Produto ativo
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
-                        Produto ativo aparece no catálogo.
+                        Salve como rascunho, sincronize com Bling e ative.
                       </p>
                     </div>
 
                     <Checkbox
                       checked={active}
-                      onCheckedChange={(checked) => setActive(checked === true)}
+                      disabled
                     />
                   </label>
 

@@ -169,3 +169,22 @@ Nenhum gate, ENV, dependência do backend, Worker ou cadastro fiscal foi alterad
 Correção de segurança validada. O lint global não está verde e precisa de
 tratamento ou aceitação explícita da dívida preexistente antes de declarar a
 validação integral para merge. Não considerar somente o sucesso do build.
+
+## Sincronização e painel simplificado
+
+Produtos novos são salvos como rascunho. Na edição existente, a seção fiscal
+mostra Não sincronizado, Sincronizado, Erro ou Resultado desconhecido conforme o
+GET do backend. O mesmo botão confirma dados e sincroniza; em UNKNOWN, oferece
+somente reconciliação por leitura, sem repetir POST externo. Um ID Bling isolado
+não comprova sincronização. A confirmação inclui a apresentação real e o nome
+proposto quando há conflito; não há painel documental especial do Umbrella.
+
+Depois de confirmar a integração, a ativação comercial exige validação backend.
+A transição bloqueia novos pedidos de produtos legados ainda sem confirmação;
+não altera pedidos pagos. Backend PR #42 deve preceder a publicação deste Admin.
+
+No pedido, o painel fiscal mostra apenas a etapa atual e sua próxima ação.
+Recuperação NFE_SEND aparece somente quando informada pelo servidor. NF-e já
+autorizada mantém os documentos existentes e não oferece reemissão. Aprovações,
+confirmação de envio, autenticação em memória e ausência de replay em 401 continuam
+inalteradas. Worker, P3 e gates globais não são acionados por esta interface.

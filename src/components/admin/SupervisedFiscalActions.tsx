@@ -19,7 +19,7 @@ export function SupervisedFiscalActions({snapshot:s,action,reason,approval,busy,
     {reason?<p role="status" className="rounded-xl bg-amber-50 p-3 text-sm">{reason}</p>:null}
     {s.automation?.lastErrorCode?<p className="text-sm text-red-700">Erro operacional: {s.automation.lastErrorCode}</p>:null}
     {approval?<p role="status" className="text-sm">Aprovação: {fiscalActionLabels[approval.action]}. Expira em {new Date(approval.expiresAt).toLocaleString('pt-BR')}. {!valid?'Expirada ou incompatível; solicite nova aprovação.':''}</p>:null}
-    <div className="space-y-2">{(Object.keys(fiscalActionLabels) as FiscalAction[]).map(a=>{
+    <div className="space-y-2">{(action?[action]:[]).map(a=>{
       const enabled=action===a&&!busy;
       const execute=a!=='PREPARE'&&enabled&&valid;
       const label=a==='PREPARE'?fiscalActionLabels[a]:execute?'Executar: '+fiscalActionLabels[a]:'Solicitar aprovação: '+fiscalActionLabels[a];

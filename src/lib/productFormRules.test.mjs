@@ -107,3 +107,14 @@ test('description paste rejects excess without losing existing text', () => {
   assert.equal(wouldExceedTextLimit('x'.repeat(2000), 1999, 2000, 'ab', 2000), true);
   assert.equal(wouldExceedTextLimit('x'.repeat(2000), 1998, 2000, 'ab', 2000), false);
 });
+
+test('new products start as drafts even when an old draft requested activation', () => {
+  assert.deepEqual(rules.productActivationPatch(true), { active: false });
+  assert.deepEqual(rules.productActivationPatch(false), { active: false });
+});
+test('product edits omit unchanged activation and preserve explicit status changes', () => {
+  assert.deepEqual(rules.productActivationPatch(true, true), {});
+  assert.deepEqual(rules.productActivationPatch(false, false), {});
+  assert.deepEqual(rules.productActivationPatch(true, false), { active: true });
+  assert.deepEqual(rules.productActivationPatch(false, true), { active: false });
+});
