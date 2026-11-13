@@ -8,6 +8,24 @@ export type FiscalSnapshot = {
   document:{id:string; status:string; blingOrderId?:string|null; blingNfeId?:string|null; number?:string|null; series?:string|null; accessKey?:string|null; protocol?:string|null; sent?:boolean}|null;
   danfeUrl:string|null; xmlUrl:string|null; danfeStored?:boolean; xmlStored?:boolean; approvedId?:string|null; missing?:string[];
 };
+export type FiscalSendRecoveryResult={auditId:string;status:'AUTHORIZED';accountBlocked:boolean;reused:boolean;transportAuthorized:false};
+export const SEND_RECOVERY_CONFIRMATION='RECOVER_UNKNOWN_NFE_SEND_READ_ONLY';
+export function sendRecoveryState(s:FiscalSnapshot,b:FiscalBinding|null){
+  const pending=s.automation?.lastErrorCode==='NFE_SEND_RECONCILIATION_PENDING';
+  const no=(reason:string)=>({pending,canRequest:false,reason});
+  if(!pending)return no('Nenhum envio incerto informado pelo servidor.');
+  if(!s.document||!s.automation||!b||b.orderId!==s.orderId||b.documentId!==s.document.id||!idPattern.test(b.documentId)||!idPattern.test(b.automationId))return no('Vínculo da automação não confirmado pelo servidor. Atualize a situação fiscal.');
+  if(!['PRODUCTION','HOMOLOGATION'].includes(s.environment??'')||s.authority!=='LEGACY')return no('Ambiente ou autoridade não confirmados pelo servidor.');
+  if(s.automation.isProcessing||!['QUEUED','RECONCILIATION_REQUIRED'].includes(s.automation.automationStatus??''))return no('Automação em execução ou indisponível para solicitar recuperação.');
+  if(!s.document.blingOrderId||!s.document.blingNfeId||['CANCELED','CANCELLED','DENIED','REJECTED'].includes(s.document.status))return no('Documento existente e vínculo de venda precisam ser confirmados pelo servidor.');
+  return {pending,canRequest:true,reason:'A API validará as evidências e decidirá sobre a recuperação e o bloqueio da conta.'};
+}
+export function sendRecoveryErrorMessage(error:unknown){
+  const e=error as {response?:{status?:number;data?:{code?:string}}};
+  if(e?.response?.status===401)return 'Sessão expirada. Entre novamente e atualize o pedido. A recuperação não foi repetida.';
+  if(e?.response?.data?.code==='NFE_SEND_RECOVERY_EVIDENCE_UNCONFIRMED')return 'Evidência insuficiente para confirmar o envio. A conta permanece bloqueada; nenhuma NF-e será criada ou reenviada.';
+  return 'Recuperação não confirmada. '+fiscalErrorMessage(error)+' Nenhuma repetição automática foi realizada.';
+}
 export const fiscalActionLabels:Record<FiscalAction,string>={PREPARE:'Preparar individualmente',CREATE_SALES_ORDER:'Criar venda no Bling',CREATE_NFE:'Criar NF-e',SEND_NFE:'Enviar NF-e à SEFAZ',SYNC_NFE:'Sincronizar autorização',DOWNLOAD_DANFE:'Salvar DANFE',DOWNLOAD_XML:'Salvar XML'};
 export const BURITI_ORDER='8ebe6309-8d79-4fd7-82b1-5e55aef5b7c4';
 const HISTORICAL_ORDER='88b8867c-ee9a-4091-9969-b631aa616869';
@@ -51,6 +69,7 @@ export function createSupervisedFiscalClient({read,post,storage,now=Date.now,id=
 }){
   const key=(orderId:string)=>'keyfi-fiscal:'+orderId;
   const uncertain=(orderId:string)=>key(orderId)+':uncertain';
+  const recoveryKey=(orderId:string)=>key(orderId)+':send-recovery';
   const verifiedBindings=new Map<string,FiscalBinding>();
   function binding(orderId:string):FiscalBinding|null{return verifiedBindings.get(orderId)??null;}
   async function refresh(orderId:string){
@@ -67,11 +86,22 @@ export function createSupervisedFiscalClient({read,post,storage,now=Date.now,id=
       const confirmed=(action==='PREPARE'&&binding(orderId)&&s.document?.status==='NOT_CREATED'&&!s.document.blingOrderId&&!s.document.blingNfeId&&!s.automation?.isProcessing&&s.automation?.automationStatus==='QUEUED')||(action==='CREATE_SALES_ORDER'&&s.document?.blingOrderId)||(action==='CREATE_NFE'&&s.document?.blingNfeId)||(action==='SEND_NFE'&&['PENDING','AUTHORIZED'].includes(s.document?.status??''))||(action==='DOWNLOAD_DANFE'&&(s.danfeUrl||s.danfeStored))||(action==='DOWNLOAD_XML'&&(s.xmlUrl||s.xmlStored));
       if(confirmed&&!s.reconciliation)storage.removeItem(uncertain(orderId));
     }
+    // Resolve only this read-recovery decision, even if another account cause remains.
+    const recovery=storage.getItem(recoveryKey(orderId));
+    if(recovery&&s.document?.status==='AUTHORIZED'&&s.automation&&s.automation.lastErrorCode!=='NFE_SEND_RECONCILIATION_PENDING'){
+      let saved;try{saved=JSON.parse(recovery);}catch{saved=null;}
+      const b=binding(orderId);
+      if(b&&saved?.documentId===b.documentId&&saved?.automationId===b.automationId){
+        storage.removeItem(recoveryKey(orderId));
+        let priorAction;try{priorAction=JSON.parse(storage.getItem(uncertain(orderId))??'null')?.action;}catch{priorAction=null;}
+        if(['SEND_NFE','RECOVER_NFE_SEND'].includes(priorAction))storage.removeItem(uncertain(orderId));
+      }
+    }
     return s;
   }
-  async function once<T>(orderId:string,work:()=>Promise<T>){
+  async function once<T>(orderId:string,work:()=>Promise<T>,readRecovery=false){
     check(authorized(),'Acesso administrativo necessário.');check(!busy.has(orderId),'Já existe uma operação em andamento.');
-    check(!storage.getItem(uncertain(orderId)),'Resultado anterior não confirmado. Reconciliação necessária.');busy.add(orderId);
+    check(readRecovery||!storage.getItem(uncertain(orderId)),'Resultado anterior não confirmado. Reconciliação necessária.');busy.add(orderId);
     try{return await work();}finally{busy.delete(orderId);}
   }
   async function submit(orderId:string,action:string,path:string,body:unknown){
@@ -97,5 +127,22 @@ export function createSupervisedFiscalClient({read,post,storage,now=Date.now,id=
     check(r&&idPattern.test(r.automationId)&&idPattern.test(r.documentId)&&r.transportAuthorized===false,'Preparação não confirmada.');
     return r; // The next GET must independently prove the persisted binding.
   });}
-  return {read:refresh,prepare,approve,execute,binding,isUncertain:(orderId:string)=>{try{return Boolean(storage.getItem(uncertain(orderId)));}catch{return true;}}};
+  async function recoverSend(orderId:string):Promise<FiscalSendRecoveryResult>{return once(orderId,async()=>{
+    const s=await refresh(orderId),b=binding(orderId);
+    check(b&&sendRecoveryState(s,b).canRequest,'Recuperação por leitura indisponível no estado confirmado pelo servidor.');
+    let saved;try{saved=JSON.parse(storage.getItem(recoveryKey(orderId))??'null');}catch{saved=null;}
+    const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+    const requestId=saved?.documentId===b.documentId&&saved?.automationId===b.automationId&&typeof saved.requestId==='string'&&uuid.test(saved.requestId)?saved.requestId:id();
+    check(uuid.test(requestId),'Não foi possível gerar a referência de recuperação.');
+    storage.setItem(recoveryKey(orderId),JSON.stringify({...b,requestId}));
+    const result=await submit(orderId,'RECOVER_NFE_SEND',`/admin/orders/${encodeURIComponent(orderId)}/fiscal/automations/${encodeURIComponent(b.automationId)}/recover-nfe-send`,{
+      requestId,reviewRef:`ADMIN_UI_RECOVER_${requestId}`,confirmation:SEND_RECOVERY_CONFIRMATION,
+    }) as FiscalSendRecoveryResult;
+    if(!result||!idPattern.test(result.auditId??'')||result.status!=='AUTHORIZED'||typeof result.accountBlocked!=='boolean'||typeof result.reused!=='boolean'||result.transportAuthorized!==false){
+      storage.setItem(uncertain(orderId),JSON.stringify({action:'RECOVER_NFE_SEND',at:now()}));
+      throw new Error('Resultado da recuperação não confirmado.');
+    }
+    return result;
+  },true);}
+  return {read:refresh,prepare,approve,execute,recoverSend,binding,isUncertain:(orderId:string)=>{try{return Boolean(storage.getItem(uncertain(orderId)));}catch{return true;}}};
 }
