@@ -1,36 +1,42 @@
-# ORD-FPY047 — regularização documental supervisionada
+# Admin — regularização do ORD-FPY047
 
-Depende da publicação anterior do PR backend `fix/umbrella-supervised-regularization`.
-Não publicar esta UI contra o backend antigo. Não exige ENV nova, Worker, P3 ou
-escritas fiscais globais; sessão ADMIN e escopo de pedidos existentes.
+Depende do backend PR #42 com os controles P0 publicados previamente. Não alterar
+ENV, Worker/P3 ou flags globais. Sessão ADMIN existente; nenhuma cópia de Bearer.
 
-No cartão Fiscal/Bling do ORD-FPY047, somente:
+1. Após infraestrutura privada autorizada e validada, anexar documento da unidade
+   vendida/separada/entregue deste pedido (60 ml / GTIN 0631430443749).
+2. Abrir o documento pela API autenticada. Conferir conteúdo e marcar a declaração
+   precisa. Aprovar a versão/hash aberta. Um anexo, PDF válido ou catálogo não bastam.
+3. Anexar, abrir e revisar separadamente evidência da empresa da conta Bling autenticada,
+   informando o CNPJ exibido. Não incluir tokens, senhas ou credenciais no documento.
+   Backend compara emitente/configuração e vincula a revisão à conexão OAuth atual.
+4. Revisar catálogo e aprovar regularização por cinco minutos. A API decide associação
+   ou criação; operador não fornece ID remoto. Confirmar execução uma vez.
+5. Preparar pedido regularizado e seguir aprovações fiscais existentes, começando por
+   Criar venda. Troca de documento/conta ou qualquer gate pendente bloqueia.
 
-1. Anexar PDF/JPEG/PNG até 256 KiB comprovando a unidade vendida/separada/entregue,
-   vinculada ao pedido, com Umbrella 60 ml e GTIN 0631430443749. Catálogo não basta.
-   Informar referência sem dados pessoais e confirmar revisão documental.
-2. Registrar evidência complementar. Não é snapshot original da compra.
-3. Revisar catálogo e aprovar regularização por cinco minutos. A API decide entre
-   associação e criação, sem aceitar um ID remoto digitado pelo operador.
-4. Conferir nome atual/proposto e executar uma vez a aprovação exibida. Corrige
-   somente o nome para a descrição fiscal já conferida e associa o ID comprovado.
-5. Preparar pedido regularizado. O GET fiscal normal recupera documentId/automationId;
-   então continuam as aprovações normais, começando em Criar venda no Bling.
+Timeout: atualizar e clicar Reconciliar produto por leitura. A confirmação deixa
+claro que não haverá nova criação nem repetição. API resolve somente causa comprovada,
+informa conta liberada ou ainda bloqueada e o painel refaz o GET. Outra incerteza
+mantém bloqueio. Repetição automática de POST/401 nunca ocorre.
 
-Em timeout, não repetir a criação. Atualizar e usar Reconciliar produto por leitura
-quando o servidor mostrar UNKNOWN/SUCCEEDED. A reconciliação não cria produto, não
-reescreve o histórico nem libera automaticamente a conta. Bloqueio causal restante
-impede a preparação até revisão supervisionada separada.
+Renovação OAuth invalida a revisão de conexão conservadoramente: nova evidência da
+mesma empresa pode ser anexada/revisada mesmo bloqueada para permitir recuperação
+por leitura. Não repetir a criação. Metadados e arquivos privados só passam por
+rotas administrativas específicas; documentos abrem em blob local/sandbox e a URL
+é revogada ao trocar/sair. Não há URL pública, token em query ou armazenamento local
+persistente de documento/token.
 
-POSTs usam skipAuthRetry; 401, timeout e erro não provocam replay. Há bloqueio de
-clique concorrente e GET antes/depois de cada etapa. Não há emissão automática.
+Retenção, backup, chave e provider privados ainda precisam ser autorizados/verificados;
+nenhuma configuração ou infraestrutura foi alterada por este trabalho. Sem essas
+condições, o backend fecha upload e regularização. Teste visual autenticado ainda
+pendente; testes locais usam SSR e HTTP simulado, sem provocar UNKNOWN real.
 
-Validação local: transporte HTTP simulado, renderização estática, TypeScript e
-lint direcionado. Teste visual autenticado ainda não executado. Nenhuma chamada de
-produção, alteração de ENV ou operação fiscal real faz parte desta implementação.
+Validação final Node 22.23.2: 10 testes de client/evidência, 9 SSR e 52 regressões
+fiscais/autenticação = 71 aprovados, zero falhas. TypeScript, lint direcionado e
+diff-check PASS. Nenhum teste visual autenticado ou operação externa real realizado.
 
-Resultados registrados em Node 22.23.2: 10 testes novos (7 client HTTP + 3 SSR)
-e 52 regressões direcionadas aprovados, zero falhas. Cobrem sessão/401 sem replay,
-erro/timeout, clique simultâneo, binding, pedido distinto e bloqueio causal exibido.
-TypeScript, ESLint dos cinco arquivos de código/teste alterados e diff-check: PASS.
-Sem alterações de autenticação, dependências ou ENV. SSR não substitui teste visual.
+O backend PR #42 usa 18 cenários agrupados em quatro configurações PostgreSQL 16.14,
+com recuperação causal/rollback e sem duplicidade. Isso não certifica automaticamente
+o provider privado nem os documentos reais. Não ativar/publicar o fluxo operacional
+antes das pendências externas e aprovações registradas no PR #42.
