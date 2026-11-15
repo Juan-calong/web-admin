@@ -17,6 +17,8 @@ import {
 import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/apiError";
 import { endpoints } from "@/lib/endpoints";
+import { BURITI_ORDER_ID, buritiStage } from "@/lib/buritiShipping";
+import { BuritiShippingActions } from "@/components/admin/BuritiShippingActions";
 
 import {
   Accordion,
@@ -69,6 +71,7 @@ type ShipmentDetails = {
   postedAt?: string | null;
   lastError?: string | null;
   diagnostics?: string[] | null;
+  raw?: {passiveP3PrePost?: {state?:string;transportPhase?:string;prePostagemId?:string;fiscalDocumentDigest?:string;payloadDigest?:string};passiveP3Receipt?: {state?:string;transportPhase?:string;prePostagemId?:string;idRecibo?:string};effectiveLabelDownload?: {source?:string;acceptedAsPdf?:boolean;idRecibo?:string;fiscalDocumentDigest?:string;contentDigest?:string}};
 };
 
 type ShipmentResponse = {
@@ -393,6 +396,7 @@ export function OrderShippingPanel({
   deliveryMethod?: string | null;
 }) {
   const qc = useQueryClient();
+  const isBuriti = orderId === BURITI_ORDER_ID;
 
   const shippingQ = useQuery({
     queryKey: ["admin-order-shipping", orderId],
@@ -404,14 +408,16 @@ export function OrderShippingPanel({
 
   const shipment = shippingQ.data;
   const shipmentStatus = shipment?.shipmentStatus ?? "NOT_CREATED";
-  const visualState = getShipmentVisualState(shipment);
+  const buritiState = isBuriti ? buritiStage(shipment) : null;
+  const visualState = isBuriti && getShipmentVisualState(shipment) === 'LABEL_READY' && buritiState !== 'READY'
+    ? 'ERROR' : getShipmentVisualState(shipment);
 
   const isGeneratingLabel = visualState === "GENERATING";
   const isPendingLabel = visualState === "PENDING";
   const isErrorLabel = visualState === "ERROR";
   const asyncLabelPending = isPendingLabel;
 
-  const printableLabelAvailable = isPrintableLabel(shipment);
+  const printableLabelAvailable = isBuriti ? buritiState === 'READY' : isPrintableLabel(shipment);
 
   const hasPartialShipmentRecord = Boolean(
     shipment &&
@@ -805,7 +811,7 @@ export function OrderShippingPanel({
             variant="outline"
             className="rounded-2xl border-zinc-200"
             onClick={() => {
-              if (shouldUseRefreshEndpoint) {
+              if (shouldUseRefreshEndpoint && !isBuriti) {
                 refreshPendingM.mutate();
                 return;
               }
@@ -883,10 +889,12 @@ export function OrderShippingPanel({
           />
         </div>
 
-        <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm text-sky-800">
+        {!isBuriti && <div className="rounded-2xl border border-sky-100 bg-sky-50/70 px-4 py-3 text-sm text-sky-800">
           Quando o worker automático estiver ativo, a etiqueta será gerada sem
           precisar clicar em Gerar etiqueta.
-        </div>
+        </div>}
+
+        {isBuriti && <BuritiShippingActions orderId={orderId} shipment={shipment} disabled={busy || shippingQ.isError} onUpdated={async()=>{await syncShippingQueries();}} />}
 
         {!eligibility.ok && !printableLabelAvailable ? (
           <div className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -903,7 +911,7 @@ export function OrderShippingPanel({
         {hasPartialShipmentRecord && !shipment?.lastError && !asyncLabelPending ? (
           <div className="rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
             Há um registro parcial de expedição, mas nenhuma etiqueta válida foi
-            encontrada para impressão. Você pode tentar gerar novamente.
+              encontrada para impressão. Verifique o estado antes de qualquer nova solicitação.
           </div>
         ) : null}
 
@@ -939,7 +947,7 @@ export function OrderShippingPanel({
         ) : null}
 
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          <Button
+          {!isBuriti && <Button
             type="button"
             className="rounded-2xl"
             onClick={() => generateM.mutate()}
@@ -956,7 +964,7 @@ export function OrderShippingPanel({
               <Send className="mr-2 h-4 w-4" />
             )}
             {generateButtonLabel}
-          </Button>
+          </Button>}
 
           <Button
             type="button"
@@ -973,7 +981,7 @@ export function OrderShippingPanel({
             Imprimir etiqueta
           </Button>
 
-          <Button
+          {!isBuriti && <Button
             type="button"
             variant="outline"
             className="rounded-2xl border-zinc-200"
@@ -991,7 +999,11 @@ export function OrderShippingPanel({
               <Printer className="mr-2 h-4 w-4" />
             )}
             Reimprimir etiqueta
-          </Button>
+          </Button>}
+
+          {isBuriti && <Button type="button" variant="outline" className="rounded-2xl border-zinc-200" onClick={()=>printM.mutate()} disabled={!canPrint}>
+            <Printer className="mr-2 h-4 w-4" />Reimprimir etiqueta existente
+          </Button>}
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
