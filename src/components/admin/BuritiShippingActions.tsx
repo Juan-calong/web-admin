@@ -21,6 +21,7 @@ export function BuritiShippingActionsView({stage,approval,busy,uncertain,recover
   {approval&&<p>Aprovação expira em {new Date(approval.expiresAt).toLocaleString('pt-BR')}. {!valid&&'Aprovação expirada ou incompatível.'}</p>}
   {action&&!uncertain&&(!valid?<button type="button" disabled={busy} onClick={()=>onApprove(action)}>Aprovar {label}</button>:<button type="button" disabled={busy} onClick={()=>onExecute(action)}>Executar {label}</button>)}
   {((action&&!uncertain)||recoveryKind==='FISCAL_READ')&&<button type="button" disabled={busy} onClick={onRefreshAuthorization}>Atualizar confirmação da NF-e</button>}
+  {stage==='POLL'&&<p>A consulta não solicita nova etiqueta e pode atualizar o estado local da expedição.</p>}
   {stage==='POLL'&&(!uncertain||recoveryKind==='POLL_READ')&&<button type="button" disabled={busy} onClick={onPoll}>Consultar etiqueta existente</button>}
  </div>;
 }
@@ -39,5 +40,5 @@ export function BuritiShippingActions({orderId,shipment,disabled,onUpdated}:{ord
   onExecute={action=>{if(window.confirm(`Executar ${action==='PREPOST'?'a pré-postagem':'a solicitação de etiqueta'} nos Correios? Em caso de falha ou timeout, não repita.`)){setApproval(null);void act(()=>client.execute(action),true,'Solicitação concluída; confira o estado atualizado abaixo.');}}}
   onRefreshAuthorization={()=>{if(window.confirm('Consultar a NF-e existente e atualizar sua confirmação local? Nenhuma NF-e será criada ou enviada.')){setApproval(null);void act(()=>client.refreshAuthorization(),true,'Sincronização concluída; a aprovação verificará novamente a prova fiscal.');}}}
   onResolve={()=>{if(window.confirm('Confirmar que o estado atual dos Correios foi reconciliado?')&&client.resolveConfirmed(stage)){setUncertain(false);setRecoveryKind(null);setError(null);}}}
-  onPoll={()=>{if(window.confirm('Consultar o recibo de etiqueta já existente? Nenhuma nova solicitação será autorizada.'))void act(()=>client.poll(),true,'Consulta concluída; confira o estado atualizado abaixo.');}}/>;
+  onPoll={()=>{if(window.confirm('Consultar o recibo de etiqueta já existente? A consulta não solicita nova etiqueta e pode atualizar o estado local da expedição.'))void act(()=>client.poll(),true,'Consulta concluída; confira o estado atualizado abaixo.');}}/>;
 }
