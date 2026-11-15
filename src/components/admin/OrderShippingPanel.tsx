@@ -17,7 +17,7 @@ import {
 import { api } from "@/lib/api";
 import { apiErrorMessage } from "@/lib/apiError";
 import { endpoints } from "@/lib/endpoints";
-import { BURITI_ORDER_ID } from "@/lib/buritiShipping";
+import { BURITI_ORDER_ID, buritiStage } from "@/lib/buritiShipping";
 import { BuritiShippingActions } from "@/components/admin/BuritiShippingActions";
 
 import {
@@ -71,7 +71,7 @@ type ShipmentDetails = {
   postedAt?: string | null;
   lastError?: string | null;
   diagnostics?: string[] | null;
-  raw?: {passiveP3PrePost?: {state?:string;transportPhase?:string;prePostagemId?:string};passiveP3Receipt?: {state?:string;transportPhase?:string;prePostagemId?:string;idRecibo?:string}};
+  raw?: {passiveP3PrePost?: {state?:string;transportPhase?:string;prePostagemId?:string;fiscalDocumentDigest?:string;payloadDigest?:string};passiveP3Receipt?: {state?:string;transportPhase?:string;prePostagemId?:string;idRecibo?:string};effectiveLabelDownload?: {source?:string;acceptedAsPdf?:boolean;idRecibo?:string;fiscalDocumentDigest?:string;contentDigest?:string}};
 };
 
 type ShipmentResponse = {
@@ -408,14 +408,16 @@ export function OrderShippingPanel({
 
   const shipment = shippingQ.data;
   const shipmentStatus = shipment?.shipmentStatus ?? "NOT_CREATED";
-  const visualState = getShipmentVisualState(shipment);
+  const buritiState = isBuriti ? buritiStage(shipment) : null;
+  const visualState = isBuriti && getShipmentVisualState(shipment) === 'LABEL_READY' && buritiState !== 'READY'
+    ? 'ERROR' : getShipmentVisualState(shipment);
 
   const isGeneratingLabel = visualState === "GENERATING";
   const isPendingLabel = visualState === "PENDING";
   const isErrorLabel = visualState === "ERROR";
   const asyncLabelPending = isPendingLabel;
 
-  const printableLabelAvailable = isPrintableLabel(shipment);
+  const printableLabelAvailable = isBuriti ? buritiState === 'READY' : isPrintableLabel(shipment);
 
   const hasPartialShipmentRecord = Boolean(
     shipment &&
