@@ -51,6 +51,8 @@ export const endpoints = {
   adminOrderPrepareDocuments: (orderId: string) =>
     `/admin/orders/${orderId}/prepare-documents`,
   adminOrderFiscal: {
+    authorizeManualNfe539: (orderId: string, automationId: string) =>
+      `/admin/orders/${encodeURIComponent(orderId)}/fiscal/automations/${encodeURIComponent(automationId)}/manual-nfe-539/authorize`,
     run: (orderId: string) => `/admin/orders/${orderId}/bling/fiscal/run`,
     reprocess: (orderId: string) => `/admin/orders/${orderId}/fiscal/reprocess`,
   },
