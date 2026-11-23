@@ -10,9 +10,15 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const sha256 = /^[a-f0-9]{64}$/i;
 
 export type DraftNfeXml = { text: string; sha256: string };
+type ManualNfe539Error = { http: number | null; error: string; uncertain?: boolean };
 export type ManualNfe539Result =
   | { http: number; authorizationId: string; expiresAt: string; transportAuthorized: false }
-  | { http: number | null; error: string; uncertain?: boolean };
+  | ManualNfe539Error;
+const manualConfirmation = "TRANSMIT_ONCE_IN_BLING_PANEL";
+const consumptionStatus = "AWAITING_CANONICAL_RECONCILIATION";
+export type ManualNfe539ConsumptionResult =
+  | { consumptionId: string; status: typeof consumptionStatus; transportAuthorized: false }
+  | ManualNfe539Error;
 
 export function hasManualNfe539Session() {
   return isFiscalAdmin(authStore.getMe()) && Boolean(authStore.getAccessToken());
@@ -46,8 +52,11 @@ const definitiveRejections = [400, 401, 403, 404, 409, 413, 422];
 
 export function createManualNfe539Authorization(binding: FiscalBinding) {
   const key = `keyfi-manual-nfe-539:${binding.orderId}:${binding.automationId}:pending`;
+  const consumeKey = `${key}:consume`;
   let started = false;
-  return async function authorize(input: {
+  let approved: { id: string; expiresAt: number; draftXml: string; adminId: string; sessionVersion: number } | null = null;
+
+  async function authorize(input: {
     reviewId: string;
     xml: DraftNfeXml | null;
     expectedHash: string;
@@ -67,12 +76,15 @@ export function createManualNfe539Authorization(binding: FiscalBinding) {
       return { http: null, error: "Não foi possível proteger a operação contra repetição." };
     }
     started = true;
+    const draftXml = input.xml.text;
+    const adminId = authStore.getMe()?.id;
+    const sessionVersion = authStore.getSessionVersion();
 
     let http: number | null = null;
     try {
       const response = await api.post(
         endpoints.adminOrderFiscal.authorizeManualNfe539(binding.orderId, binding.automationId),
-        { reviewId: input.reviewId.trim(), draftXml: input.xml.text },
+        { reviewId: input.reviewId.trim(), draftXml },
         fiscalNoAuthRetryConfig,
       );
       http = response.status;
@@ -82,6 +94,7 @@ export function createManualNfe539Authorization(binding: FiscalBinding) {
         return { http, error: uncertainMessage, uncertain: true };
       }
       localStorage.removeItem(key);
+      if (adminId) approved = { id: authorizationId, expiresAt: Date.parse(expiresAt), draftXml, adminId, sessionVersion };
       return { http, authorizationId, expiresAt, transportAuthorized };
     } catch (error) {
       http = isAxiosError(error) ? error.response?.status ?? http : http;
@@ -96,5 +109,54 @@ export function createManualNfe539Authorization(binding: FiscalBinding) {
       }
       return { http, error: uncertainMessage, uncertain: true };
     }
-  };
+  }
+
+  async function consume(confirmed: boolean): Promise<ManualNfe539ConsumptionResult> {
+    if (!confirmed || !approved) return { http: null, error: "Confirme o consumo de uma autorização registrada nesta tela." };
+    if (!hasManualNfe539Session() || authStore.getMe()?.id !== approved.adminId ||
+        authStore.getSessionVersion() !== approved.sessionVersion) {
+      return { http: null, error: "Use a mesma sessão ADMIN da autorização." };
+    }
+    if (Date.now() >= approved.expiresAt) return { http: null, error: "A autorização expirou." };
+
+    const uncertain = "Consumo não confirmado. Confira o registro fiscal antes de prosseguir.";
+    try {
+      if (localStorage.getItem(consumeKey)) return { http: null, error: uncertain, uncertain: true };
+      localStorage.setItem(consumeKey, "1");
+    } catch {
+      return { http: null, error: "Não foi possível proteger o consumo contra repetição." };
+    }
+    const { id, draftXml } = approved;
+    approved = null;
+
+    let http: number | null = null;
+    try {
+      const response = await api.post(
+        endpoints.adminOrderFiscal.consumeManualNfe539(binding.orderId, binding.automationId),
+        { authorizationId: id, draftXml, confirmation: manualConfirmation },
+        fiscalNoAuthRetryConfig,
+      );
+      http = response.status;
+      const { consumptionId, status, transportAuthorized } = response.data ?? {};
+      if (http === 200 && typeof consumptionId === "string" && uuid.test(consumptionId) &&
+          status === consumptionStatus && transportAuthorized === false) {
+        return { consumptionId, status, transportAuthorized };
+      }
+    } catch (error) {
+      http = isAxiosError(error) ? error.response?.status ?? http : http;
+      if (http !== null && definitiveRejections.includes(http)) {
+        // A definitive rejection can release the browser marker for a future authorization.
+        // This authorization remains unavailable for a second dispatch.
+        try {
+          localStorage.removeItem(consumeKey);
+          return { http, error: "A API recusou o consumo. Confira a sessão, a validade e o registro fiscal." };
+        } catch {
+          // Retain the conservative block if storage is unavailable.
+        }
+      }
+    }
+    return { http, error: uncertain, uncertain: true };
+  }
+
+  return { authorize, consume };
 }
