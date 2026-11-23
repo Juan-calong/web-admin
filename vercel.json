@@ -1,7 +1,8 @@
 {
   "git": {
     "deploymentEnabled": {
-      "feat/admin-nfe-539-authorize": false
+      "feat/admin-nfe-539-authorize": false,
+      "main": false
     }
   }
 }
