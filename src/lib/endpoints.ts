@@ -53,6 +53,8 @@ export const endpoints = {
   adminOrderFiscal: {
     authorizeManualNfe539: (orderId: string, automationId: string) =>
       `/admin/orders/${encodeURIComponent(orderId)}/fiscal/automations/${encodeURIComponent(automationId)}/manual-nfe-539/authorize`,
+    consumeManualNfe539: (orderId: string, automationId: string) =>
+      `/admin/orders/${encodeURIComponent(orderId)}/fiscal/automations/${encodeURIComponent(automationId)}/manual-nfe-539/consume`,
     run: (orderId: string) => `/admin/orders/${orderId}/bling/fiscal/run`,
     reprocess: (orderId: string) => `/admin/orders/${orderId}/fiscal/reprocess`,
   },

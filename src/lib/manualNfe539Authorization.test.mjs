@@ -12,6 +12,8 @@ import { createManualNfe539Authorization, readDraftNfeXml } from "./manualNfe539
 const binding = { orderId: "order", automationId: "automation", documentId: "document" };
 const reviewId = "745a803f-a889-497d-a84e-5d216d047058";
 const authorizationId = "0927206a-c0c9-4a65-b8e7-507af02a6e74";
+const consumptionId = "a09c35d0-70c2-45b7-b161-e9e89937a616";
+const consumptionStatus = "AWAITING_CANONICAL_RECONCILIATION";
 const expiresAt = "2030-01-15T12:05:00.000Z";
 const source = Buffer.from("\uFEFF<nfe>\r\n Ação fictícia\r\n</nfe>");
 const storage = new Map();
@@ -22,7 +24,7 @@ globalThis.localStorage = {
   removeItem: key => storage.delete(key),
 };
 
-async function scenario(run, failure) {
+async function scenario(run, failure, consumeFailure) {
   const previous = api.defaults.adapter;
   const calls = [];
   authStore.setMe({ id: "synthetic", role: "ADMIN", scopes: ["admin:orders:manage"] });
@@ -30,25 +32,33 @@ async function scenario(run, failure) {
   api.defaults.adapter = async config => {
     calls.push(config);
     assert.equal(config.method, "post");
-    assert.equal(config.url, "/admin/orders/order/fiscal/automations/automation/manual-nfe-539/authorize");
+    const consuming = config.url.endsWith("/consume");
+    assert.equal(config.url, `/admin/orders/order/fiscal/automations/automation/manual-nfe-539/${consuming ? "consume" : "authorize"}`);
     assert.equal(config.skipAuthRetry, true);
     assert.equal(config.headers.Authorization, "Bearer test-access-token");
-    assert.deepEqual(JSON.parse(config.data), { reviewId, draftXml: source.toString("utf8") });
+    assert.deepEqual(JSON.parse(config.data), consuming
+      ? { authorizationId, draftXml: source.toString("utf8"), confirmation: "TRANSMIT_ONCE_IN_BLING_PANEL" }
+      : { reviewId, draftXml: source.toString("utf8") });
+    const outcome = consuming ? consumeFailure : failure;
     const response = {
       status: 200, statusText: "OK", headers: {}, config,
-      data: { authorizationId, expiresAt, transportAuthorized: false, ignored: "sensitive fixture" },
+      data: {
+        ...(consuming ? { consumptionId, status: consumptionStatus } : { authorizationId, expiresAt }),
+        transportAuthorized: false, ignored: "sensitive fixture",
+      },
     };
-    if (failure === "timeout") throw new AxiosError("sensitive fixture", "ECONNABORTED", config);
-    if (failure === 401) throw new AxiosError("sensitive fixture", "ERR_BAD_REQUEST", config, null, {
+    if (outcome === "timeout") throw new AxiosError("sensitive fixture", "ECONNABORTED", config);
+    if (outcome === 401) throw new AxiosError("sensitive fixture", "ERR_BAD_REQUEST", config, null, {
       ...response, status: 401, data: { message: "jwt expirado: sensitive fixture" },
     });
-    if (failure === "invalid-success") return { ...response, data: { transportAuthorized: true } };
+    if (outcome === "invalid-success") return { ...response, data: { transportAuthorized: true } };
     return response;
   };
   try {
     const xml = await readDraftNfeXml(new Blob([source]));
     const input = { reviewId, xml, expectedHash: createHash("sha256").update(source).digest("hex"), confirmed: true };
-    await run(createManualNfe539Authorization(binding), input, calls);
+    const flow = createManualNfe539Authorization(binding);
+    await run(flow.authorize, input, calls, flow.consume);
   } finally {
     api.defaults.adapter = previous;
     authStore.clearAll();
@@ -82,6 +92,7 @@ test("renders explicit confirmation with the correct binding and a disabled init
   assert.match(html, /Pedido .*order.*Automação .*automation/);
   assert.match(html, /SHA-256 esperado/);
   assert.match(html, /<button[^>]+disabled=""[^>]*>Registrar autorização<\/button>/);
+  assert.doesNotMatch(html, /Consumir autorização/);
   assert.equal(calls.length, 0);
 }));
 
@@ -97,7 +108,7 @@ for (const failure of ["timeout", "invalid-success"]) {
     const result = await authorize(input);
     assert.equal(result.uncertain, true);
     assert.doesNotMatch(result.error, /sensitive fixture/);
-    assert.equal((await createManualNfe539Authorization(binding)(input)).uncertain, true);
+    assert.equal((await createManualNfe539Authorization(binding).authorize(input)).uncertain, true);
     assert.equal(calls.length, 1);
   }, failure));
 }
@@ -106,3 +117,69 @@ test("HTTP 401 never triggers Axios authentication refresh or replay", async () 
   assert.equal((await authorize(input)).http, 401);
   assert.equal(calls.length, 1);
 }, 401));
+
+test("consume requires a validated authorization and a separate manual confirmation", async () => scenario(async (authorize, input, calls, consume) => {
+  assert.ok((await consume(true)).error);
+  assert.equal(calls.length, 0);
+  assert.equal((await authorize(input)).authorizationId, authorizationId);
+  assert.equal(calls.length, 1);
+  assert.ok((await consume(false)).error);
+  assert.equal(calls.length, 1);
+}));
+
+test("consume cannot follow an invalid authorization response", async () => scenario(async (authorize, input, calls, consume) => {
+  assert.equal((await authorize(input)).uncertain, true);
+  assert.ok((await consume(true)).error);
+  assert.equal(calls.length, 1);
+}, "invalid-success"));
+
+test("consume blocks at the authorization deadline before dispatch", async t => scenario(async (authorize, input, calls, consume) => {
+  await authorize(input);
+  t.mock.method(Date, "now", () => Date.parse(expiresAt));
+  assert.match((await consume(true)).error, /expirou/);
+  assert.equal(calls.length, 1);
+}));
+
+test("consume requires the same ADMIN and original session", async () => scenario(async (authorize, input, calls, consume) => {
+  await authorize(input);
+  authStore.setMe({ id: "other-admin", role: "ADMIN", scopes: ["admin:orders:manage"] });
+  assert.match((await consume(true)).error, /mesma sessão/);
+  authStore.setMe({ id: "synthetic", role: "SELLER" });
+  assert.match((await consume(true)).error, /mesma sessão/);
+  authStore.clearAccessToken();
+  authStore.setMe({ id: "synthetic", role: "ADMIN", scopes: ["admin:orders:manage"] });
+  assert.match((await consume(true)).error, /mesma sessão/);
+  authStore.setAccessToken("new-session-token");
+  assert.match((await consume(true)).error, /mesma sessão/);
+  assert.equal(calls.length, 1);
+}));
+
+test("concurrent consume clicks send the authorized XML only once and expose the consumption receipt", async () => scenario(async (authorize, input, calls, consume) => {
+  await authorize(input);
+  input.xml.text = "<changed/>";
+  const [result, duplicate] = await Promise.all([consume(true), consume(true)]);
+  assert.deepEqual(result, { consumptionId, status: consumptionStatus, transportAuthorized: false });
+  assert.ok(duplicate.error);
+  assert.equal(calls.filter(call => call.url.endsWith("/consume")).length, 1);
+}));
+
+for (const failure of ["timeout", "invalid-success"]) {
+  test(`uncertain consume (${failure}) blocks repeat and remains blocked after remount`, async () => scenario(async (authorize, input, calls, consume) => {
+    await authorize(input);
+    const result = await consume(true);
+    assert.equal(result.uncertain, true);
+    assert.doesNotMatch(result.error, /sensitive fixture/);
+    assert.ok((await consume(true)).error);
+    const remounted = createManualNfe539Authorization(binding);
+    await remounted.authorize(input);
+    assert.equal((await remounted.consume(true)).uncertain, true);
+    assert.equal(calls.filter(call => call.url.endsWith("/consume")).length, 1);
+  }, undefined, failure));
+}
+
+test("HTTP 401 on consume never refreshes authentication or replays the request", async () => scenario(async (authorize, input, calls, consume) => {
+  await authorize(input);
+  assert.equal((await consume(true)).http, 401);
+  assert.ok((await consume(true)).error);
+  assert.equal(calls.length, 2);
+}, undefined, 401));
