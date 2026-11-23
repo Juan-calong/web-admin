@@ -8,6 +8,7 @@ import type {FiscalAutomationProjection} from '@/lib/fiscalAutomationPresentatio
 import {Button} from '@/components/ui/button';
 import {Card,CardHeader,CardTitle,CardContent} from '@/components/ui/card';
 import {NfeSendRecoveryAction} from '@/components/admin/NfeSendRecoveryAction';
+import {ManualNfe539Authorization} from '@/components/admin/ManualNfe539Authorization';
 import {SupervisedFiscalActions} from '@/components/admin/SupervisedFiscalActions';
 
 function Panel({orderId}:{orderId:string}){
@@ -43,6 +44,7 @@ function Panel({orderId}:{orderId:string}){
     finally{await refresh();pending.current=false;setBusy(false);}
   }
   const s=state.data;
+  const binding=client.binding(orderId);
   const stage=s?fiscalStage(s,client.binding(orderId),now):null;
   const uncertain=typeof window!=='undefined'&&client.isUncertain(orderId);
   const reason=!admin?'Acesso ADMIN com escopo de pedidos necessário.':state.isError?'Não foi possível confirmar o estado atual. Nenhuma operação permitida.':uncertain?'Resultado anterior não confirmado. Atualize e reconcilie antes de qualquer novo POST.':stage?.reason??'';
@@ -55,6 +57,8 @@ function Panel({orderId}:{orderId:string}){
       {error?<p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>:null}
       {recoveryMessage?<p role="status" className="rounded-xl bg-zinc-50 p-3 text-sm">{recoveryMessage}</p>:null}
       {s?<NfeSendRecoveryAction snapshot={s} binding={client.binding(orderId)} disabled={!admin||busy||state.isFetching||state.isError} onRecover={()=>{void recoverSend();}}/>:null}
+      {admin && s?.document?.status === 'REJECTED' && binding &&
+        <ManualNfe539Authorization key={binding.automationId} binding={binding} disabled={busy||state.isFetching||state.isError} />}
       {!s&&reason?<p role="alert">{reason}</p>:null}
       {s?<SupervisedFiscalActions snapshot={s} action={enabled?(stage?.action??null):null} reason={reason} approval={approval} busy={busy||state.isFetching} now={now}
         onPrepare={()=>{void run('prepare');}} onApprove={action=>{void run('approve',action);}} onExecute={()=>{void run('execute');}}/>:null}
