@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import {NfeSendRecoveryAction} from './NfeSendRecoveryAction.tsx';
+const binding={orderId:'order',documentId:'document',automationId:'automation'};
+const snapshot={orderId:'order',environment:'PRODUCTION',authority:'LEGACY',ready:false,reconciliation:true,automation:{automationStatus:'QUEUED',lastErrorCode:'NFE_SEND_RECONCILIATION_PENDING'},document:{id:'document',status:'AUTHORIZED',blingOrderId:'sale',blingNfeId:'nfe'}};
+const render=(props={})=>renderToStaticMarkup(React.createElement(NfeSendRecoveryAction,{snapshot,binding,disabled:false,onRecover(){throw Error('render must not POST');},...props}));
+test('pending authorized send shows separate read recovery with all commitments',()=>{const html=render();assert.match(html,/Recuperar envio incerto/);assert.doesNotMatch(html,/disabled=""/);for(const text of ['Não será criada uma nova NF-e','Nenhum envio será repetido','documentos existentes no Bling','reconciliação completa'])assert.ok(html.includes(text));});
+test('no pending marker hides recovery instead of inventing eligibility',()=>{assert.equal(render({snapshot:{...snapshot,automation:{automationStatus:'COMPLETED'}}}),'');});
+test('missing trusted binding and busy or unauthorized state disable recovery',()=>{for(const props of [{binding:null},{binding:{...binding,orderId:'other'}},{disabled:true}])assert.match(render(props),/disabled=""/);});

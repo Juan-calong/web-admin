@@ -20,6 +20,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { ProductStatusPanel } from "@/components/admin/ProductStatusPanel";
+import {UmbrellaProductRegularization} from '@/components/admin/UmbrellaProductRegularization';
 import { ProductListTextarea } from '@/components/admin/ProductListTextarea';
 import { ProductFieldFeedback } from '@/components/admin/ProductFieldFeedback';
 import { ProductFiscalField } from '@/components/admin/ProductFiscalField';
@@ -603,6 +604,7 @@ export default function EditProductPage() {
   const [benefitsText, setBenefitsText] = useState("");
   const [howToUseText, setHowToUseText] = useState("");
   const [active, setActive] = useState(true);
+  const [supervisedSyncBusy,setSupervisedSyncBusy]=useState(false);
   const [stock, setStock] = useState<number>(0);
 
   const [categoryId, setCategoryId] = useState<string>("");
@@ -735,7 +737,7 @@ export default function EditProductPage() {
     () => hasUnsavedFiscalFormChanges(fiscalForm, fiscalQ.data?.fiscalData as Partial<FiscalForm> | undefined),
     [fiscalForm, fiscalQ.data?.fiscalData],
   );
-  const syncDisabled =
+  const syncDisabled = supervisedSyncBusy ||
     fiscalQ.data?.readiness?.ready !== true || !fiscalQ.data?.syncPlan || fiscalQ.data.syncPlan.blocked || (fiscalQ.data.syncPlan.requiresRevision && !revisionConfirmed) || saveFiscalM.isPending || syncBlingM.isPending || hasUnsavedFiscalChanges;
   const syncDisabledTitle =
     fiscalQ.data?.readiness?.ready !== true
@@ -2526,6 +2528,7 @@ onClick={() => {
                         >
                           {syncBlingM.isPending ? "Sincronizando…" : "Sincronizar com Bling"}
                         </Button>
+                        <UmbrellaProductRegularization productId={id} linked={Boolean(fiscalQ.data?.fiscalData?.blingProductId)} disabled={hasUnsavedFiscalChanges||syncBlingM.isPending} onBusyChange={setSupervisedSyncBusy} onChanged={async()=>{await qc.invalidateQueries({queryKey:['product-fiscal',id]});}} />
                           {hasUnsavedFiscalChanges ? (
                           <div className="text-xs text-amber-700">
                             Existem alterações fiscais não salvas. Salve antes de sincronizar.

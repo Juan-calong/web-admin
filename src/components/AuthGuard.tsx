@@ -3,31 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { authStore } from "@/lib/auth";
-import { api } from "@/lib/api";
-import { endpoints } from "@/lib/endpoints";
-
-type RefreshResponse = {
-    data?: {
-        accessToken?: string;
-        token?: string;
-        user?: unknown;
-        data?: {
-            accessToken?: string;
-            token?: string;
-            user?: unknown;
-        };
-    };
-};
-
-function extractToken(res: RefreshResponse): string | null {
-    return (
-        res?.data?.accessToken ??
-        res?.data?.token ??
-        res?.data?.data?.accessToken ??
-        res?.data?.data?.token ??
-        null
-    );
-}
+import { refreshAccessToken } from "@/lib/api";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
     const router = useRouter();
@@ -41,6 +17,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
             setOk(false);
 
             const next = `/login?next=${encodeURIComponent(pathname || "/admin")}`;
+
+            const version = authStore.getSessionVersion();
 
             // 1) se já tem token, valida role e segue
             const token = authStore.getAccessToken();
@@ -57,15 +35,8 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
             // 2) sem token: tenta refresh (cookie rt)
             try {
-                const res = await api.post(endpoints.auth.refresh, {});
-                const newToken = extractToken(res);
-                if (!newToken) throw new Error("Refresh não retornou accessToken");
-
-                authStore.setAccessToken(newToken);
-
-                // opcional: se seu refresh também devolve user, salva:
-                const user = res.data?.user ?? res.data?.data?.user ?? null;
-                if (user) authStore.setMe(user);
+                await refreshAccessToken();
+                if (!alive || authStore.getSessionVersion() !== version) return;
 
                 const me = authStore.getMe();
                 if (me?.role && me.role !== "ADMIN") {
@@ -76,6 +47,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
                 if (alive) setOk(true);
             } catch {
+                if (!alive || authStore.getSessionVersion() !== version) return;
                 authStore.clearAll();
                 router.replace(next);
             }

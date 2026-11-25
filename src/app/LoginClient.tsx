@@ -18,10 +18,6 @@ function humanLoginError(e: unknown) {
   const status = err.response?.status;
   const code = err.code;
 
-  console.log("[login] erro bruto:", e);
-  console.log("[login] status:", status);
-  console.log("[login] code:", code);
-  console.log("[login] response data:", err.response?.data);
 
   if (code === "ECONNABORTED") return "Tempo esgotado. Tente novamente.";
   if (code === "ERR_NETWORK") return "Falha de rede ou CORS ao conectar com o servidor.";
