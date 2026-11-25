@@ -1122,7 +1122,7 @@ const localStatusClass = (
           <div>
             <h1 className="text-2xl font-black tracking-tight text-zinc-950 sm:text-3xl">
               Aprovação de pedidos
-            </h1>
+            </h1><Link href="/admin/documents" className="inline-flex rounded-xl border px-4 py-2 font-semibold">Central de documentos</Link>
             <p className="mt-1 text-sm text-zinc-500">
               Acompanhe pendentes, aprovados e reprovados sem perder contexto
             </p>
@@ -2047,6 +2047,7 @@ const movementLabel =
     key={o.id}
     className="overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-sm"
   >
+
     <div className="grid gap-4 px-4 py-4 lg:grid-cols-[28px_260px_minmax(0,1fr)_140px_220px] lg:items-center">
       <div className="flex lg:justify-center">
         <input
